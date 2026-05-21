@@ -237,6 +237,128 @@ a { color: inherit; text-decoration: none; }
   line-height: 1.8;
   color: var(--sub);
 }
+
+/* ── Expedition ── */
+#expedition {
+  padding: var(--gap) 0;
+  background: var(--bg);
+}
+
+.exp-header {
+  padding: 0 48px;
+  margin-bottom: clamp(60px, 8vw, 120px);
+}
+
+.exp-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  color: var(--sub);
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.exp-title {
+  font-family: var(--font-zh);
+  font-size: clamp(48px, 8vw, 100px);
+  font-weight: 700;
+  line-height: 1.0;
+  color: var(--ink);
+  margin-bottom: 20px;
+}
+
+.exp-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--sub);
+  letter-spacing: 0.05em;
+}
+
+.exp-meta-en {
+  font-family: var(--font-en);
+  font-style: italic;
+  font-size: 13px;
+}
+
+/* Theme blocks */
+.theme-block {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 70vh;
+  margin-bottom: 2px;
+}
+
+.theme-block--right .theme-img-wrap { order: 1; }
+.theme-block--right .theme-copy     { order: 2; }
+.theme-block--left  .theme-img-wrap { order: 2; }
+.theme-block--left  .theme-copy     { order: 1; }
+
+.theme-img-wrap {
+  overflow: hidden;
+  max-height: 80vh;
+}
+
+.theme-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.8s var(--ease);
+}
+
+.theme-img-wrap:hover .theme-img {
+  transform: scale(1.04);
+}
+
+.theme-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(40px, 6vw, 100px);
+  gap: 16px;
+}
+
+.theme-num {
+  font-family: var(--font-en);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--sub);
+}
+
+.theme-title-zh {
+  font-family: var(--font-zh);
+  font-size: clamp(28px, 4vw, 52px);
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.theme-title-en {
+  font-family: var(--font-en);
+  font-style: italic;
+  font-size: clamp(16px, 2vw, 24px);
+  color: var(--sub);
+  margin-top: -8px;
+}
+
+.theme-desc-zh {
+  font-family: var(--font-zh);
+  font-size: 15px;
+  line-height: 1.9;
+  color: var(--ink);
+  margin-top: 8px;
+}
+
+.theme-desc-en {
+  font-family: var(--font-en);
+  font-style: italic;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--sub);
+}
 </style>
 </head>
 <body>
@@ -279,6 +401,86 @@ a { color: inherit; text-decoration: none; }
     <div class="mf-right reveal reveal-delay-2">
       <p class="mf-body-zh">我们相信，最好的照片发生在没有人的地方。每一条线路都经过深度踩点，每一次出发都是为了找到那些需要耐心才能等到的光线。</p>
       <p class="mf-body-en">We believe the best photographs happen where no one else has been. Every route is deeply scouted. Every departure is in pursuit of light that only patience can find.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══ EXPEDITION ══ -->
+<section id="expedition">
+  <div class="exp-header reveal">
+    <div class="exp-label">EXPEDITION 001</div>
+    <h2 class="exp-title">红土纪</h2>
+    <div class="exp-meta">
+      <span>美西 · 犹他州 · 航拍与徒步 · 7天</span>
+      <span class="exp-meta-en">American Southwest · Utah · Aerial &amp; Hiking · 7 Days</span>
+    </div>
+  </div>
+
+  <!-- Theme Block 1: 纹理研究 -->
+  <div class="theme-block theme-block--right">
+    <div class="theme-img-wrap reveal">
+      <img src="https://images.unsplash.com/photo-1518173946687-a4c8892bbd9f?w=1200&q=80"
+           alt="纹理研究"
+           class="theme-img">
+      <!-- ↑ PLACEHOLDER — 替换为黑白球状岩或粉紫旋纹照片 URL -->
+    </div>
+    <div class="theme-copy reveal reveal-delay-1">
+      <div class="theme-num">01</div>
+      <div class="theme-title-zh">纹理研究</div>
+      <div class="theme-title-en">Texture &amp; Form</div>
+      <p class="theme-desc-zh">亿年挤压留下的密码，近到可以用指尖阅读。</p>
+      <p class="theme-desc-en">Codes pressed into stone over a billion years, close enough to read with your fingertips.</p>
+    </div>
+  </div>
+
+  <!-- Theme Block 2: 大地之眼 -->
+  <div class="theme-block theme-block--left">
+    <div class="theme-copy reveal">
+      <div class="theme-num">02</div>
+      <div class="theme-title-zh">大地之眼</div>
+      <div class="theme-title-en">Scale &amp; Solitude</div>
+      <p class="theme-desc-zh">当人只有蚂蚁大小，色彩才开始说话。</p>
+      <p class="theme-desc-en">When a person shrinks to the size of an ant, color begins to speak.</p>
+    </div>
+    <div class="theme-img-wrap reveal reveal-delay-1">
+      <img src="https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=1200&q=80"
+           alt="大地之眼"
+           class="theme-img">
+      <!-- ↑ PLACEHOLDER — 替换为航拍彩色 badlands + 孤身人照片 URL -->
+    </div>
+  </div>
+
+  <!-- Theme Block 3: 地层叙事 -->
+  <div class="theme-block theme-block--right">
+    <div class="theme-img-wrap reveal">
+      <img src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200&q=80"
+           alt="地层叙事"
+           class="theme-img">
+      <!-- ↑ PLACEHOLDER — 替换为航拍峡谷河流照片 URL -->
+    </div>
+    <div class="theme-copy reveal reveal-delay-1">
+      <div class="theme-num">03</div>
+      <div class="theme-title-zh">地层叙事</div>
+      <div class="theme-title-en">Geological Time</div>
+      <p class="theme-desc-zh">河流用百万年划开了石头的心脏。</p>
+      <p class="theme-desc-en">A river spent a million years opening the heart of stone.</p>
+    </div>
+  </div>
+
+  <!-- Theme Block 4: 孤立系 -->
+  <div class="theme-block theme-block--left">
+    <div class="theme-copy reveal">
+      <div class="theme-num">04</div>
+      <div class="theme-title-zh">孤立系</div>
+      <div class="theme-title-en">One Thing Alone</div>
+      <p class="theme-desc-zh">一根针，对抗整片天空。</p>
+      <p class="theme-desc-en">One needle. Against the whole sky.</p>
+    </div>
+    <div class="theme-img-wrap reveal reveal-delay-1">
+      <img src="https://images.unsplash.com/photo-1542401886-65d6c61db217?w=1200&q=80"
+           alt="孤立系"
+           class="theme-img">
+      <!-- ↑ PLACEHOLDER — 替换为黑色石针或白岩孤树照片 URL -->
     </div>
   </div>
 </section>
