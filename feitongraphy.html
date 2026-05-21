@@ -446,6 +446,190 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: 6px;
   font-family: var(--font-sans);
 }
+
+/* ── Join ── */
+#join {
+  padding: var(--gap) 48px;
+  background: var(--bg);
+}
+
+.join-header {
+  margin-bottom: clamp(48px, 6vw, 80px);
+}
+
+.join-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--sub);
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.join-title {
+  font-family: var(--font-zh);
+  font-size: clamp(36px, 5vw, 72px);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.join-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 60px;
+  align-items: start;
+}
+
+.join-col-title {
+  font-family: var(--font-zh);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 28px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(0,0,0,0.1);
+}
+
+.join-col-title span {
+  font-family: var(--font-en);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 14px;
+  color: var(--sub);
+  margin-left: 8px;
+}
+
+/* Form */
+.join-form { display: flex; flex-direction: column; gap: 20px; }
+
+.form-field { display: flex; flex-direction: column; gap: 6px; }
+
+.form-field label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sub);
+}
+
+.form-field input,
+.form-field textarea {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(0,0,0,0.15);
+  padding: 10px 0;
+  font-family: var(--font-zh);
+  font-size: 15px;
+  color: var(--ink);
+  outline: none;
+  resize: none;
+  transition: border-color 0.2s;
+}
+
+.form-field input:focus,
+.form-field textarea:focus {
+  border-bottom-color: var(--ink);
+}
+
+.form-field input::placeholder,
+.form-field textarea::placeholder {
+  color: rgba(0,0,0,0.25);
+}
+
+.join-btn {
+  margin-top: 8px;
+  align-self: flex-start;
+  background: var(--ink);
+  color: white;
+  border: none;
+  padding: 14px 32px;
+  font-family: var(--font-zh);
+  font-size: 14px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  transition: opacity 0.2s;
+}
+
+.join-btn:hover { opacity: 0.75; }
+
+.join-thanks {
+  padding: 24px 0;
+}
+
+.join-thanks-zh {
+  font-family: var(--font-zh);
+  font-size: 16px;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.join-thanks-en {
+  font-family: var(--font-en);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--sub);
+}
+
+/* Social */
+.social-list { display: flex; flex-direction: column; gap: 20px; }
+
+.social-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--font-zh);
+  font-size: 14px;
+  color: var(--ink);
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.social-item:hover { opacity: 1; }
+
+/* Email */
+.join-email-desc {
+  font-family: var(--font-zh);
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.join-email-desc-en {
+  font-family: var(--font-en);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--sub);
+  margin-bottom: 24px;
+}
+
+.join-email-addr {
+  font-family: var(--font-en);
+  font-size: 16px;
+  color: var(--ink);
+  border-bottom: 1px solid rgba(0,0,0,0.2);
+  padding-bottom: 3px;
+  transition: border-color 0.2s;
+}
+
+.join-email-addr:hover { border-color: var(--ink); }
+
+/* Footer */
+.site-footer {
+  margin-top: clamp(60px, 8vw, 120px);
+  padding-top: 24px;
+  border-top: 1px solid rgba(0,0,0,0.1);
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--sub);
+}
+
+.site-footer em {
+  font-family: var(--font-en);
+  font-style: italic;
+}
 </style>
 </head>
 <body>
@@ -597,6 +781,72 @@ a { color: inherit; text-decoration: none; }
   </div>
 </section>
 
+<!-- ══ JOIN ══ -->
+<section id="join">
+  <div class="join-header reveal">
+    <div class="join-label">BECOME A MEMBER</div>
+    <h2 class="join-title">加入我们</h2>
+  </div>
+
+  <div class="join-grid">
+    <!-- 申请表 -->
+    <div class="join-col reveal">
+      <div class="join-col-title">申请加入 <span>Apply</span></div>
+      <form class="join-form" id="joinForm">
+        <div class="form-field">
+          <label>姓名 / Name</label>
+          <input type="text" name="name" placeholder="你的名字" required>
+        </div>
+        <div class="form-field">
+          <label>邮箱 / Email</label>
+          <input type="email" name="email" placeholder="your@email.com" required>
+        </div>
+        <div class="form-field">
+          <label>为什么想加入？/ Why join?</label>
+          <textarea name="why" placeholder="一句话就够了" rows="3" required></textarea>
+        </div>
+        <button type="submit" class="join-btn">提交申请</button>
+      </form>
+      <div class="join-thanks" id="joinThanks" style="display:none">
+        <p class="join-thanks-zh">收到了。我们会与你联系。</p>
+        <p class="join-thanks-en">Received. We'll be in touch.</p>
+      </div>
+    </div>
+
+    <!-- 社交媒体 -->
+    <div class="join-col reveal reveal-delay-1">
+      <div class="join-col-title">社交媒体 <span>Social</span></div>
+      <div class="social-list">
+        <a class="social-item" href="#" target="_blank">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
+          <span>@feitongraphy</span>
+        </a>
+        <a class="social-item" href="#" target="_blank">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4l16 8-16 8V4z"/></svg>
+          <span>小红书 · feitongraphy</span>
+        </a>
+        <a class="social-item" href="#" target="_blank">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>微信公众号 · feitongraphy</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- 邮件 -->
+    <div class="join-col reveal reveal-delay-2">
+      <div class="join-col-title">邮件联系 <span>Email</span></div>
+      <p class="join-email-desc">有任何问题，或者只是想打个招呼。</p>
+      <p class="join-email-desc-en">Questions, collabs, or just saying hello.</p>
+      <a class="join-email-addr" href="mailto:hello@feitongraphy.com">hello@feitongraphy.com</a>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <span>© 2026 feitongraphy</span>
+    <span>feiton<em>graphy</em></span>
+  </footer>
+</section>
+
 <script>
 // Hero parallax
 const heroBg = document.getElementById('heroBg');
@@ -618,6 +868,17 @@ const observer = new IntersectionObserver((entries) => {
 }, { threshold: 0.12 });
 
 document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// Form fake submit
+const joinForm = document.getElementById('joinForm');
+const joinThanks = document.getElementById('joinThanks');
+if (joinForm) {
+  joinForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    joinForm.style.display = 'none';
+    joinThanks.style.display = 'block';
+  });
+}
 </script>
 </body>
 </html>
