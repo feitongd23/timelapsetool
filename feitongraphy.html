@@ -630,6 +630,37 @@ a { color: inherit; text-decoration: none; }
   font-family: var(--font-en);
   font-style: italic;
 }
+
+/* ── Mobile (≤768px) ── */
+@media (max-width: 768px) {
+  :root { --gap: 60px; }
+
+  .hero-nav { padding: 24px 20px; }
+  .hero-nav-links { display: none; }
+  .hero-text { padding: 0 20px; }
+  .hero-scroll { right: 20px; }
+
+  #manifesto { padding: var(--gap) 20px; }
+  .mf-grid { grid-template-columns: 1fr; gap: 40px; }
+  .mf-right { border-left: none; padding-left: 0; border-top: 1px solid rgba(0,0,0,0.1); padding-top: 32px; }
+
+  .exp-header { padding: 0 20px; }
+  .theme-block { grid-template-columns: 1fr; min-height: auto; }
+  .theme-block--right .theme-img-wrap,
+  .theme-block--right .theme-copy,
+  .theme-block--left .theme-img-wrap,
+  .theme-block--left .theme-copy { order: unset; }
+  .theme-block { display: flex; flex-direction: column; }
+  .theme-img-wrap { max-height: 60vw; }
+  .theme-copy { padding: 32px 20px; }
+
+  #about { padding: var(--gap) 20px; }
+  .about-inner { grid-template-columns: 1fr; gap: 40px; }
+  .about-quote { position: static; }
+
+  #join { padding: var(--gap) 20px; }
+  .join-grid { grid-template-columns: 1fr; gap: 48px; }
+}
 </style>
 </head>
 <body>
