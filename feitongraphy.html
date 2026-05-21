@@ -181,25 +181,26 @@ a { color: inherit; text-decoration: none; }
   margin-top: 6px;
 }
 .gallery-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  columns: 3;
+  column-gap: 5px;
 }
 .gallery-grid.milky {
-  grid-template-columns: repeat(2, 1fr);
+  columns: 2;
 }
 .gallery-item {
+  break-inside: avoid;
+  margin-bottom: 5px;
   overflow: hidden;
   cursor: pointer;
   background: #e8e8e6;
 }
-.gallery-item.tall { aspect-ratio: 2/3; }
-.gallery-item.wide { aspect-ratio: 3/2; }
-.gallery-item.square { aspect-ratio: 1; }
 .gallery-item img {
-  transition: transform 0.8s var(--ease);
+  width: 100%;
+  height: auto;
+  display: block;
+  transition: transform 0.9s var(--ease);
 }
-.gallery-item:hover img { transform: scale(1.05); }
+.gallery-item:hover img { transform: scale(1.04); }
 
 /* ══ MANIFESTO ══ */
 #manifesto {
@@ -705,8 +706,8 @@ a { color: inherit; text-decoration: none; }
   .hero-content { padding: 0 20px; }
   .hero-scroll { right: 20px; }
   #gallery { padding: var(--gap) 16px; }
-  .gallery-grid { grid-template-columns: repeat(2, 1fr); gap: 4px; }
-  .gallery-grid.milky { grid-template-columns: 1fr; }
+  .gallery-grid { columns: 2; column-gap: 4px; }
+  .gallery-grid.milky { columns: 1; }
   #manifesto { padding: var(--gap) 20px; }
   .mf-grid { grid-template-columns: 1fr; gap: 40px; }
   .mf-right { border-left: none; padding-left: 0; border-top: 1px solid rgba(0,0,0,0.08); padding-top: 32px; }
@@ -773,15 +774,31 @@ a { color: inherit; text-decoration: none; }
       <div class="gallery-title-en">Landscape</div>
     </div>
     <div class="gallery-grid reveal reveal-delay-1">
-      <div class="gallery-item wide"><img src="../photogroup/photos/nature/nature1.jpg" alt=""></div>
-      <div class="gallery-item tall"><img src="../photogroup/photos/nature/nature2.jpg" alt=""></div>
-      <div class="gallery-item tall"><img src="../photogroup/photos/nature/nature5.jpg" alt=""></div>
-      <div class="gallery-item tall"><img src="../photogroup/photos/nature/nature8.jpg" alt=""></div>
-      <div class="gallery-item wide"><img src="../photogroup/photos/nature/nature9.jpg" alt=""></div>
-      <div class="gallery-item wide"><img src="../photogroup/photos/nature/nature10.jpg" alt=""></div>
-      <div class="gallery-item tall"><img src="../photogroup/photos/nature/nature11.jpg" alt=""></div>
-      <div class="gallery-item tall"><img src="../photogroup/photos/nature/nature12.jpg" alt=""></div>
-      <div class="gallery-item wide"><img src="../photogroup/photos/nature/nature13.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/nature1.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/nature2.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/nature3.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/nature5.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/nature6.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/nature8.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/nature9.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/nature10.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/nature11.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/nature12.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/nature13.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_0225.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_0251.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_0253.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_0259.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_0265.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_0266.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_0303.JPG" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_0391.JPG" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_0392.JPG" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_0995.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_0999.JPG" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_1003.JPG" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_1022.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/nature/IMG_1025.JPG" alt=""></div>
     </div>
   </div>
 
@@ -793,14 +810,13 @@ a { color: inherit; text-decoration: none; }
       <div class="gallery-title-en">Astrophotography</div>
     </div>
     <div class="gallery-grid milky reveal reveal-delay-1">
-      <div class="gallery-item wide"><img src="../photogroup/photos/milkey way/IMG_9805.JPG" alt=""></div>
-      <div class="gallery-item wide"><img src="../photogroup/photos/milkey way/IMG_9820.JPG" alt=""></div>
-      <div class="gallery-item tall"><img src="../photogroup/photos/milkey way/nature7.jpg" alt=""></div>
-      <div class="gallery-item tall"><img src="../photogroup/photos/milkey way/nature4.jpg" alt=""></div>
-      <div class="gallery-item wide"><img src="../photogroup/photos/milkey way/IMG_9806.jpg" alt=""></div>
-      <div class="gallery-item wide"><img src="../photogroup/photos/milkey way/IMG_9810.JPG" alt=""></div>
-      <div class="gallery-item wide"><img src="../photogroup/photos/milkey way/nature14.jpg" alt=""></div>
-      <div class="gallery-item wide"><img src="../photogroup/photos/milkey way/nature15.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/milkey way/IMG_9805.JPG" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/milkey way/IMG_9810.JPG" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/milkey way/IMG_9820.JPG" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/milkey way/nature4.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/milkey way/nature7.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/milkey way/nature14.jpg" alt=""></div>
+      <div class="gallery-item"><img src="../photogroup/photos/milkey way/nature15.jpg" alt=""></div>
     </div>
   </div>
 </section>
