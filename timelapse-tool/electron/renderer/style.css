@@ -1,0 +1,11 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; color: #222; }
+.tabs { display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid #ddd; background: #fafafa; }
+.tab { padding: 8px 16px; border: none; background: transparent; cursor: pointer; font-size: 14px; border-radius: 6px; }
+.tab.active { background: #007aff; color: #fff; }
+.status { margin-left: auto; font-size: 12px; color: #888; }
+.status.ok { color: #34c759; }
+.status.err { color: #ff3b30; }
+.panel { display: none; padding: 24px; }
+.panel.active { display: block; }
+h1 { font-size: 20px; margin-bottom: 12px; }
