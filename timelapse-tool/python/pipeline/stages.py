@@ -52,8 +52,13 @@ class AEStage(Stage):
     manual = False
 
     def run(self, config, emit):
-        # 桩：真实实现（aerender）由后续计划替换
-        emit("AE 阶段（桩）：渲染图像序列为中间视频")
+        from pipeline import ae
+        ae.render_sequence(
+            seq_folder=config.lrt_export_folder,
+            output_dir=config.output_path,
+            fps=config.fps,
+            emit=emit,
+        )
 
 
 class PRStage(Stage):
