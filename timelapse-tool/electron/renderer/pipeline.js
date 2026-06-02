@@ -86,7 +86,6 @@ function readForm() {
     stabilize: id("stabilize").checked,
     resolution: id("resolution").value,
     fps: id("fps").value,
-    codec: id("codec").value,
     output_path: id("output_path").value,
   };
 }
@@ -125,6 +124,61 @@ async function initPipeline(httpBase) {
   cameraSel.addEventListener("change", loadResolutions);
   await loadResolutions();
 
+  // 加载导出预设
+  try {
+    const data = await fetch(httpBase + "/export/presets").then((r) => r.json());
+    const presetSel = id("export_preset");
+    presetSel.innerHTML = "";
+    for (const name of data.presets) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      presetSel.appendChild(opt);
+    }
+  } catch (_) {
+    errEl.textContent = "无法加载导出预设";
+    return;
+  }
+
+  // 导出模式切换：预设 / 手动
+  function syncExportMode() {
+    const manual = id("export_mode").value === "manual";
+    id("preset-field").classList.toggle("hidden", manual);
+    id("manual-fields").classList.toggle("hidden", !manual);
+  }
+  id("export_mode").addEventListener("change", syncExportMode);
+  syncExportMode();
+
+  // 手动编码切换：显示对应质量控件
+  function syncManualCodec() {
+    const codec = id("manual_codec").value;
+    id("prores-field").classList.toggle("hidden", codec !== "ProRes");
+    id("bitrate-row").classList.toggle("hidden", codec === "ProRes");
+    id("h264-quality-field").classList.toggle("hidden", codec !== "H.264");
+    id("h265-depth-field").classList.toggle("hidden", codec !== "H.265");
+  }
+  id("manual_codec").addEventListener("change", syncManualCodec);
+  syncManualCodec();
+
+  function buildStartBody() {
+    const payload = buildStartPayload(readForm());
+    const mode = id("export_mode").value;
+    if (mode === "preset") {
+      payload.export = null;
+      payload.preset = id("export_preset").value;
+    } else {
+      payload.export = buildExportConfig({
+        mode: "manual",
+        codec: id("manual_codec").value,
+        prores_profile: id("prores_profile").value,
+        bitrate_mbps: id("bitrate_mbps").value,
+        quality: id("h264_quality").value,
+        bit_depth: id("h265_bit_depth").value,
+      });
+    }
+    return payload;
+  }
+
   async function refreshStatus() {
     const status = await fetch(httpBase + "/pipeline/status").then((r) => r.json());
     renderBoard(status);
@@ -140,7 +194,7 @@ async function initPipeline(httpBase) {
     const res = await fetch(httpBase + "/pipeline/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildStartPayload(readForm())),
+      body: JSON.stringify(buildStartBody()),
     });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));

@@ -51,12 +51,54 @@
             </datalist>
           </div>
           <div class="field">
-            <label>编码</label>
-            <select id="codec">
-              <option value="ProRes">ProRes</option>
-              <option value="H.264">H.264</option>
-              <option value="H.265">H.265</option>
+            <label>导出模式</label>
+            <select id="export_mode">
+              <option value="preset">预设</option>
+              <option value="manual">手动</option>
             </select>
+          </div>
+        </div>
+        <div class="field" id="preset-field">
+          <label>导出预设</label>
+          <select id="export_preset"></select>
+        </div>
+
+        <div id="manual-fields" class="hidden">
+          <div class="field">
+            <label>编码</label>
+            <select id="manual_codec">
+              <option value="ProRes">ProRes (MOV)</option>
+              <option value="H.264">H.264 (MP4)</option>
+              <option value="H.265">H.265 (MP4)</option>
+            </select>
+          </div>
+          <div class="field" id="prores-field">
+            <label>ProRes 档位</label>
+            <select id="prores_profile">
+              <option>Proxy</option><option>LT</option><option>422</option>
+              <option selected>422 HQ</option><option>4444</option><option>4444 XQ</option>
+            </select>
+          </div>
+          <div class="row" id="bitrate-row">
+            <div class="field">
+              <label>目标码率 (Mbps)</label>
+              <input id="bitrate_mbps" type="number" min="1" max="500" value="80" />
+            </div>
+            <div class="field" id="h264-quality-field">
+              <label>质量档</label>
+              <select id="h264_quality">
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+            </div>
+            <div class="field hidden" id="h265-depth-field">
+              <label>位深</label>
+              <select id="h265_bit_depth">
+                <option value="8">8bit</option>
+                <option value="10" selected>10bit</option>
+              </select>
+            </div>
           </div>
         </div>
         <div class="field">

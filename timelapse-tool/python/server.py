@@ -24,6 +24,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 from pathlib import Path
+from typing import Optional
 
 from fastapi import HTTPException
 from pydantic import BaseModel
@@ -75,13 +76,22 @@ class StartBody(BaseModel):
     stabilize: bool
     resolution: list
     fps: int
-    export: dict
+    export: Optional[dict] = None
+    preset: Optional[str] = None
     output_path: str
 
 
 @app.post("/pipeline/start")
 def pipeline_start(body: StartBody):
-    config = PipelineConfig(**body.dict())
+    data = body.dict()
+    preset = data.pop("preset", None)
+    if data.get("export") is None and preset:
+        from pipeline.export_formats import expand_preset
+        try:
+            data["export"] = expand_preset(preset)
+        except KeyError:
+            raise HTTPException(status_code=400, detail=f"未知导出预设: {preset}")
+    config = PipelineConfig(**data)
     try:
         _runner.start(config)
     except ValueError as exc:
