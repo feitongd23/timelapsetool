@@ -1,3 +1,95 @@
+:root {
+  --bg-grad-1: #e8eef7;
+  --bg-grad-2: #f3e9f5;
+  --glass-bg: rgba(255, 255, 255, 0.45);
+  --glass-bg-strong: rgba(255, 255, 255, 0.62);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --glass-blur: 20px;
+  --accent: #007aff;
+  --accent-soft: rgba(0, 122, 255, 0.12);
+  --text: #1c1c1e;
+  --text-dim: #6b6b70;
+  --radius: 16px;
+  --radius-sm: 10px;
+}
+
+body {
+  background: linear-gradient(135deg, var(--bg-grad-1), var(--bg-grad-2));
+  background-attachment: fixed;
+  color: var(--text);
+}
+
+/* 液态玻璃卡片 */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+}
+
+/* 扁平玻璃输入 */
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.field label { font-size: 12px; color: var(--text-dim); letter-spacing: 0.02em; }
+.field input, .field select {
+  appearance: none;
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.field input:focus, .field select:focus { border-color: var(--accent); }
+
+.row { display: flex; gap: 14px; }
+.row > .field { flex: 1; }
+
+.switch-field { display: flex; align-items: center; justify-content: space-between; }
+
+/* 扁平玻璃按钮 */
+.btn {
+  appearance: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.08s, background 0.15s, opacity 0.15s;
+}
+.btn:active { transform: scale(0.98); }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-ghost { background: var(--accent-soft); color: var(--accent); }
+
+/* 阶段进度看板 */
+.board { display: flex; gap: 10px; margin-top: 20px; }
+.stage {
+  flex: 1;
+  padding: 14px;
+  text-align: center;
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  font-size: 13px;
+  color: var(--text-dim);
+  transition: all 0.2s;
+}
+.stage .stage-name { font-weight: 600; color: var(--text); font-size: 15px; }
+.stage .stage-hint { font-size: 11px; margin-top: 4px; }
+.stage.done { background: rgba(52, 199, 89, 0.16); border-color: rgba(52,199,89,0.4); }
+.stage.active { background: var(--accent-soft); border-color: var(--accent); }
+.stage.failed { background: rgba(255, 59, 48, 0.16); border-color: rgba(255,59,48,0.45); }
+
+.pipeline-form { padding: 22px; max-width: 560px; }
+.pipeline-actions { display: flex; gap: 12px; margin-top: 8px; }
+.hidden { display: none !important; }
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, sans-serif; color: #222; }
 .tabs { display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid #ddd; background: #fafafa; }
