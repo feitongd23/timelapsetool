@@ -7,7 +7,6 @@ function buildStartPayload(values) {
   return {
     raw_folder: values.raw_folder,
     camera_name: values.camera_name,
-    acr_preset_path: values.acr_preset_path,
     lrt_export_folder: values.lrt_export_folder,
     stabilize: Boolean(values.stabilize),
     resolution: [w, h],
@@ -41,6 +40,13 @@ function canContinue(status) {
   return status.state === "waiting_for_user";
 }
 
+// 「继续」按钮文案随当前手动阶段变化
+function continueLabel(status) {
+  if (status.current_stage === "BR") return "我已在 Camera Raw 完成，继续";
+  if (status.current_stage === "LRT") return "我已在 LRT 完成，继续";
+  return "继续";
+}
+
 // 应用阶段看板模型到 DOM
 function renderBoard(status) {
   const model = stageBoardModel(status);
@@ -55,7 +61,6 @@ function readForm() {
   return {
     raw_folder: id("raw_folder").value,
     camera_name: id("camera_name").value,
-    acr_preset_path: id("acr_preset_path").value,
     lrt_export_folder: id("lrt_export_folder").value,
     stabilize: id("stabilize").checked,
     resolution: id("resolution").value,
@@ -102,7 +107,9 @@ async function initPipeline(httpBase) {
   async function refreshStatus() {
     const status = await fetch(httpBase + "/pipeline/status").then((r) => r.json());
     renderBoard(status);
-    id("btn-continue").classList.toggle("hidden", !canContinue(status));
+    const contBtn = id("btn-continue");
+    contBtn.classList.toggle("hidden", !canContinue(status));
+    contBtn.textContent = continueLabel(status);
     if (status.state === "failed") errEl.textContent = "失败：" + (status.error || "");
     return status;
   }
@@ -141,5 +148,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { buildStartPayload, stageBoardModel, canContinue, STAGES };
+  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, STAGES };
 }

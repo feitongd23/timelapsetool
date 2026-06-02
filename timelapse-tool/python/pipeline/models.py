@@ -20,7 +20,6 @@ class PipelineState(str, Enum):
 class PipelineConfig:
     raw_folder: str
     camera_name: str
-    acr_preset_path: str
     lrt_export_folder: str
     stabilize: bool
     resolution: List[int]
@@ -31,8 +30,6 @@ class PipelineConfig:
     def validate(self):
         if not Path(self.raw_folder).is_dir():
             raise ValueError(f"RAW 文件夹不存在: {self.raw_folder}")
-        if not Path(self.acr_preset_path).is_file():
-            raise ValueError(f"Camera Raw 预设文件不存在: {self.acr_preset_path}")
         if not Path(self.lrt_export_folder).is_dir():
             raise ValueError(f"LRT 导出序列文件夹不存在: {self.lrt_export_folder}")
         if not Path(self.output_path).is_dir():

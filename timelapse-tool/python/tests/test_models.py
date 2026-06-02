@@ -5,13 +5,11 @@ from pipeline.models import PipelineConfig, PipelineState
 
 def _valid_kwargs(tmp_path):
     raw = tmp_path / "raw"; raw.mkdir()
-    preset = tmp_path / "preset.xmp"; preset.write_text("x")
     lrt = tmp_path / "seq"; lrt.mkdir()
     out = tmp_path / "out"; out.mkdir()
     return dict(
         raw_folder=str(raw),
         camera_name="Sony A7R IV",
-        acr_preset_path=str(preset),
         lrt_export_folder=str(lrt),
         stabilize=True,
         resolution=[3840, 2160],

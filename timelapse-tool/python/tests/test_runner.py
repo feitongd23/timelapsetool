@@ -7,13 +7,12 @@ from pipeline.stages import Stage, LRTStage
 
 def _cfg(tmp_path, with_seq_image=False):
     raw = tmp_path / "raw"; raw.mkdir()
-    preset = tmp_path / "p.xmp"; preset.write_text("x")
     lrt = tmp_path / "seq"; lrt.mkdir()
     out = tmp_path / "out"; out.mkdir()
     if with_seq_image:
         (lrt / "0001.tif").write_text("img")
     return PipelineConfig(
-        raw_folder=str(raw), camera_name="Cam", acr_preset_path=str(preset),
+        raw_folder=str(raw), camera_name="Cam",
         lrt_export_folder=str(lrt), stabilize=False, resolution=[3840, 2160],
         fps=24, codec="ProRes", output_path=str(out),
     )
@@ -30,32 +29,55 @@ class RecordingStage(Stage):
         emit(f"{self.name} ran")
 
 
-def test_start_pauses_at_manual_stage(tmp_path):
-    stages = [RecordingStage("BR"), RecordingStage("LRT", manual=True),
-              RecordingStage("AE"), RecordingStage("PR")]
+def test_start_pauses_at_first_manual_stage(tmp_path):
+    stages = [RecordingStage("BR", manual=True), RecordingStage("AE")]
     runner = PipelineRunner(stages=stages, emit=lambda m: None)
     runner.start(_cfg(tmp_path))
     assert runner.status()["state"] == PipelineState.WAITING_FOR_USER
-    assert stages[0].ran is True
-    assert stages[2].ran is False
+    assert runner.status()["current_stage"] == "BR"
+    assert stages[1].ran is False  # AE 还没跑
 
 
-def test_continue_requires_sequence_images(tmp_path):
-    stages = [RecordingStage("LRT", manual=True), RecordingStage("AE")]
+def test_two_manual_stages_pause_twice(tmp_path):
+    stages = [RecordingStage("BR", manual=True), RecordingStage("LRT", manual=True),
+              RecordingStage("AE")]
+    runner = PipelineRunner(stages=stages, emit=lambda m: None)
+    runner.start(_cfg(tmp_path))
+    assert runner.status()["current_stage"] == "BR"
+
+    runner.continue_()  # 离开 BR，停在 LRT
+    assert runner.status()["state"] == PipelineState.WAITING_FOR_USER
+    assert runner.status()["current_stage"] == "LRT"
+    assert "BR" in runner.status()["completed"]
+
+    runner.continue_()  # 离开 LRT，跑完 AE
+    assert runner.status()["state"] == PipelineState.DONE
+    assert stages[2].ran is True
+
+
+def test_lrt_resume_requires_sequence(tmp_path):
+    stages = [LRTStage(), RecordingStage("AE")]
     runner = PipelineRunner(stages=stages, emit=lambda m: None)
     runner.start(_cfg(tmp_path, with_seq_image=False))
     with pytest.raises(ValueError, match="序列"):
         runner.continue_()
 
 
-def test_continue_finishes_pipeline(tmp_path):
-    stages = [RecordingStage("BR"), RecordingStage("LRT", manual=True),
-              RecordingStage("AE"), RecordingStage("PR")]
+def test_lrt_resume_passes_with_sequence(tmp_path):
+    stages = [LRTStage(), RecordingStage("AE")]
     runner = PipelineRunner(stages=stages, emit=lambda m: None)
     runner.start(_cfg(tmp_path, with_seq_image=True))
     runner.continue_()
     assert runner.status()["state"] == PipelineState.DONE
-    assert all(s.ran for s in stages)
+
+
+def test_manual_stage_without_resume_guard_continues(tmp_path):
+    # BR（RecordingStage 默认 validate_resume 无校验）可直接继续，无需序列
+    stages = [RecordingStage("BR", manual=True), RecordingStage("AE")]
+    runner = PipelineRunner(stages=stages, emit=lambda m: None)
+    runner.start(_cfg(tmp_path, with_seq_image=False))
+    runner.continue_()
+    assert runner.status()["state"] == PipelineState.DONE
 
 
 def test_failure_sets_failed_state(tmp_path):
@@ -65,9 +87,9 @@ def test_failure_sets_failed_state(tmp_path):
         def run(self, config, emit):
             raise RuntimeError("炸了")
 
-    stages = [RecordingStage("LRT", manual=True), Boom()]
+    stages = [RecordingStage("BR", manual=True), Boom()]
     runner = PipelineRunner(stages=stages, emit=lambda m: None)
-    runner.start(_cfg(tmp_path, with_seq_image=True))
+    runner.start(_cfg(tmp_path))
     runner.continue_()
     st = runner.status()
     assert st["state"] == PipelineState.FAILED
@@ -77,7 +99,7 @@ def test_failure_sets_failed_state(tmp_path):
 
 def test_invalid_config_fails_fast(tmp_path):
     cfg = _cfg(tmp_path)
-    cfg.fps = 99
-    runner = PipelineRunner(stages=[RecordingStage("BR")], emit=lambda m: None)
+    cfg.fps = 0
+    runner = PipelineRunner(stages=[RecordingStage("BR", manual=True)], emit=lambda m: None)
     with pytest.raises(ValueError, match="帧率"):
         runner.start(cfg)

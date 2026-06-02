@@ -70,7 +70,6 @@ def add_camera(body: AddCameraBody):
 class StartBody(BaseModel):
     raw_folder: str
     camera_name: str
-    acr_preset_path: str
     lrt_export_folder: str
     stabilize: bool
     resolution: list

@@ -1,10 +1,9 @@
-const { buildStartPayload, stageBoardModel, canContinue } = require("../electron/renderer/pipeline.js");
+const { buildStartPayload, stageBoardModel, canContinue, continueLabel } = require("../electron/renderer/pipeline.js");
 
 test("buildStartPayload 转换类型", () => {
   const payload = buildStartPayload({
     raw_folder: "/raw",
     camera_name: "Sony A7R IV",
-    acr_preset_path: "/p.xmp",
     lrt_export_folder: "/seq",
     stabilize: true,
     resolution: "3840x2160",
@@ -16,6 +15,12 @@ test("buildStartPayload 转换类型", () => {
   expect(payload.resolution).toEqual([3840, 2160]);
   expect(payload.stabilize).toBe(true);
   expect(payload.raw_folder).toBe("/raw");
+  expect(payload).not.toHaveProperty("acr_preset_path");
+});
+
+test("continueLabel 随手动阶段变化", () => {
+  expect(continueLabel({ current_stage: "BR" })).toBe("我已在 Camera Raw 完成，继续");
+  expect(continueLabel({ current_stage: "LRT" })).toBe("我已在 LRT 完成，继续");
 });
 
 test("stageBoardModel 标记已完成/进行中阶段", () => {

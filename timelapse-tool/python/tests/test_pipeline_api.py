@@ -26,23 +26,27 @@ def test_get_resolutions_unknown_camera_404():
     assert r.status_code == 404
 
 
-def test_pipeline_start_then_status_then_continue(tmp_path):
+def test_pipeline_start_two_pauses_then_done(tmp_path):
     raw = tmp_path / "raw"; raw.mkdir()
-    preset = tmp_path / "p.xmp"; preset.write_text("x")
     lrt = tmp_path / "seq"; lrt.mkdir(); (lrt / "0001.tif").write_text("i")
     out = tmp_path / "out"; out.mkdir()
     body = dict(
-        raw_folder=str(raw), camera_name="Sony A7R IV", acr_preset_path=str(preset),
+        raw_folder=str(raw), camera_name="Sony A7R IV",
         lrt_export_folder=str(lrt), stabilize=False, resolution=[3840, 2160],
         fps=24, codec="ProRes", output_path=str(out),
     )
+    # start → 停在 BR（手动）
     r = client.post("/pipeline/start", json=body)
     assert r.status_code == 200
     assert r.json()["state"] == "waiting_for_user"
+    assert r.json()["current_stage"] == "BR"
 
-    r2 = client.get("/pipeline/status")
+    # continue → 停在 LRT（手动）
+    r2 = client.post("/pipeline/continue")
     assert r2.json()["state"] == "waiting_for_user"
+    assert r2.json()["current_stage"] == "LRT"
 
+    # continue → 跑完 AE/PR
     r3 = client.post("/pipeline/continue")
     assert r3.status_code == 200
     assert r3.json()["state"] == "done"
@@ -50,11 +54,10 @@ def test_pipeline_start_then_status_then_continue(tmp_path):
 
 def test_pipeline_start_bad_fps_400(tmp_path):
     raw = tmp_path / "raw"; raw.mkdir()
-    preset = tmp_path / "p.xmp"; preset.write_text("x")
     lrt = tmp_path / "seq"; lrt.mkdir()
     out = tmp_path / "out"; out.mkdir()
     body = dict(
-        raw_folder=str(raw), camera_name="Sony A7R IV", acr_preset_path=str(preset),
+        raw_folder=str(raw), camera_name="Sony A7R IV",
         lrt_export_folder=str(lrt), stabilize=False, resolution=[3840, 2160],
         fps=0, codec="ProRes", output_path=str(out),
     )

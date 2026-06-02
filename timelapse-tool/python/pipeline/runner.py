@@ -1,12 +1,12 @@
-from pathlib import Path
-
 from pipeline.models import PipelineState
-
-SEQUENCE_EXTS = {".tif", ".tiff", ".jpg", ".jpeg", ".png"}
 
 
 class PipelineRunner:
-    """按状态机顺序驱动阶段；遇到手动阶段暂停，等 continue_ 恢复。"""
+    """按状态机顺序驱动阶段；遇到手动阶段暂停，等 continue_ 恢复。
+
+    支持多个手动阶段：每遇到一个 manual 阶段就暂停，continue_ 恢复后继续到
+    下一个手动阶段或结束。
+    """
 
     def __init__(self, stages, emit):
         self._stages = stages
@@ -39,16 +39,14 @@ class PipelineRunner:
     def continue_(self):
         if self._state != PipelineState.WAITING_FOR_USER:
             raise RuntimeError("当前不处于等待用户状态")
-        self._check_sequence_ready()
+        # 校验当前暂停的手动阶段是否满足恢复条件（如 LRT 需已导出序列）
+        paused_stage = self._stages[self._index]
+        paused_stage.validate_resume(self._config)
+        # 手动阶段视为完成，继续后续阶段
+        self._completed.append(paused_stage.name)
         self._state = PipelineState.RUNNING
         self._index += 1
         self._run_until_pause_or_done()
-
-    def _check_sequence_ready(self):
-        folder = Path(self._config.lrt_export_folder)
-        has_image = any(p.suffix.lower() in SEQUENCE_EXTS for p in folder.iterdir())
-        if not has_image:
-            raise ValueError("LRT 导出文件夹里没有图像序列，请先在 LRTimelapse 中导出")
 
     def _run_until_pause_or_done(self):
         while self._index < len(self._stages):
