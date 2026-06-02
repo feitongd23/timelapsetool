@@ -28,9 +28,11 @@ def test_get_resolutions_unknown_camera_404():
 
 def test_pipeline_start_two_pauses_then_done(tmp_path, monkeypatch):
     # AE 阶段会真的启动 After Effects，测试里 mock 掉，只验流程
-    from pipeline import ae
+    from pipeline import ae, pr
     monkeypatch.setattr(ae, "render_sequence",
                         lambda seq_folder, output_dir, fps, emit, **kw: emit("AE mock"))
+    monkeypatch.setattr(pr, "render_final",
+                        lambda intermediate_video, output_dir, export, emit, **kw: emit("PR mock"))
     raw = tmp_path / "raw"; raw.mkdir()
     lrt = tmp_path / "seq"; lrt.mkdir(); (lrt / "0001.tif").write_text("i")
     out = tmp_path / "out"; out.mkdir()

@@ -67,8 +67,14 @@ class PRStage(Stage):
     manual = False
 
     def run(self, config, emit):
-        # 桩：真实实现（Premiere 导出）由后续计划替换
-        emit("PR 阶段（桩）：导入、增稳、按规格导出成片")
+        from pipeline import ae, pr
+        intermediate = ae.intermediate_path(config.output_path)
+        pr.render_final(
+            intermediate_video=str(intermediate),
+            output_dir=config.output_path,
+            export=config.export,
+            emit=emit,
+        )
 
 
 def default_stages():

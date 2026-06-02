@@ -63,7 +63,23 @@ def test_ae_stage_delegates_to_render(monkeypatch, tmp_path):
     assert any("AE" in m for m in msgs)
 
 
-def test_pr_stage_emits_progress():
+def test_pr_stage_delegates_to_render(monkeypatch, tmp_path):
+    from pipeline import pr
+    called = {}
+
+    def fake_render(intermediate_video, output_dir, export, emit, **kwargs):
+        called["out"] = output_dir
+        called["export"] = export
+        emit("PR done")
+
+    monkeypatch.setattr(pr, "render_final", fake_render)
+
+    class Cfg:
+        output_path = str(tmp_path / "out")
+        export = {"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"}
+
     msgs = []
-    PRStage().run(config=None, emit=msgs.append)
+    PRStage().run(Cfg(), msgs.append)
+    assert called["out"] == str(tmp_path / "out")
+    assert called["export"]["codec"] == "ProRes"
     assert any("PR" in m for m in msgs)
