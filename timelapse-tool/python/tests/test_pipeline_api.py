@@ -56,7 +56,7 @@ def test_pipeline_start_bad_fps_400(tmp_path):
     body = dict(
         raw_folder=str(raw), camera_name="Sony A7R IV", acr_preset_path=str(preset),
         lrt_export_folder=str(lrt), stabilize=False, resolution=[3840, 2160],
-        fps=99, codec="ProRes", output_path=str(out),
+        fps=0, codec="ProRes", output_path=str(out),
     )
     r = client.post("/pipeline/start", json=body)
     assert r.status_code == 400

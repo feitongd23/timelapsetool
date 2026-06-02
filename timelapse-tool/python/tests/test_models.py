@@ -35,9 +35,22 @@ def test_missing_raw_folder_fails(tmp_path):
 
 def test_bad_fps_fails(tmp_path):
     kwargs = _valid_kwargs(tmp_path)
-    kwargs["fps"] = 99
+    kwargs["fps"] = 0
     with pytest.raises(ValueError, match="帧率"):
         PipelineConfig(**kwargs).validate()
+
+
+def test_fps_above_range_fails(tmp_path):
+    kwargs = _valid_kwargs(tmp_path)
+    kwargs["fps"] = 240
+    with pytest.raises(ValueError, match="帧率"):
+        PipelineConfig(**kwargs).validate()
+
+
+def test_custom_fps_in_range_passes(tmp_path):
+    kwargs = _valid_kwargs(tmp_path)
+    kwargs["fps"] = 48  # 非预设但合法
+    PipelineConfig(**kwargs).validate()
 
 
 def test_bad_codec_fails(tmp_path):

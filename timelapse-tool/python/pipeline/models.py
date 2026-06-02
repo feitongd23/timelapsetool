@@ -3,7 +3,8 @@ from enum import Enum
 from pathlib import Path
 from typing import List
 
-ALLOWED_FPS = {24, 25, 30, 60}
+# 帧率允许自由输入，只校验合理范围（含常用 12/15/24/25/30/48/50/60/90/120）
+MIN_FPS, MAX_FPS = 1, 120
 ALLOWED_CODECS = {"H.264", "H.265", "ProRes"}
 
 
@@ -36,8 +37,8 @@ class PipelineConfig:
             raise ValueError(f"LRT 导出序列文件夹不存在: {self.lrt_export_folder}")
         if not Path(self.output_path).is_dir():
             raise ValueError(f"输出路径不存在: {self.output_path}")
-        if self.fps not in ALLOWED_FPS:
-            raise ValueError(f"帧率不支持: {self.fps}")
+        if not (MIN_FPS <= self.fps <= MAX_FPS):
+            raise ValueError(f"帧率不支持: {self.fps}（应在 {MIN_FPS}-{MAX_FPS}）")
         if self.codec not in ALLOWED_CODECS:
             raise ValueError(f"编码不支持: {self.codec}")
         if not (isinstance(self.resolution, list) and len(self.resolution) == 2):

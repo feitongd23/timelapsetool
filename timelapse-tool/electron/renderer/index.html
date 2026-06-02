@@ -39,13 +39,20 @@
         </div>
         <div class="row">
           <div class="field">
-            <label>帧率</label>
-            <select id="fps">
-              <option value="24">24</option>
-              <option value="25">25</option>
-              <option value="30">30</option>
-              <option value="60">60</option>
-            </select>
+            <label>帧率 fps（选预设或自填 1–120）</label>
+            <input id="fps" type="number" min="1" max="120" step="1" value="24" list="fps-presets" />
+            <datalist id="fps-presets">
+              <option value="12"></option>
+              <option value="15"></option>
+              <option value="24"></option>
+              <option value="25"></option>
+              <option value="30"></option>
+              <option value="48"></option>
+              <option value="50"></option>
+              <option value="60"></option>
+              <option value="90"></option>
+              <option value="120"></option>
+            </datalist>
           </div>
           <div class="field">
             <label>编码</label>
