@@ -21,6 +21,31 @@
   --field-h: 42px;
 }
 
+/* 跟随系统的暗色模式 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-grad-1: #1c1f2b;
+    --bg-grad-2: #241f2b;
+    --bg-grad-3: #1b2422;
+    --glass-bg: rgba(58, 60, 74, 0.45);
+    --glass-bg-strong: rgba(72, 74, 90, 0.6);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    --accent: #0a84ff;
+    --accent-soft: rgba(10, 132, 255, 0.22);
+    --ok: #30d158;
+    --err: #ff453a;
+    --text: #f2f2f7;
+    --text-dim: #a0a0aa;
+  }
+  /* 下拉箭头改用浅色，避免暗底看不见 */
+  .field select {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%23a0a0aa' d='M1 1l5 5 5-5'/></svg>");
+  }
+  .tab:hover { background: rgba(255, 255, 255, 0.1); }
+  .stage.done .stage-name { color: #5fe084; }
+}
+
 html, body { height: 100%; }
 
 body {
