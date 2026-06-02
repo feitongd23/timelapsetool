@@ -24,11 +24,16 @@ class Stage:
 
 class BRStage(Stage):
     name = "BR"
-    manual = True  # 手动阶段：工具开 Bridge+全选+调出 ACR，用户手动调
+    manual = True  # 手动阶段：工具开 Bridge 指向文件夹，用户全选+⌘R 进 ACR 手调
 
     def run(self, config, emit):
-        # 真实实现（Bridge 打开文件夹/全选/调出 Camera Raw）由后续计划替换
-        emit("BR 阶段：在 Adobe Bridge 中打开 RAW 文件夹并全选，进入 Camera Raw 手动调整透视/镜头配置/色差")
+        from pipeline import launcher
+        emit("BR 阶段：正在打开 Adobe Bridge…")
+        try:
+            launcher.open_in_app(launcher.BRIDGE_APP, config.raw_folder)
+            emit("BR 阶段：Bridge 已打开 RAW 文件夹，请全选并按 ⌘R 进 Camera Raw 调整透视/镜头配置/色差，完成后点继续")
+        except Exception as exc:
+            emit(f"BR 阶段：无法自动打开 Bridge（{exc}），请手动打开 {config.raw_folder} 调整后点继续")
 
 
 class LRTStage(Stage):
@@ -36,8 +41,13 @@ class LRTStage(Stage):
     manual = True  # 手动阶段：runner 跑到这里会暂停等用户
 
     def run(self, config, emit):
-        # 打开 LRT 的逻辑由后续计划补充
-        emit("LRT 阶段：请在 LRTimelapse 中手动完成关键帧/去闪/导出序列")
+        from pipeline import launcher
+        emit("LRT 阶段：正在打开 LRTimelapse…")
+        try:
+            launcher.open_in_app(launcher.LRT_APP, config.raw_folder)
+            emit("LRT 阶段：请在 LRTimelapse 中完成关键帧/去闪/自动过渡，导出图像序列到指定文件夹后点继续")
+        except Exception as exc:
+            emit(f"LRT 阶段：无法自动打开 LRTimelapse（{exc}），请手动打开 {config.raw_folder} 操作后点继续")
 
     def validate_resume(self, config):
         # 恢复前校验：LRT 导出文件夹必须已有图像序列

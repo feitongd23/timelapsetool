@@ -19,7 +19,8 @@ def test_br_and_lrt_are_manual():
 
 def test_br_stage_emits_progress():
     messages = []
-    BRStage().run(config=None, emit=messages.append)
+    cfg = SimpleNamespace(raw_folder="/tmp/raw")
+    BRStage().run(cfg, emit=messages.append)
     assert any("BR" in m for m in messages)
 
 
