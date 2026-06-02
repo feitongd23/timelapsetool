@@ -32,6 +32,7 @@ from pipeline.cameras import CameraStore
 from pipeline.models import PipelineConfig
 from pipeline.runner import PipelineRunner
 from pipeline.stages import default_stages
+from pipeline.export_formats import PRESETS
 
 _CAMERAS_PATH = Path(__file__).parent / "cameras.json"
 _camera_store = CameraStore(_CAMERAS_PATH)
@@ -74,7 +75,7 @@ class StartBody(BaseModel):
     stabilize: bool
     resolution: list
     fps: int
-    codec: str
+    export: dict
     output_path: str
 
 
@@ -102,6 +103,11 @@ def pipeline_continue():
 @app.get("/pipeline/status")
 def pipeline_status():
     return _runner.status()
+
+
+@app.get("/export/presets")
+def get_export_presets():
+    return {"presets": list(PRESETS.keys())}
 
 
 if __name__ == "__main__":

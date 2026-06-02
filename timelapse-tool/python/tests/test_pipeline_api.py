@@ -33,7 +33,7 @@ def test_pipeline_start_two_pauses_then_done(tmp_path):
     body = dict(
         raw_folder=str(raw), camera_name="Sony A7R IV",
         lrt_export_folder=str(lrt), stabilize=False, resolution=[3840, 2160],
-        fps=24, codec="ProRes", output_path=str(out),
+        fps=24, export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"}, output_path=str(out),
     )
     # start → 停在 BR（手动）
     r = client.post("/pipeline/start", json=body)
@@ -59,7 +59,7 @@ def test_pipeline_start_bad_fps_400(tmp_path):
     body = dict(
         raw_folder=str(raw), camera_name="Sony A7R IV",
         lrt_export_folder=str(lrt), stabilize=False, resolution=[3840, 2160],
-        fps=0, codec="ProRes", output_path=str(out),
+        fps=0, export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"}, output_path=str(out),
     )
     r = client.post("/pipeline/start", json=body)
     assert r.status_code == 400
@@ -75,3 +75,11 @@ def test_add_camera_then_listed(tmp_path, monkeypatch):
     assert r.status_code == 201
     names = [c["name"] for c in client.get("/cameras").json()["cameras"]]
     assert "Test Cam X" in names
+
+
+def test_get_export_presets():
+    r = client.get("/export/presets")
+    assert r.status_code == 200
+    names = r.json()["presets"]
+    assert "母版 · ProRes 422 HQ" in names
+    assert "社媒 · H.264 高质量" in names
