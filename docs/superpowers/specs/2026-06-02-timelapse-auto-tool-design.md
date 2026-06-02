@@ -65,13 +65,14 @@
 
 ### 4.1 延时流水线控制面板
 
+> **重要架构决定（2026-06-02 修订）**：LRTimelapse 6 没有任何命令行/脚本接口，关键帧向导、去闪烁、自动过渡、导出序列全部是图形界面操作，无法可靠自动化。因此 **LRT 阶段全程由用户手动操作**，工具只自动化前后两端（BR 预处理、AE 渲染、PR 导出）。原设计中的「关键帧数量/去闪幅度/去闪遍数」参数由用户在 LRT 内手动设置，工具不再提供这些控件。
+
 | 参数 | 控件类型 | 说明 |
 |------|----------|------|
 | RAW 文件夹 | 路径选择器 | 输入素材 |
 | 相机机型 | 下拉（可自定义添加） | 决定可选导出分辨率 |
-| 关键帧数量 | 数字输入 (1-20) | LRT 关键帧向导参数，默认 3 |
-| 去闪幅度 | 滑块 (0-100) | LRT deflicker strength |
-| 去闪遍数 | 数字输入 (1-5) | LRT deflicker passes |
+| Camera Raw 预设 | 文件选择器 (.xmp) | BR 阶段批量套用到全部 RAW |
+| LRT 导出序列文件夹 | 路径选择器 | 用户在 LRT 里导出图像序列的目标文件夹，工具据此接管 AE |
 | PR 增稳 | 开关 | Premiere Warp Stabilizer |
 | 分辨率 | 下拉（随机型动态填充） | 导出规格 |
 | 帧率 | 下拉 (24/25/30/60fps) | 导出规格 |
@@ -79,9 +80,19 @@
 | 输出路径 | 路径选择器 | 成片保存位置 |
 
 **交互流程**：
-1. 用户选择 RAW 文件夹并配置参数 → 工具自动完成 BR 预处理
-2. **暂停点**：工具自动打开 LRTimelapse，用户手动调关键帧参数，调完点"继续"
-3. 工具接管：自动去闪烁（指定幅度 × 遍数）→ aerender 渲染图像序列 → PR 合成导出
+1. 用户选择 RAW 文件夹并配置参数 → **[BR 自动]** 工具用 Bridge 脚本把指定 Camera Raw 预设批量套用到全部 RAW
+2. **[LRT 手动]** 工具自动打开 LRTimelapse 并显示操作清单 → 用户手动完成关键帧、去闪烁、自动过渡、导出图像序列到指定文件夹 → 点"继续"
+3. **[AE 自动]** 工具用 ExtendScript 新建 AE 工程、导入图像序列、建合成、加入渲染队列 → `aerender` 渲染为中间视频（ProRes）
+4. **[PR 自动]** 工具用 ExtendScript 把中间视频导入 Premiere → 可选 Warp Stabilizer 增稳 → 按规格导出成片
+
+**各软件自动化能力（探测结论）**：
+
+| 阶段 | 软件 | 自动化方式 |
+|------|------|-----------|
+| BR | Adobe Bridge 2026 + Camera Raw | ExtendScript 批量套预设 |
+| LRT | LRTimelapse 6 | ❌ 无 CLI，全程手动 |
+| AE | After Effects 2026 | ExtendScript 建工程 + `aerender` 命令行渲染 |
+| PR | Premiere Pro 2026 | ExtendScript 导入/增稳/导出 |
 
 ### 4.2 相机机型与分辨率
 
@@ -127,20 +138,18 @@
 ```
 RAW 文件夹
     │
-    ▼ [BR 阶段] Python 调用 Bridge/ACR 批处理
-    │  输出：处理后的 RAW/DNG 文件
+    ▼ [BR 阶段 - 自动] Python 调 Bridge ExtendScript
+    │  批量把指定 Camera Raw 预设套用到全部 RAW
     │
-    ▼ [LRT 阶段 - 上半段] Python 写入关键帧参数到 XMP
-    │  → 打开 LRTimelapse，等待用户调参 → 用户点"继续"
+    ▼ [LRT 阶段 - 手动] Python 打开 LRTimelapse + 显示操作清单
+    │  用户手动：关键帧 → 去闪 → 自动过渡 → 导出图像序列到指定文件夹
+    │  用户点"继续"（工具校验序列文件夹已有图片）
     │
-    ▼ [LRT 阶段 - 下半段] Python 调用 LRT CLI
-    │  去闪烁（幅度 × 遍数） → 导出图像序列（TIFF/JPG）
+    ▼ [AE 阶段 - 自动] Python 生成 ExtendScript 建工程并加入渲染队列
+    │  → aerender 命令行渲染：图像序列 → 中间视频（ProRes）
     │
-    ▼ [AE 阶段] aerender 后台渲染
-    │  图像序列 → 中间视频（ProRes/DNxHD）
-    │
-    ▼ [PR 阶段] Premiere ExtendScript
-    │  导入 → 可选增稳 → 设置导出规格 → 输出成片
+    ▼ [PR 阶段 - 自动] Python 生成 Premiere ExtendScript
+    │  导入中间视频 → 可选 Warp Stabilizer 增稳 → 按规格导出
     │
     最终 MP4/MOV 文件
 ```
