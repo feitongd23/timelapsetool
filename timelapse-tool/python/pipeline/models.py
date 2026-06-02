@@ -3,9 +3,10 @@ from enum import Enum
 from pathlib import Path
 from typing import List
 
+from pipeline.export_formats import validate_export
+
 # 帧率允许自由输入，只校验合理范围（含常用 12/15/24/25/30/48/50/60/90/120）
 MIN_FPS, MAX_FPS = 1, 120
-ALLOWED_CODECS = {"H.264", "H.265", "ProRes"}
 
 
 class PipelineState(str, Enum):
@@ -24,7 +25,7 @@ class PipelineConfig:
     stabilize: bool
     resolution: List[int]
     fps: int
-    codec: str
+    export: dict
     output_path: str
 
     def validate(self):
@@ -36,7 +37,6 @@ class PipelineConfig:
             raise ValueError(f"输出路径不存在: {self.output_path}")
         if not (MIN_FPS <= self.fps <= MAX_FPS):
             raise ValueError(f"帧率不支持: {self.fps}（应在 {MIN_FPS}-{MAX_FPS}）")
-        if self.codec not in ALLOWED_CODECS:
-            raise ValueError(f"编码不支持: {self.codec}")
+        validate_export(self.export)
         if not (isinstance(self.resolution, list) and len(self.resolution) == 2):
             raise ValueError("分辨率必须是 [宽, 高]")

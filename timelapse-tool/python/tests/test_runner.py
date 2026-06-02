@@ -14,7 +14,7 @@ def _cfg(tmp_path, with_seq_image=False):
     return PipelineConfig(
         raw_folder=str(raw), camera_name="Cam",
         lrt_export_folder=str(lrt), stabilize=False, resolution=[3840, 2160],
-        fps=24, codec="ProRes", output_path=str(out),
+        fps=24, export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"}, output_path=str(out),
     )
 
 

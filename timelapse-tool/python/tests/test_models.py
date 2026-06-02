@@ -14,7 +14,7 @@ def _valid_kwargs(tmp_path):
         stabilize=True,
         resolution=[3840, 2160],
         fps=24,
-        codec="ProRes",
+        export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"},
         output_path=str(out),
     )
 
@@ -51,11 +51,17 @@ def test_custom_fps_in_range_passes(tmp_path):
     PipelineConfig(**kwargs).validate()
 
 
-def test_bad_codec_fails(tmp_path):
+def test_bad_export_fails(tmp_path):
     kwargs = _valid_kwargs(tmp_path)
-    kwargs["codec"] = "WMV"
+    kwargs["export"] = {"codec": "WMV", "container": "MP4"}
     with pytest.raises(ValueError, match="编码"):
         PipelineConfig(**kwargs).validate()
+
+
+def test_valid_h265_export_passes(tmp_path):
+    kwargs = _valid_kwargs(tmp_path)
+    kwargs["export"] = {"codec": "H.265", "container": "MP4", "bitrate_mbps": 60, "bit_depth": 10}
+    PipelineConfig(**kwargs).validate()
 
 
 def test_states_exist():
