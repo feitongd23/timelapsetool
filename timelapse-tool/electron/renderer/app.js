@@ -42,12 +42,12 @@ if (typeof window !== "undefined" && window.backend) {
     if (ok) {
       const ws = new WebSocket(window.backend.wsUrl);
       ws.onopen = () => ws.send(JSON.stringify({ type: "ping" }));
+      // 确认后端就绪后再加载相机列表，避免与后端启动竞速
+      if (typeof window.initPipeline === "function") {
+        window.initPipeline(window.backend.httpBase);
+      }
     }
   });
-
-  if (typeof window.initPipeline === "function") {
-    window.initPipeline(window.backend.httpBase);
-  }
 }
 
 if (typeof module !== "undefined") {
