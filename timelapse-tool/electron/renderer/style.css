@@ -1,103 +1,200 @@
+/* ============ 基础重置 ============ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
 :root {
-  --bg-grad-1: #e8eef7;
-  --bg-grad-2: #f3e9f5;
-  --glass-bg: rgba(255, 255, 255, 0.45);
-  --glass-bg-strong: rgba(255, 255, 255, 0.62);
-  --glass-border: rgba(255, 255, 255, 0.6);
-  --glass-blur: 20px;
+  --bg-grad-1: #e9eef9;
+  --bg-grad-2: #f4ecf6;
+  --bg-grad-3: #eef4f1;
+  --glass-bg: rgba(255, 255, 255, 0.5);
+  --glass-bg-strong: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --glass-shadow: 0 8px 32px rgba(31, 38, 96, 0.08);
+  --glass-blur: 22px;
   --accent: #007aff;
   --accent-soft: rgba(0, 122, 255, 0.12);
+  --ok: #34c759;
+  --err: #ff3b30;
   --text: #1c1c1e;
-  --text-dim: #6b6b70;
-  --radius: 16px;
-  --radius-sm: 10px;
+  --text-dim: #6e6e76;
+  --radius: 18px;
+  --radius-sm: 11px;
+  --field-h: 42px;
 }
+
+html, body { height: 100%; }
 
 body {
-  background: linear-gradient(135deg, var(--bg-grad-1), var(--bg-grad-2));
-  background-attachment: fixed;
+  font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
   color: var(--text);
+  background: linear-gradient(135deg, var(--bg-grad-1), var(--bg-grad-2) 55%, var(--bg-grad-3));
+  background-attachment: fixed;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
 }
 
-/* 液态玻璃卡片 */
+/* ============ 顶部 Tab 栏（玻璃） ============ */
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 20px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  border-bottom: 1px solid var(--glass-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.tab {
+  padding: 8px 18px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-dim);
+  border-radius: 10px;
+  transition: background 0.15s, color 0.15s;
+}
+.tab:hover { background: rgba(255, 255, 255, 0.5); color: var(--text); }
+.tab.active { background: var(--accent); color: #fff; }
+.status { margin-left: auto; font-size: 12px; color: var(--text-dim); }
+.status.ok { color: var(--ok); }
+.status.err { color: var(--err); }
+
+/* ============ 面板布局 ============ */
+.panel { display: none; }
+.panel.active {
+  display: block;
+  padding: 28px 20px 48px;
+  overflow-y: auto;
+}
+/* 表单与看板共用一个居中容器，宽度一致 */
+.pipeline-wrap {
+  max-width: 600px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+h1 { font-size: 22px; font-weight: 600; margin-bottom: 20px; letter-spacing: -0.01em; }
+
+/* ============ 玻璃卡片 ============ */
 .glass {
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
+  box-shadow: var(--glass-shadow);
 }
+.pipeline-form { padding: 26px; }
 
-/* 扁平玻璃输入 */
-.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-.field label { font-size: 12px; color: var(--text-dim); letter-spacing: 0.02em; }
+/* ============ 表单字段 ============ */
+.field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 18px; }
+.field:last-child { margin-bottom: 0; }
+.field label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .field input, .field select {
   appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: var(--field-h);
   background: var(--glass-bg-strong);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  padding: 0 13px;
   font-size: 14px;
   color: var(--text);
   outline: none;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.field input:focus, .field select:focus { border-color: var(--accent); }
+/* 下拉箭头 */
+.field select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%236e6e76' d='M1 1l5 5 5-5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 13px center;
+  padding-right: 32px;
+}
+.field input:focus, .field select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 
-.row { display: flex; gap: 14px; }
-.row > .field { flex: 1; }
+/* 同一行的多个字段：底部对齐，输入框始终在同一水平线 */
+.row { display: flex; gap: 14px; align-items: flex-end; }
+.row > .field { flex: 1; margin-bottom: 18px; }
 
-.switch-field { display: flex; align-items: center; justify-content: space-between; }
+/* 开关行 */
+.switch-field {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.switch-field label { white-space: normal; }
+.switch-field input[type="checkbox"] {
+  width: 46px; height: 28px; flex: 0 0 46px;
+  border-radius: 14px; position: relative; cursor: pointer;
+  background: rgba(120,120,128,0.22); border: none; transition: background 0.2s;
+}
+.switch-field input[type="checkbox"]::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 24px; height: 24px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: transform 0.2s;
+}
+.switch-field input[type="checkbox"]:checked { background: var(--accent); }
+.switch-field input[type="checkbox"]:checked::after { transform: translateX(18px); }
 
-/* 扁平玻璃按钮 */
+/* ============ 按钮 ============ */
+.pipeline-actions { display: flex; gap: 12px; margin-top: 22px; }
 .btn {
   appearance: none;
   border: none;
   border-radius: var(--radius-sm);
-  padding: 12px 20px;
+  padding: 0 22px;
+  height: var(--field-h);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.08s, background 0.15s, opacity 0.15s;
+  transition: transform 0.08s, filter 0.15s, opacity 0.15s;
 }
+.btn:hover { filter: brightness(1.05); }
 .btn:active { transform: scale(0.98); }
-.btn-primary { background: var(--accent); color: #fff; }
-.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: #fff; box-shadow: 0 4px 14px rgba(0,122,255,0.3); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
 .btn-ghost { background: var(--accent-soft); color: var(--accent); }
 
-/* 阶段进度看板 */
-.board { display: flex; gap: 10px; margin-top: 20px; }
+/* ============ 阶段进度看板 ============ */
+.board { display: flex; gap: 12px; }
 .stage {
   flex: 1;
-  padding: 14px;
+  padding: 16px 12px;
   text-align: center;
   border-radius: var(--radius-sm);
   background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--glass-border);
-  font-size: 13px;
+  box-shadow: var(--glass-shadow);
   color: var(--text-dim);
   transition: all 0.2s;
 }
 .stage .stage-name { font-weight: 600; color: var(--text); font-size: 15px; }
-.stage .stage-hint { font-size: 11px; margin-top: 4px; }
-.stage.done { background: rgba(52, 199, 89, 0.16); border-color: rgba(52,199,89,0.4); }
+.stage .stage-hint { font-size: 11px; margin-top: 5px; }
+.stage.done { background: rgba(52, 199, 89, 0.16); border-color: rgba(52,199,89,0.45); }
+.stage.done .stage-name { color: #248a3d; }
 .stage.active { background: var(--accent-soft); border-color: var(--accent); }
-.stage.failed { background: rgba(255, 59, 48, 0.16); border-color: rgba(255,59,48,0.45); }
+.stage.failed { background: rgba(255, 59, 48, 0.16); border-color: rgba(255,59,48,0.5); }
 
-.pipeline-form { padding: 22px; max-width: 560px; }
-.pipeline-actions { display: flex; gap: 12px; margin-top: 8px; }
+.error-text { font-size: 13px; color: var(--err); margin-top: 12px; min-height: 16px; }
 .hidden { display: none !important; }
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, sans-serif; color: #222; }
-.tabs { display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid #ddd; background: #fafafa; }
-.tab { padding: 8px 16px; border: none; background: transparent; cursor: pointer; font-size: 14px; border-radius: 6px; }
-.tab.active { background: #007aff; color: #fff; }
-.status { margin-left: auto; font-size: 12px; color: #888; }
-.status.ok { color: #34c759; }
-.status.err { color: #ff3b30; }
-.panel { display: none; padding: 24px; }
-.panel.active { display: block; }
-h1 { font-size: 20px; margin-bottom: 12px; }

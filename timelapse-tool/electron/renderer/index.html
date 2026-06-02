@@ -13,6 +13,7 @@
   </nav>
   <main>
     <section id="pipeline" class="panel active">
+      <div class="pipeline-wrap">
       <div class="glass pipeline-form">
         <h1>延时流水线</h1>
         <div class="field">
@@ -35,7 +36,7 @@
         </div>
         <div class="row">
           <div class="field">
-            <label>帧率 fps（选预设或自填 1–120）</label>
+            <label>帧率 fps（可自填）</label>
             <input id="fps" type="number" min="1" max="120" step="1" value="24" list="fps-presets" />
             <datalist id="fps-presets">
               <option value="12"></option>
@@ -113,7 +114,7 @@
           <button id="btn-start" class="btn btn-primary">开始处理</button>
           <button id="btn-continue" class="btn btn-ghost hidden">我已在 LRT 完成，继续</button>
         </div>
-        <div id="pipeline-error" class="stage-hint" style="color:#ff3b30;margin-top:10px;"></div>
+        <div id="pipeline-error" class="error-text"></div>
       </div>
 
       <div class="board" id="stage-board">
@@ -121,6 +122,7 @@
         <div class="stage" data-stage="LRT"><div class="stage-name">LRT</div><div class="stage-hint">手动操作</div></div>
         <div class="stage" data-stage="AE"><div class="stage-name">AE</div><div class="stage-hint">渲染序列</div></div>
         <div class="stage" data-stage="PR"><div class="stage-name">PR</div><div class="stage-hint">导出成片</div></div>
+      </div>
       </div>
     </section>
     <section id="selector" class="panel">
