@@ -13,14 +13,77 @@
   </nav>
   <main>
     <section id="pipeline" class="panel active">
-      <h1>延时流水线</h1>
-      <p>（占位 — 由后续计划实现）</p>
+      <div class="glass pipeline-form">
+        <h1>延时流水线</h1>
+        <div class="field">
+          <label>RAW 文件夹</label>
+          <input id="raw_folder" type="text" placeholder="/path/to/raw" />
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>相机机型</label>
+            <select id="camera_name"></select>
+          </div>
+          <div class="field">
+            <label>分辨率</label>
+            <select id="resolution"></select>
+          </div>
+        </div>
+        <div class="field">
+          <label>Camera Raw 预设 (.xmp)</label>
+          <input id="acr_preset_path" type="text" placeholder="/path/to/preset.xmp" />
+        </div>
+        <div class="field">
+          <label>LRT 导出序列文件夹</label>
+          <input id="lrt_export_folder" type="text" placeholder="LRT 导出图像序列的目标文件夹" />
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>帧率</label>
+            <select id="fps">
+              <option value="24">24</option>
+              <option value="25">25</option>
+              <option value="30">30</option>
+              <option value="60">60</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>编码</label>
+            <select id="codec">
+              <option value="ProRes">ProRes</option>
+              <option value="H.264">H.264</option>
+              <option value="H.265">H.265</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label>输出路径</label>
+          <input id="output_path" type="text" placeholder="/path/to/output" />
+        </div>
+        <div class="field switch-field">
+          <label for="stabilize">PR 增稳 (Warp Stabilizer)</label>
+          <input id="stabilize" type="checkbox" />
+        </div>
+        <div class="pipeline-actions">
+          <button id="btn-start" class="btn btn-primary">开始处理</button>
+          <button id="btn-continue" class="btn btn-ghost hidden">我已在 LRT 完成，继续</button>
+        </div>
+        <div id="pipeline-error" class="stage-hint" style="color:#ff3b30;margin-top:10px;"></div>
+      </div>
+
+      <div class="board" id="stage-board">
+        <div class="stage" data-stage="BR"><div class="stage-name">BR</div><div class="stage-hint">套用预设</div></div>
+        <div class="stage" data-stage="LRT"><div class="stage-name">LRT</div><div class="stage-hint">手动操作</div></div>
+        <div class="stage" data-stage="AE"><div class="stage-name">AE</div><div class="stage-hint">渲染序列</div></div>
+        <div class="stage" data-stage="PR"><div class="stage-name">PR</div><div class="stage-hint">导出成片</div></div>
+      </div>
     </section>
     <section id="selector" class="panel">
       <h1>照片筛选</h1>
       <p>（占位 — 由后续计划实现）</p>
     </section>
   </main>
+  <script src="pipeline.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
