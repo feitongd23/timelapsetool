@@ -41,6 +41,105 @@ function canContinue(status) {
   return status.state === "waiting_for_user";
 }
 
+// 应用阶段看板模型到 DOM
+function renderBoard(status) {
+  const model = stageBoardModel(status);
+  for (const name of STAGES) {
+    const el = document.querySelector(`.stage[data-stage="${name}"]`);
+    if (el) el.className = "stage" + (model[name] ? " " + model[name] : "");
+  }
+}
+
+function readForm() {
+  const id = (x) => document.getElementById(x);
+  return {
+    raw_folder: id("raw_folder").value,
+    camera_name: id("camera_name").value,
+    acr_preset_path: id("acr_preset_path").value,
+    lrt_export_folder: id("lrt_export_folder").value,
+    stabilize: id("stabilize").checked,
+    resolution: id("resolution").value,
+    fps: id("fps").value,
+    codec: id("codec").value,
+    output_path: id("output_path").value,
+  };
+}
+
+async function initPipeline(httpBase) {
+  const id = (x) => document.getElementById(x);
+  const errEl = id("pipeline-error");
+  const cameraSel = id("camera_name");
+  const resSel = id("resolution");
+
+  try {
+    const cams = await fetch(httpBase + "/cameras").then((r) => r.json());
+    cameraSel.innerHTML = "";
+    for (const cam of cams.cameras) {
+      const opt = document.createElement("option");
+      opt.value = cam.name;
+      opt.textContent = cam.name;
+      cameraSel.appendChild(opt);
+    }
+  } catch (_) {
+    errEl.textContent = "无法加载相机列表";
+    return;
+  }
+
+  async function loadResolutions() {
+    const name = cameraSel.value;
+    const data = await fetch(httpBase + "/cameras/" + encodeURIComponent(name) + "/resolutions").then((r) => r.json());
+    resSel.innerHTML = "";
+    for (const o of data.options) {
+      const opt = document.createElement("option");
+      opt.value = o.size[0] + "x" + o.size[1];
+      opt.textContent = o.label + " (" + o.size[0] + "×" + o.size[1] + ")";
+      resSel.appendChild(opt);
+    }
+  }
+  cameraSel.addEventListener("change", loadResolutions);
+  await loadResolutions();
+
+  async function refreshStatus() {
+    const status = await fetch(httpBase + "/pipeline/status").then((r) => r.json());
+    renderBoard(status);
+    id("btn-continue").classList.toggle("hidden", !canContinue(status));
+    if (status.state === "failed") errEl.textContent = "失败：" + (status.error || "");
+    return status;
+  }
+
+  id("btn-start").addEventListener("click", async () => {
+    errEl.textContent = "";
+    const res = await fetch(httpBase + "/pipeline/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildStartPayload(readForm())),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      errEl.textContent = "启动失败：" + (e.detail || res.status);
+      return;
+    }
+    await refreshStatus();
+  });
+
+  id("btn-continue").addEventListener("click", async () => {
+    errEl.textContent = "";
+    const res = await fetch(httpBase + "/pipeline/continue", { method: "POST" });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      errEl.textContent = "继续失败：" + (e.detail || res.status);
+      return;
+    }
+    await refreshStatus();
+  });
+
+  await refreshStatus();
+}
+
+if (typeof window !== "undefined") {
+  window.initPipeline = initPipeline;
+}
+
 if (typeof module !== "undefined") {
   module.exports = { buildStartPayload, stageBoardModel, canContinue, STAGES };
 }

@@ -44,6 +44,10 @@ if (typeof window !== "undefined" && window.backend) {
       ws.onopen = () => ws.send(JSON.stringify({ type: "ping" }));
     }
   });
+
+  if (typeof window.initPipeline === "function") {
+    window.initPipeline(window.backend.httpBase);
+  }
 }
 
 if (typeof module !== "undefined") {
