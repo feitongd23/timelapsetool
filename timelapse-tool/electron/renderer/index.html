@@ -107,8 +107,49 @@
           <input id="output_path" type="text" placeholder="/path/to/output" />
         </div>
         <div class="field switch-field">
-          <label for="stabilize">PR 增稳 (Warp Stabilizer)</label>
-          <input id="stabilize" type="checkbox" />
+          <label for="deflicker_enabled">AE 去闪 (Deflicker)</label>
+          <input id="deflicker_enabled" type="checkbox" />
+        </div>
+        <div id="deflicker-fields" class="hidden">
+          <div class="row">
+            <div class="field">
+              <label>去闪强度 (0–100)</label>
+              <input id="deflicker_strength" type="number" min="0" max="100" value="50" />
+            </div>
+            <div class="field">
+              <label>时间半径 (1–10)</label>
+              <input id="deflicker_time_radius" type="number" min="1" max="10" value="2" />
+            </div>
+          </div>
+        </div>
+
+        <div class="field switch-field">
+          <label for="stabilize_enabled">AE 增稳 (变形稳定器)</label>
+          <input id="stabilize_enabled" type="checkbox" />
+        </div>
+        <div id="stabilize-fields" class="hidden">
+          <div class="row">
+            <div class="field">
+              <label>结果</label>
+              <select id="stabilize_result">
+                <option value="smooth">平滑运动</option>
+                <option value="none">无运动</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>平滑度 (0–100)</label>
+              <input id="stabilize_smoothness" type="number" min="0" max="100" value="50" />
+            </div>
+          </div>
+          <div class="field">
+            <label>方法</label>
+            <select id="stabilize_method">
+              <option value="subspace">子空间变形</option>
+              <option value="perspective">透视</option>
+              <option value="pos_scale_rot">位置、缩放、旋转</option>
+              <option value="position">位置</option>
+            </select>
+          </div>
         </div>
         <div class="pipeline-actions">
           <button id="btn-start" class="btn btn-primary">开始处理</button>

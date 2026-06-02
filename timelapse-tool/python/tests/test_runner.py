@@ -13,7 +13,9 @@ def _cfg(tmp_path, with_seq_image=False):
         (lrt / "0001.tif").write_text("img")
     return PipelineConfig(
         raw_folder=str(raw), camera_name="Cam",
-        lrt_export_folder=str(lrt), stabilize=False, resolution=[3840, 2160],
+        lrt_export_folder=str(lrt),
+        deflicker={"enabled": False}, stabilize={"enabled": False},
+        resolution=[3840, 2160],
         fps=24, export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"}, output_path=str(out),
     )
 

@@ -11,7 +11,8 @@ def _valid_kwargs(tmp_path):
         raw_folder=str(raw),
         camera_name="Sony A7R IV",
         lrt_export_folder=str(lrt),
-        stabilize=True,
+        deflicker={"enabled": True, "strength": 50, "time_radius": 2},
+        stabilize={"enabled": True, "result": "smooth", "smoothness": 50, "method": "subspace"},
         resolution=[3840, 2160],
         fps=24,
         export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"},
@@ -62,6 +63,20 @@ def test_valid_h265_export_passes(tmp_path):
     kwargs = _valid_kwargs(tmp_path)
     kwargs["export"] = {"codec": "H.265", "container": "MP4", "bitrate_mbps": 60, "bit_depth": 10}
     PipelineConfig(**kwargs).validate()
+
+
+def test_bad_stabilize_fails(tmp_path):
+    kwargs = _valid_kwargs(tmp_path)
+    kwargs["stabilize"] = {"enabled": True, "result": "x", "smoothness": 50, "method": "subspace"}
+    with pytest.raises(ValueError, match="结果"):
+        PipelineConfig(**kwargs).validate()
+
+
+def test_bad_deflicker_fails(tmp_path):
+    kwargs = _valid_kwargs(tmp_path)
+    kwargs["deflicker"] = {"enabled": True, "strength": 999, "time_radius": 2}
+    with pytest.raises(ValueError, match="去闪强度"):
+        PipelineConfig(**kwargs).validate()
 
 
 def test_states_exist():
