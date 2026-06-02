@@ -224,3 +224,23 @@ h1 { font-size: 22px; font-weight: 600; margin-bottom: 20px; letter-spacing: -0.
 
 .error-text { font-size: 13px; color: var(--err); margin-top: 12px; min-height: 16px; }
 .hidden { display: none !important; }
+
+/* 路径输入 + 选择按钮 */
+.path-input { display: flex; gap: 8px; }
+.path-input input { flex: 1; }
+.btn-browse {
+  flex: 0 0 auto;
+  height: var(--field-h);
+  padding: 0 16px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter 0.15s;
+}
+.btn-browse:hover { filter: brightness(1.05); }
+.btn-browse:active { transform: scale(0.98); }

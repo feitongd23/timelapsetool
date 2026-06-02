@@ -1,6 +1,13 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
+
+// 渲染进程请求选择文件夹 → 打开系统目录选择框，返回选中路径（取消返回 null）
+ipcMain.handle("choose-directory", async () => {
+  const result = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
 
 let pyProc = null;
 

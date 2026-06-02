@@ -18,7 +18,10 @@
         <h1>延时流水线</h1>
         <div class="field">
           <label>RAW 文件夹</label>
-          <input id="raw_folder" type="text" placeholder="/path/to/raw" />
+          <div class="path-input">
+            <input id="raw_folder" type="text" placeholder="点右侧选择文件夹" />
+            <button type="button" class="btn-browse" data-target="raw_folder">选择…</button>
+          </div>
         </div>
         <div class="row">
           <div class="field">
@@ -32,7 +35,10 @@
         </div>
         <div class="field">
           <label>LRT 导出序列文件夹</label>
-          <input id="lrt_export_folder" type="text" placeholder="LRT 导出图像序列的目标文件夹" />
+          <div class="path-input">
+            <input id="lrt_export_folder" type="text" placeholder="LRT 导出图像序列的目标文件夹" />
+            <button type="button" class="btn-browse" data-target="lrt_export_folder">选择…</button>
+          </div>
         </div>
         <div class="row">
           <div class="field">
@@ -104,7 +110,10 @@
         </div>
         <div class="field">
           <label>输出路径</label>
-          <input id="output_path" type="text" placeholder="/path/to/output" />
+          <div class="path-input">
+            <input id="output_path" type="text" placeholder="点右侧选择文件夹" />
+            <button type="button" class="btn-browse" data-target="output_path">选择…</button>
+          </div>
         </div>
         <div class="field switch-field">
           <label for="stabilize_enabled">AE 增稳 (变形稳定器)</label>

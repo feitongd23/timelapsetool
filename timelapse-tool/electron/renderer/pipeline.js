@@ -175,6 +175,15 @@ async function initPipeline(httpBase) {
   id("stabilize_enabled").addEventListener("change", () => syncToggle("stabilize_enabled", "stabilize-fields"));
   syncToggle("stabilize_enabled", "stabilize-fields");
 
+  // 文件夹选择按钮 → 调原生对话框，填回对应输入框
+  document.querySelectorAll(".btn-browse").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!window.api || !window.api.chooseDirectory) return;
+      const dir = await window.api.chooseDirectory();
+      if (dir) id(btn.dataset.target).value = dir;
+    });
+  });
+
   function buildStartBody() {
     const payload = buildStartPayload(readForm());
     const mode = id("export_mode").value;
