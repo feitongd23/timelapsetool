@@ -1,4 +1,4 @@
-const { switchTab, statusLabel } = require("../electron/renderer/app.js");
+const { switchTab, statusLabel, pollHealth } = require("../electron/renderer/app.js");
 
 test("switchTab 切换激活面板", () => {
   document.body.innerHTML = `
@@ -14,4 +14,31 @@ test("switchTab 切换激活面板", () => {
 test("statusLabel 根据健康状态返回文案", () => {
   expect(statusLabel(true)).toBe("后端已连接");
   expect(statusLabel(false)).toBe("后端连接失败");
+});
+
+test("pollHealth 在后端就绪前重试，最终连上", async () => {
+  let calls = 0;
+  const fetchFn = jest.fn(() => {
+    calls++;
+    if (calls < 3) return Promise.reject(new Error("ECONNREFUSED"));
+    return Promise.resolve({ json: () => Promise.resolve({ status: "ok" }) });
+  });
+  const ok = await pollHealth("http://x/health", {
+    maxAttempts: 5,
+    fetchFn,
+    delayFn: () => Promise.resolve(),
+  });
+  expect(ok).toBe(true);
+  expect(calls).toBe(3);
+});
+
+test("pollHealth 重试耗尽后返回失败", async () => {
+  const fetchFn = jest.fn(() => Promise.reject(new Error("ECONNREFUSED")));
+  const ok = await pollHealth("http://x/health", {
+    maxAttempts: 4,
+    fetchFn,
+    delayFn: () => Promise.resolve(),
+  });
+  expect(ok).toBe(false);
+  expect(fetchFn).toHaveBeenCalledTimes(4);
 });
