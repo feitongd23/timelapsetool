@@ -1,6 +1,9 @@
+import json
+
 from fastapi.testclient import TestClient
 
 import server
+from pipeline.cameras import CameraStore
 
 client = TestClient(server.app)
 
@@ -59,7 +62,12 @@ def test_pipeline_start_bad_fps_400(tmp_path):
     assert r.status_code == 400
 
 
-def test_add_camera_then_listed():
+def test_add_camera_then_listed(tmp_path, monkeypatch):
+    # 用临时 cameras.json 隔离，避免污染仓库里的真实配置
+    cfg = tmp_path / "cameras.json"
+    cfg.write_text(json.dumps({"cameras": [{"name": "Sony A7R IV", "native": [9504, 6336]}]}))
+    monkeypatch.setattr(server, "_camera_store", CameraStore(cfg))
+
     r = client.post("/cameras", json={"name": "Test Cam X", "native": [6000, 4000]})
     assert r.status_code == 201
     names = [c["name"] for c in client.get("/cameras").json()["cameras"]]
