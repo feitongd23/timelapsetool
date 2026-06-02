@@ -11,7 +11,6 @@ function buildStartPayload(values) {
     stabilize: Boolean(values.stabilize),
     resolution: [w, h],
     fps: parseInt(values.fps, 10),
-    codec: values.codec,
     output_path: values.output_path,
   };
 }
