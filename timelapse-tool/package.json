@@ -1,0 +1,14 @@
+{
+  "name": "timelapse-tool",
+  "version": "0.1.0",
+  "description": "延时摄影自动化 + AI 照片筛选桌面工具",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "jest": "^29.7.0"
+  }
+}
