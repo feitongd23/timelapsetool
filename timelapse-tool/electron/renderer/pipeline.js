@@ -40,6 +40,27 @@ function canContinue(status) {
   return status.state === "waiting_for_user";
 }
 
+const CONTAINER = { ProRes: "MOV", "H.264": "MP4", "H.265": "MP4" };
+
+// 把导出区域的表单态转成后端要的 export dict
+function buildExportConfig(state, presetTable) {
+  if (state.mode === "preset") {
+    return Object.assign({}, presetTable[state.preset]);
+  }
+  const codec = state.codec;
+  const exp = { codec: codec, container: CONTAINER[codec] };
+  if (codec === "ProRes") {
+    exp.prores_profile = state.prores_profile;
+  } else if (codec === "H.264") {
+    exp.bitrate_mbps = parseInt(state.bitrate_mbps, 10);
+    exp.quality = state.quality;
+  } else if (codec === "H.265") {
+    exp.bitrate_mbps = parseInt(state.bitrate_mbps, 10);
+    exp.bit_depth = parseInt(state.bit_depth, 10);
+  }
+  return exp;
+}
+
 // 「继续」按钮文案随当前手动阶段变化
 function continueLabel(status) {
   if (status.current_stage === "BR") return "我已在 Camera Raw 完成，继续";
@@ -148,5 +169,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, STAGES };
+  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, buildExportConfig, STAGES };
 }

@@ -1,4 +1,4 @@
-const { buildStartPayload, stageBoardModel, canContinue, continueLabel } = require("../electron/renderer/pipeline.js");
+const { buildStartPayload, stageBoardModel, canContinue, continueLabel, buildExportConfig } = require("../electron/renderer/pipeline.js");
 
 test("buildStartPayload 转换类型", () => {
   const payload = buildStartPayload({
@@ -46,4 +46,28 @@ test("canContinue 仅在等待态为真", () => {
   expect(canContinue({ state: "waiting_for_user" })).toBe(true);
   expect(canContinue({ state: "running" })).toBe(false);
   expect(canContinue({ state: "done" })).toBe(false);
+});
+
+const PRESET_TABLE = {
+  "母版 · ProRes 422 HQ": { codec: "ProRes", container: "MOV", prores_profile: "422 HQ" },
+};
+
+test("buildExportConfig 预设模式展开预设", () => {
+  const exp = buildExportConfig({ mode: "preset", preset: "母版 · ProRes 422 HQ" }, PRESET_TABLE);
+  expect(exp).toEqual({ codec: "ProRes", container: "MOV", prores_profile: "422 HQ" });
+});
+
+test("buildExportConfig 手动 ProRes", () => {
+  const exp = buildExportConfig({ mode: "manual", codec: "ProRes", prores_profile: "4444" }, PRESET_TABLE);
+  expect(exp).toEqual({ codec: "ProRes", container: "MOV", prores_profile: "4444" });
+});
+
+test("buildExportConfig 手动 H.264 转换码率为整数", () => {
+  const exp = buildExportConfig({ mode: "manual", codec: "H.264", bitrate_mbps: "80", quality: "high" }, PRESET_TABLE);
+  expect(exp).toEqual({ codec: "H.264", container: "MP4", bitrate_mbps: 80, quality: "high" });
+});
+
+test("buildExportConfig 手动 H.265 带位深", () => {
+  const exp = buildExportConfig({ mode: "manual", codec: "H.265", bitrate_mbps: "60", bit_depth: "10" }, PRESET_TABLE);
+  expect(exp).toEqual({ codec: "H.265", container: "MP4", bitrate_mbps: 60, bit_depth: 10 });
 });
