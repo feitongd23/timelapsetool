@@ -1,24 +1,6 @@
 import pytest
 
-from pipeline.effects import validate_deflicker, validate_stabilize, STABILIZE_METHODS
-
-
-def test_deflicker_disabled_skips_param_checks():
-    validate_deflicker({"enabled": False})  # 不抛
-
-
-def test_deflicker_valid():
-    validate_deflicker({"enabled": True, "strength": 50, "time_radius": 2})
-
-
-def test_deflicker_bad_strength():
-    with pytest.raises(ValueError, match="去闪强度"):
-        validate_deflicker({"enabled": True, "strength": 200, "time_radius": 2})
-
-
-def test_deflicker_bad_time_radius():
-    with pytest.raises(ValueError, match="时间半径"):
-        validate_deflicker({"enabled": True, "strength": 50, "time_radius": 0})
+from pipeline.effects import validate_stabilize, STABILIZE_METHODS
 
 
 def test_stabilize_disabled_skips():

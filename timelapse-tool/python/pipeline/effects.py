@@ -1,22 +1,13 @@
-"""去闪/增稳配置校验 + AE 效果映射（matchName 等实机常量集中在此）。"""
+"""增稳配置校验 + AE 效果映射（matchName 等实机常量集中在此）。
+
+去闪只在 LRT 手动完成，AE 不做去闪（AE 无可用去闪效果）。
+"""
 
 STABILIZE_RESULTS = ["smooth", "none"]
 STABILIZE_METHODS = ["position", "pos_scale_rot", "perspective", "subspace"]
 
-# AE 效果 matchName —— 实机内省（Task 3）确认后回填
-DEFLICKER_MATCHNAME = "ADBE Deflicker"          # 待实机确认
+# AE 效果 matchName —— 实机内省确认后回填
 WARP_STABILIZER_MATCHNAME = "ADBE SubspaceStabilizer"
-
-
-def validate_deflicker(deflicker):
-    if not deflicker.get("enabled"):
-        return
-    strength = deflicker.get("strength")
-    if not (isinstance(strength, int) and 0 <= strength <= 100):
-        raise ValueError(f"去闪强度应在 0-100: {strength}")
-    tr = deflicker.get("time_radius")
-    if not (isinstance(tr, int) and 1 <= tr <= 10):
-        raise ValueError(f"去闪时间半径应在 1-10: {tr}")
 
 
 def validate_stabilize(stabilize):

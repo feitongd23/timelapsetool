@@ -12,11 +12,6 @@ function buildStartPayload(values) {
     resolution: [w, h],
     fps: parseInt(values.fps, 10),
     output_path: values.output_path,
-    deflicker: {
-      enabled: Boolean(values.deflicker_enabled),
-      strength: parseInt(values.deflicker_strength, 10),
-      time_radius: parseInt(values.deflicker_time_radius, 10),
-    },
     stabilize: {
       enabled: Boolean(values.stabilize_enabled),
       result: values.stabilize_result,
@@ -96,9 +91,6 @@ function readForm() {
     resolution: id("resolution").value,
     fps: id("fps").value,
     output_path: id("output_path").value,
-    deflicker_enabled: id("deflicker_enabled").checked,
-    deflicker_strength: id("deflicker_strength").value,
-    deflicker_time_radius: id("deflicker_time_radius").value,
     stabilize_enabled: id("stabilize_enabled").checked,
     stabilize_result: id("stabilize_result").value,
     stabilize_smoothness: id("stabilize_smoothness").value,
@@ -180,9 +172,7 @@ async function initPipeline(httpBase) {
   function syncToggle(cbId, fieldsId) {
     id(fieldsId).classList.toggle("hidden", !id(cbId).checked);
   }
-  id("deflicker_enabled").addEventListener("change", () => syncToggle("deflicker_enabled", "deflicker-fields"));
   id("stabilize_enabled").addEventListener("change", () => syncToggle("stabilize_enabled", "stabilize-fields"));
-  syncToggle("deflicker_enabled", "deflicker-fields");
   syncToggle("stabilize_enabled", "stabilize-fields");
 
   function buildStartBody() {

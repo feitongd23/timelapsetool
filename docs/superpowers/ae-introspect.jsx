@@ -31,9 +31,7 @@
         }
     }
 
-    // 先用显示名 "Deflicker" 尝试；不行再试常见 matchName
-    dumpEffect("Deflicker", "Deflicker(显示名)");
-    dumpEffect("ADBE SubspaceStabilizer", "Warp Stabilizer");
+    dumpEffect("ADBE SubspaceStabilizer", "Warp Stabilizer 变形稳定器");
 
     var f = new File("~/Desktop/ae-introspect.txt");
     f.open("w");

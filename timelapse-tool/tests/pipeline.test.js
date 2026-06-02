@@ -8,9 +8,6 @@ test("buildStartPayload 转换类型", () => {
     resolution: "3840x2160",
     fps: "24",
     output_path: "/out",
-    deflicker_enabled: false,
-    deflicker_strength: "50",
-    deflicker_time_radius: "2",
     stabilize_enabled: false,
     stabilize_result: "smooth",
     stabilize_smoothness: "50",
@@ -22,15 +19,13 @@ test("buildStartPayload 转换类型", () => {
   expect(payload).not.toHaveProperty("acr_preset_path");
 });
 
-test("buildStartPayload 带 deflicker/stabilize", () => {
+test("buildStartPayload 带 stabilize", () => {
   const payload = buildStartPayload({
     raw_folder: "/raw", camera_name: "Cam", lrt_export_folder: "/seq",
     resolution: "3840x2160", fps: "24", output_path: "/out",
-    deflicker_enabled: true, deflicker_strength: "60", deflicker_time_radius: "3",
     stabilize_enabled: true, stabilize_result: "smooth",
     stabilize_smoothness: "70", stabilize_method: "subspace",
   });
-  expect(payload.deflicker).toEqual({ enabled: true, strength: 60, time_radius: 3 });
   expect(payload.stabilize).toEqual({ enabled: true, result: "smooth", smoothness: 70, method: "subspace" });
 });
 

@@ -73,7 +73,6 @@ class StartBody(BaseModel):
     raw_folder: str
     camera_name: str
     lrt_export_folder: str
-    deflicker: dict
     stabilize: dict
     resolution: list
     fps: int

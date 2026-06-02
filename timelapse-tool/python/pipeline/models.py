@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List
 
 from pipeline.export_formats import validate_export
-from pipeline.effects import validate_deflicker, validate_stabilize
+from pipeline.effects import validate_stabilize
 
 # 帧率允许自由输入，只校验合理范围（含常用 12/15/24/25/30/48/50/60/90/120）
 MIN_FPS, MAX_FPS = 1, 120
@@ -23,7 +23,6 @@ class PipelineConfig:
     raw_folder: str
     camera_name: str
     lrt_export_folder: str
-    deflicker: dict
     stabilize: dict
     resolution: List[int]
     fps: int
@@ -40,7 +39,6 @@ class PipelineConfig:
         if not (MIN_FPS <= self.fps <= MAX_FPS):
             raise ValueError(f"帧率不支持: {self.fps}（应在 {MIN_FPS}-{MAX_FPS}）")
         validate_export(self.export)
-        validate_deflicker(self.deflicker)
         validate_stabilize(self.stabilize)
         if not (isinstance(self.resolution, list) and len(self.resolution) == 2):
             raise ValueError("分辨率必须是 [宽, 高]")
