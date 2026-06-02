@@ -39,10 +39,11 @@ def test_ae_stage_delegates_to_render(monkeypatch, tmp_path):
     from pipeline import ae
     called = {}
 
-    def fake_render(seq_folder, output_dir, fps, emit, **kwargs):
+    def fake_render(seq_folder, output_dir, fps, stabilize, emit, **kwargs):
         called["seq"] = seq_folder
         called["out"] = output_dir
         called["fps"] = fps
+        called["stabilize"] = stabilize
         emit("AE done")
         return ae.intermediate_path(output_dir)
 
@@ -52,11 +53,13 @@ def test_ae_stage_delegates_to_render(monkeypatch, tmp_path):
         lrt_export_folder = str(tmp_path / "seq")
         output_path = str(tmp_path / "out")
         fps = 30
+        stabilize = {"enabled": False}
 
     msgs = []
     AEStage().run(Cfg(), msgs.append)
     assert called["seq"] == str(tmp_path / "seq")
     assert called["fps"] == 30
+    assert called["stabilize"] == {"enabled": False}
     assert any("AE" in m for m in msgs)
 
 

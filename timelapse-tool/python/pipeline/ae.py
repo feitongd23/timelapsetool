@@ -2,6 +2,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from pipeline import effects
+
 SEQUENCE_EXTS = {".jpg", ".jpeg", ".tif", ".tiff"}
 
 AERENDER = "/Applications/Adobe After Effects 2026/aerender"
@@ -27,8 +29,27 @@ def intermediate_path(output_dir):
     return Path(output_dir) / INTERMEDIATE_NAME
 
 
-def build_ae_script(anchor_file, fps, project_save_path):
-    """生成构建 AE 工程的 ExtendScript：导入序列→建合成→入渲染队列→保存。
+def _stabilizer_jsx(stabilize):
+    """生成给图层加变形稳定器并设参数的 jsx 片段；未启用时返回空串。
+
+    注意：变形稳定器需要「分析」才真正生效，分析触发是真机迭代点（Task 6）。
+    """
+    if not stabilize.get("enabled"):
+        return ""
+    result_val = effects.WS_RESULT_VALUE[stabilize["result"]]
+    method_val = effects.WS_METHOD_VALUE[stabilize["method"]]
+    smoothness = stabilize["smoothness"]
+    return f"""
+var layer = comp.layer(1);
+var ws = layer.property("ADBE Effect Parade").addProperty("{effects.WARP_STABILIZER_MATCHNAME}");
+try {{ ws.property("{effects.WS_PROP_RESULT}").setValue({result_val}); }} catch (e) {{}}
+try {{ ws.property("{effects.WS_PROP_METHOD}").setValue({method_val}); }} catch (e) {{}}
+try {{ ws.property("{effects.WS_PROP_SMOOTHNESS}").setValue({smoothness}); }} catch (e) {{}}
+"""
+
+
+def build_ae_script(anchor_file, fps, project_save_path, stabilize):
+    """生成构建 AE 工程的 ExtendScript：导入序列→建合成→(增稳)→入渲染队列→保存。
 
     渲染由后续 aerender 执行；这里只搭好工程并保存。
     """
@@ -51,6 +72,7 @@ var comp = app.project.items.addComp(
     {fps}
 );
 comp.layers.add(footage);
+{_stabilizer_jsx(stabilize)}
 app.project.renderQueue.items.add(comp);
 
 app.project.save(new File("{project_save_path}"));
@@ -68,7 +90,7 @@ def build_aerender_cmd(aerender, project_path, output_path):
     ]
 
 
-def render_sequence(seq_folder, output_dir, fps, emit, run=subprocess.run,
+def render_sequence(seq_folder, output_dir, fps, stabilize, emit, run=subprocess.run,
                     aerender=AERENDER, ae_app=AE_APP):
     """跑完整 AE 阶段，返回中间视频路径。
 
@@ -79,7 +101,7 @@ def render_sequence(seq_folder, output_dir, fps, emit, run=subprocess.run,
     proj_path = str(Path(tempfile.gettempdir()) / "timelapse_ae_project.aep")
 
     emit("AE 阶段：新建工程并导入图像序列…")
-    jsx = build_ae_script(str(anchor), fps, proj_path)
+    jsx = build_ae_script(str(anchor), fps, proj_path, stabilize)
     with tempfile.NamedTemporaryFile("w", suffix=".jsx", delete=False) as f:
         f.write(jsx)
         jsx_path = f.name

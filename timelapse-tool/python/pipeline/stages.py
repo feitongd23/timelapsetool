@@ -57,6 +57,7 @@ class AEStage(Stage):
             seq_folder=config.lrt_export_folder,
             output_dir=config.output_path,
             fps=config.fps,
+            stabilize=config.stabilize,
             emit=emit,
         )
 
