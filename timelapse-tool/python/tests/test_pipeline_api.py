@@ -142,3 +142,19 @@ def test_save_custom_workflow(tmp_path, monkeypatch):
     r = client.post("/workflows", json={"name": "测试流", "stages": ["LRT", "AE", "PR"]})
     assert r.status_code == 201
     assert "测试流" in client.get("/workflows").json()["workflows"]
+
+
+def test_preview_frames(tmp_path):
+    for n in ["0001.jpg", "0002.jpg", "0003.jpg"]:
+        (tmp_path / n).write_text("x")
+    r = client.get("/preview/frames", params={"folder": str(tmp_path)})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["count"] == 3
+    assert data["strip"] == ["0001.jpg", "0002.jpg", "0003.jpg"]
+    assert "0001.jpg" in data["anim"]
+
+
+def test_preview_frames_empty(tmp_path):
+    r = client.get("/preview/frames", params={"folder": str(tmp_path)})
+    assert r.json()["count"] == 0

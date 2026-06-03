@@ -23,10 +23,12 @@ async def websocket_endpoint(websocket: WebSocket):
         return
 
 
+import tempfile
 from pathlib import Path
 from typing import Optional
 
 from fastapi import HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from pipeline.cameras import CameraStore
@@ -35,6 +37,9 @@ from pipeline.runner import PipelineRunner
 from pipeline.stages import default_stages
 from pipeline.export_formats import PRESETS
 from pipeline import workflows
+from pipeline import preview
+
+_THUMB_CACHE = str(Path(tempfile.gettempdir()) / "timelapse_thumbs")
 
 _CAMERAS_PATH = Path(__file__).parent / "cameras.json"
 _camera_store = CameraStore(_CAMERAS_PATH)
@@ -146,6 +151,27 @@ def save_workflow(body: SaveWorkflowBody):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"ok": True}
+
+
+@app.get("/preview/frames")
+def preview_frames(folder: str):
+    frames = preview.list_frames(folder)
+    return {
+        "count": len(frames),
+        "strip": preview.strip_names(frames),
+        "anim": preview.anim_names(frames),
+    }
+
+
+@app.get("/preview/thumb")
+def preview_thumb(folder: str, name: str):
+    src = Path(folder) / name
+    if not src.is_file():
+        raise HTTPException(status_code=404, detail="帧不存在")
+    thumb = preview.generate_thumbnail(str(src), 320, _THUMB_CACHE)
+    if not Path(thumb).exists():
+        raise HTTPException(status_code=500, detail="缩略图生成失败")
+    return FileResponse(thumb, media_type="image/png")
 
 
 if __name__ == "__main__":
