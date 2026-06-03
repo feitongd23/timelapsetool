@@ -106,9 +106,14 @@ def pipeline_start(body: StartBody):
             raise HTTPException(status_code=400, detail=f"未知导出预设: {preset}")
     config = PipelineConfig(**data)
     # 自动检查相机计数器回绕（如 9999→0001），不连续则硬链接重排到 _seq 并改用之
+    notice = None
     try:
-        repaired = sequence.repair(config.raw_folder)
-        config.raw_folder = repaired
+        original = config.raw_folder
+        repaired = sequence.repair(original)
+        if repaired != original:
+            n = len(sequence._frames(repaired))
+            config.raw_folder = repaired
+            notice = f"检测到序列回绕，已按拍摄时间整理 {n} 帧到「{repaired}」，请在该文件夹操作。"
     except Exception:
         pass  # 整理失败不阻断流程，沿用原文件夹
     try:
@@ -117,6 +122,7 @@ def pipeline_start(body: StartBody):
         _runner.start(config)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    _runner._notice = notice
     return _runner.status()
 
 

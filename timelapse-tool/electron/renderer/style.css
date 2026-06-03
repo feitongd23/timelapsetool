@@ -248,6 +248,11 @@ h1 { font-size: 22px; font-weight: 600; margin-bottom: 20px; letter-spacing: -0.
   background: var(--accent-soft); border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm); font-size: 13px; line-height: 1.6; color: var(--text);
 }
+.notice-text {
+  margin-top: 12px; padding: 12px 14px;
+  background: rgba(255, 159, 10, 0.16); border: 1px solid rgba(255, 159, 10, 0.45);
+  border-radius: var(--radius-sm); font-size: 13px; line-height: 1.6; color: var(--text);
+}
 .hidden { display: none !important; }
 
 /* 路径输入 + 选择按钮 */

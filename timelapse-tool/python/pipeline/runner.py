@@ -17,6 +17,7 @@ class PipelineRunner:
         self._completed = []
         self._error = None
         self._config = None
+        self._notice = None  # 流程相关的提示（如序列回绕已整理）
 
     def status(self):
         return {
@@ -24,6 +25,7 @@ class PipelineRunner:
             "current_stage": self._current,
             "completed": list(self._completed),
             "error": self._error,
+            "notice": self._notice,
         }
 
     def start(self, config):

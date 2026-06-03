@@ -328,6 +328,9 @@ async function initPipeline(httpBase) {
     const guideEl = id("stage-guide");
     guideEl.textContent = guide;
     guideEl.classList.toggle("hidden", !guide);
+    const noticeEl = id("pipeline-notice");
+    noticeEl.textContent = status.notice || "";
+    noticeEl.classList.toggle("hidden", !status.notice);
     if (status.state === "failed") errEl.textContent = "失败：" + (status.error || "");
     return status;
   }

@@ -183,6 +183,7 @@ def test_start_repairs_wrapped_sequence(tmp_path, monkeypatch):
     )
     r = client.post("/pipeline/start", json=body)
     assert r.status_code == 200
+    assert "回绕" in (r.json().get("notice") or "")  # 提示用户已整理
     # 已生成整理后的 _seq 文件夹，连续命名
     seq_dir = tmp_path / "raw_seq"
     assert seq_dir.is_dir()
