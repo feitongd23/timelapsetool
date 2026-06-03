@@ -45,6 +45,13 @@ function canContinue(status) {
   return status.state === "waiting_for_user";
 }
 
+const WORKFLOW_ORDER = ["BR", "LRT", "AE", "PR"];
+
+// 把阶段勾选状态转成固定顺序的阶段名数组
+function collectWorkflowStages(checked) {
+  return WORKFLOW_ORDER.filter((name) => checked[name]);
+}
+
 const CONTAINER = { ProRes: "MOV", "H.264": "MP4", "H.265": "MP4" };
 
 // 把导出区域的表单态转成后端要的 export dict
@@ -148,6 +155,49 @@ async function initPipeline(httpBase) {
     return;
   }
 
+  // 加载工作流模板（内置 + 自定义）
+  let workflowMap = {};
+  async function loadWorkflows(selectName) {
+    const data = await fetch(httpBase + "/workflows").then((r) => r.json());
+    workflowMap = data.workflows;
+    const sel = id("workflow_select");
+    sel.innerHTML = "";
+    for (const name of Object.keys(workflowMap)) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name + "（" + workflowMap[name].join("-") + "）";
+      sel.appendChild(opt);
+    }
+    if (selectName && workflowMap[selectName]) sel.value = selectName;
+  }
+  try {
+    await loadWorkflows("全流程");
+  } catch (_) {
+    errEl.textContent = "无法加载工作流模板";
+    return;
+  }
+
+  id("wf_save").addEventListener("click", async () => {
+    const checked = {};
+    document.querySelectorAll(".wf-stage").forEach((c) => { checked[c.value] = c.checked; });
+    const stages = collectWorkflowStages(checked);
+    const wfErr = id("wf-error");
+    wfErr.textContent = "";
+    const name = id("wf_name").value.trim();
+    if (!name) { wfErr.textContent = "请填模板名"; return; }
+    const res = await fetch(httpBase + "/workflows", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, stages: stages }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      wfErr.textContent = "保存失败：" + (e.detail || res.status);
+      return;
+    }
+    await loadWorkflows(name);
+  });
+
   // 导出模式切换：预设 / 手动
   function syncExportMode() {
     const manual = id("export_mode").value === "manual";
@@ -176,7 +226,7 @@ async function initPipeline(httpBase) {
   syncToggle("stabilize_enabled", "stabilize-fields");
 
   // 文件夹选择按钮 → 调原生对话框，填回对应输入框
-  document.querySelectorAll(".btn-browse").forEach((btn) => {
+  document.querySelectorAll(".btn-browse[data-target]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       if (!window.api || !window.api.chooseDirectory) return;
       const dir = await window.api.chooseDirectory();
@@ -200,6 +250,7 @@ async function initPipeline(httpBase) {
         bit_depth: id("h265_bit_depth").value,
       });
     }
+    payload.workflow = workflowMap[id("workflow_select").value] || null;
     return payload;
   }
 
@@ -247,5 +298,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, buildExportConfig, STAGES };
+  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, buildExportConfig, collectWorkflowStages, STAGES };
 }

@@ -17,6 +17,24 @@
       <div class="glass pipeline-form">
         <h1>延时流水线</h1>
         <div class="field">
+          <label>工作流模板</label>
+          <select id="workflow_select"></select>
+        </div>
+        <details class="workflow-builder">
+          <summary>自建工作流</summary>
+          <div class="wf-checks">
+            <label><input type="checkbox" class="wf-stage" value="BR" checked /> BR</label>
+            <label><input type="checkbox" class="wf-stage" value="LRT" checked /> LRT</label>
+            <label><input type="checkbox" class="wf-stage" value="AE" checked /> AE</label>
+            <label><input type="checkbox" class="wf-stage" value="PR" checked /> PR</label>
+          </div>
+          <div class="path-input">
+            <input id="wf_name" type="text" placeholder="模板名" />
+            <button type="button" id="wf_save" class="btn-browse">保存模板</button>
+          </div>
+          <div id="wf-error" class="error-text"></div>
+        </details>
+        <div class="field">
           <label>RAW 文件夹</label>
           <div class="path-input">
             <input id="raw_folder" type="text" placeholder="点右侧选择文件夹" />

@@ -1,4 +1,13 @@
-const { buildStartPayload, stageBoardModel, canContinue, continueLabel, buildExportConfig } = require("../electron/renderer/pipeline.js");
+const { buildStartPayload, stageBoardModel, canContinue, continueLabel, buildExportConfig, collectWorkflowStages } = require("../electron/renderer/pipeline.js");
+
+test("collectWorkflowStages 按勾选返回固定顺序子集", () => {
+  const checked = { BR: false, LRT: true, AE: true, PR: true };
+  expect(collectWorkflowStages(checked)).toEqual(["LRT", "AE", "PR"]);
+});
+
+test("collectWorkflowStages 全不选返回空", () => {
+  expect(collectWorkflowStages({ BR: false, LRT: false, AE: false, PR: false })).toEqual([]);
+});
 
 test("buildStartPayload 转换类型", () => {
   const payload = buildStartPayload({
