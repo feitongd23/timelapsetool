@@ -39,6 +39,7 @@
           <div class="path-input">
             <input id="raw_folder" type="text" placeholder="点右侧选择文件夹" />
             <button type="button" class="btn-browse" data-target="raw_folder">选择…</button>
+            <button type="button" class="btn-browse btn-preview" data-folder="raw_folder">预览</button>
           </div>
         </div>
         <div class="row">
@@ -56,6 +57,7 @@
           <div class="path-input">
             <input id="lrt_export_folder" type="text" placeholder="LRT 导出图像序列的目标文件夹" />
             <button type="button" class="btn-browse" data-target="lrt_export_folder">选择…</button>
+            <button type="button" class="btn-browse btn-preview" data-folder="lrt_export_folder">预览</button>
           </div>
         </div>
         <div class="row">
@@ -169,6 +171,15 @@
         <div id="stage-guide" class="stage-guide hidden"></div>
       </div>
 
+      <div class="glass preview-panel hidden" id="preview-panel">
+        <div class="preview-head">
+          <span id="preview-info">预览</span>
+          <button type="button" id="preview-play" class="btn-browse">▶ 播放</button>
+        </div>
+        <div class="preview-strip" id="preview-strip"></div>
+        <img id="preview-stage" class="preview-stage hidden" alt="预览" />
+      </div>
+
       <div class="board" id="stage-board">
         <div class="stage" data-stage="BR"><div class="stage-name">BR</div><div class="stage-hint">手动·ACR</div></div>
         <div class="stage" data-stage="LRT"><div class="stage-name">LRT</div><div class="stage-hint">手动操作</div></div>
@@ -182,6 +193,7 @@
       <p>（占位 — 由后续计划实现）</p>
     </section>
   </main>
+  <script src="preview.js"></script>
   <script src="pipeline.js"></script>
   <script src="app.js"></script>
 </body>

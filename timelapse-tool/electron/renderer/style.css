@@ -250,6 +250,14 @@ h1 { font-size: 22px; font-weight: 600; margin-bottom: 20px; letter-spacing: -0.
 .btn-browse:hover { filter: brightness(1.05); }
 .btn-browse:active { transform: scale(0.98); }
 
+/* 序列预览 */
+.preview-panel { padding: 18px; }
+.preview-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+#preview-info { font-size: 13px; color: var(--text-dim); }
+.preview-strip { display: flex; gap: 10px; flex-wrap: wrap; }
+.preview-strip .thumb { width: 30%; max-width: 220px; border-radius: var(--radius-sm); border: 1px solid var(--glass-border); }
+.preview-stage { width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--glass-border); }
+
 /* 自建工作流 */
 .workflow-builder { margin-bottom: 18px; }
 .workflow-builder summary { font-size: 13px; color: var(--accent); cursor: pointer; margin-bottom: 10px; }

@@ -246,6 +246,58 @@ async function initPipeline(httpBase) {
     });
   });
 
+  // 预览：缩略图条 + 播放轮播
+  let animFrames = [];
+  let animFolder = "";
+  let animTimer = null;
+  let animIdx = 0;
+
+  function stopAnim() {
+    if (animTimer) { clearInterval(animTimer); animTimer = null; }
+    id("preview-play").textContent = "▶ 播放";
+    id("preview-stage").classList.add("hidden");
+    id("preview-strip").classList.remove("hidden");
+  }
+
+  async function loadPreview(folder) {
+    stopAnim();
+    const data = await fetch(httpBase + "/preview/frames?folder=" + encodeURIComponent(folder)).then((r) => r.json());
+    id("preview-panel").classList.remove("hidden");
+    id("preview-info").textContent = "共 " + data.count + " 帧";
+    const strip = id("preview-strip");
+    strip.innerHTML = "";
+    if (data.count === 0) { strip.textContent = "该文件夹没有可预览的图片"; return; }
+    for (const name of data.strip) {
+      const img = document.createElement("img");
+      img.src = window.preview.thumbUrl(httpBase, folder, name);
+      img.className = "thumb";
+      strip.appendChild(img);
+    }
+    animFrames = data.anim;
+    animFolder = folder;
+  }
+
+  document.querySelectorAll(".btn-preview").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const folder = id(btn.dataset.folder).value;
+      if (folder) loadPreview(folder);
+    });
+  });
+
+  id("preview-play").addEventListener("click", () => {
+    if (animTimer) { stopAnim(); return; }
+    if (!animFrames.length) return;
+    const stage = id("preview-stage");
+    id("preview-strip").classList.add("hidden");
+    stage.classList.remove("hidden");
+    id("preview-play").textContent = "⏸ 停止";
+    animIdx = 0;
+    animTimer = setInterval(() => {
+      stage.src = window.preview.thumbUrl(httpBase, animFolder, animFrames[animIdx]);
+      animIdx = window.preview.nextFrameIndex(animIdx, animFrames.length);
+    }, 90);
+  });
+
   function buildStartBody() {
     const payload = buildStartPayload(readForm());
     const mode = id("export_mode").value;
