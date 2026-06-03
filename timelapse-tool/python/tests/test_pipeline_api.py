@@ -158,3 +158,32 @@ def test_preview_frames(tmp_path):
 def test_preview_frames_empty(tmp_path):
     r = client.get("/preview/frames", params={"folder": str(tmp_path)})
     assert r.json()["count"] == 0
+
+
+def test_start_repairs_wrapped_sequence(tmp_path, monkeypatch):
+    # 模拟 9999→0001 回绕：在 raw 里建两文件，注入拍摄时间让 0001 在 9999 之后
+    from pipeline import ae, pr, sequence
+    monkeypatch.setattr(ae, "render_sequence",
+                        lambda seq_folder, output_dir, fps, emit, **kw: emit("AE"))
+    monkeypatch.setattr(pr, "render_final",
+                        lambda intermediate_video, output_dir, export, emit, **kw: emit("PR"))
+    times = {"DSC09999.ARW": "2026-06-03 01:00:00 +0000",
+             "DSC00001.ARW": "2026-06-03 01:00:05 +0000"}
+    monkeypatch.setattr(sequence, "default_time_of",
+                        lambda p: times.get(__import__("os").path.basename(p), "z"))
+    raw = tmp_path / "raw"; raw.mkdir()
+    (raw / "DSC09999.ARW").write_text("a"); (raw / "DSC00001.ARW").write_text("b")
+    lrt = tmp_path / "seq"; lrt.mkdir(); (lrt / "0001.tif").write_text("i")
+    out = tmp_path / "out"; out.mkdir()
+    body = dict(
+        raw_folder=str(raw), camera_name="Sony A7R IV",
+        lrt_export_folder=str(lrt), stabilize={"enabled": False}, resolution=[3840, 2160],
+        fps=24, export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"},
+        output_path=str(out),
+    )
+    r = client.post("/pipeline/start", json=body)
+    assert r.status_code == 200
+    # 已生成整理后的 _seq 文件夹，连续命名
+    seq_dir = tmp_path / "raw_seq"
+    assert seq_dir.is_dir()
+    assert sorted(p.name for p in seq_dir.iterdir()) == ["TL_0001.ARW", "TL_0002.ARW"]

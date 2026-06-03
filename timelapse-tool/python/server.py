@@ -38,6 +38,7 @@ from pipeline.stages import default_stages
 from pipeline.export_formats import PRESETS
 from pipeline import workflows
 from pipeline import preview
+from pipeline import sequence
 
 _THUMB_CACHE = str(Path(tempfile.gettempdir()) / "timelapse_thumbs")
 
@@ -104,6 +105,12 @@ def pipeline_start(body: StartBody):
         except KeyError:
             raise HTTPException(status_code=400, detail=f"未知导出预设: {preset}")
     config = PipelineConfig(**data)
+    # 自动检查相机计数器回绕（如 9999→0001），不连续则硬链接重排到 _seq 并改用之
+    try:
+        repaired = sequence.repair(config.raw_folder)
+        config.raw_folder = repaired
+    except Exception:
+        pass  # 整理失败不阻断流程，沿用原文件夹
     try:
         stages = workflows.build_stages(workflow_names) if workflow_names else default_stages()
         _runner = PipelineRunner(stages=stages, emit=_progress_log.append)
