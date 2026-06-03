@@ -14,6 +14,8 @@
   <main>
     <section id="pipeline" class="panel active">
       <div class="pipeline-wrap">
+      <div class="pipeline-layout">
+      <div class="pipeline-main">
       <div class="glass pipeline-form">
         <h1>延时流水线</h1>
         <div class="field">
@@ -171,6 +173,14 @@
         <div id="stage-guide" class="stage-guide hidden"></div>
       </div>
 
+      <div class="board" id="stage-board">
+        <div class="stage" data-stage="BR"><div class="stage-name">BR</div><div class="stage-hint">手动·ACR</div></div>
+        <div class="stage" data-stage="LRT"><div class="stage-name">LRT</div><div class="stage-hint">手动操作</div></div>
+        <div class="stage" data-stage="AE"><div class="stage-name">AE</div><div class="stage-hint">渲染序列</div></div>
+        <div class="stage" data-stage="PR"><div class="stage-name">PR</div><div class="stage-hint">导出成片</div></div>
+      </div>
+      </div>
+
       <div class="glass preview-panel hidden" id="preview-panel">
         <div class="preview-head">
           <span id="preview-info">预览</span>
@@ -178,13 +188,6 @@
         </div>
         <div class="preview-strip" id="preview-strip"></div>
         <img id="preview-stage" class="preview-stage hidden" alt="预览" />
-      </div>
-
-      <div class="board" id="stage-board">
-        <div class="stage" data-stage="BR"><div class="stage-name">BR</div><div class="stage-hint">手动·ACR</div></div>
-        <div class="stage" data-stage="LRT"><div class="stage-name">LRT</div><div class="stage-hint">手动操作</div></div>
-        <div class="stage" data-stage="AE"><div class="stage-name">AE</div><div class="stage-hint">渲染序列</div></div>
-        <div class="stage" data-stage="PR"><div class="stage-name">PR</div><div class="stage-hint">导出成片</div></div>
       </div>
       </div>
     </section>
