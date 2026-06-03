@@ -34,9 +34,13 @@ from pipeline.models import PipelineConfig
 from pipeline.runner import PipelineRunner
 from pipeline.stages import default_stages
 from pipeline.export_formats import PRESETS
+from pipeline import workflows
 
 _CAMERAS_PATH = Path(__file__).parent / "cameras.json"
 _camera_store = CameraStore(_CAMERAS_PATH)
+
+_WORKFLOWS_PATH = Path(__file__).parent / "workflows.json"
+_workflow_store = workflows.WorkflowStore(_WORKFLOWS_PATH)
 
 _progress_log = []
 _runner = PipelineRunner(stages=default_stages(), emit=_progress_log.append)
@@ -78,12 +82,15 @@ class StartBody(BaseModel):
     fps: int
     export: Optional[dict] = None
     preset: Optional[str] = None
+    workflow: Optional[list] = None
     output_path: str
 
 
 @app.post("/pipeline/start")
 def pipeline_start(body: StartBody):
+    global _runner
     data = body.dict()
+    workflow_names = data.pop("workflow", None)
     preset = data.pop("preset", None)
     if data.get("export") is None and preset:
         from pipeline.export_formats import expand_preset
@@ -93,6 +100,8 @@ def pipeline_start(body: StartBody):
             raise HTTPException(status_code=400, detail=f"未知导出预设: {preset}")
     config = PipelineConfig(**data)
     try:
+        stages = workflows.build_stages(workflow_names) if workflow_names else default_stages()
+        _runner = PipelineRunner(stages=stages, emit=_progress_log.append)
         _runner.start(config)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -118,6 +127,25 @@ def pipeline_status():
 @app.get("/export/presets")
 def get_export_presets():
     return {"presets": list(PRESETS.keys())}
+
+
+@app.get("/workflows")
+def get_workflows():
+    return {"workflows": _workflow_store.all()}
+
+
+class SaveWorkflowBody(BaseModel):
+    name: str
+    stages: list
+
+
+@app.post("/workflows", status_code=201)
+def save_workflow(body: SaveWorkflowBody):
+    try:
+        _workflow_store.save(body.name, body.stages)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True}
 
 
 if __name__ == "__main__":

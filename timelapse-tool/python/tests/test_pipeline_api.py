@@ -103,3 +103,42 @@ def test_pipeline_start_with_preset(tmp_path):
     r = client.post("/pipeline/start", json=body)
     assert r.status_code == 200
     assert r.json()["state"] == "waiting_for_user"
+
+
+def test_get_workflows_lists_builtin():
+    r = client.get("/workflows")
+    assert r.status_code == 200
+    wf = r.json()["workflows"]
+    assert wf["全流程"] == ["BR", "LRT", "AE", "PR"]
+    assert "极简" in wf
+
+
+def test_start_with_custom_workflow_runs_only_those_stages(tmp_path, monkeypatch):
+    from pipeline import ae, pr
+    monkeypatch.setattr(ae, "render_sequence",
+                        lambda seq_folder, output_dir, fps, emit, **kw: emit("AE"))
+    monkeypatch.setattr(pr, "render_final",
+                        lambda intermediate_video, output_dir, export, emit, **kw: emit("PR"))
+    raw = tmp_path / "raw"; raw.mkdir()
+    lrt = tmp_path / "seq"; lrt.mkdir(); (lrt / "0001.tif").write_text("i")
+    out = tmp_path / "out"; out.mkdir()
+    body = dict(
+        raw_folder=str(raw), camera_name="Sony A7R IV",
+        lrt_export_folder=str(lrt), stabilize={"enabled": False}, resolution=[3840, 2160],
+        fps=24, export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"},
+        output_path=str(out), workflow=["LRT", "AE"],
+    )
+    r = client.post("/pipeline/start", json=body)
+    assert r.status_code == 200
+    assert r.json()["current_stage"] == "LRT"
+    r2 = client.post("/pipeline/continue")
+    assert r2.json()["state"] == "done"
+
+
+def test_save_custom_workflow(tmp_path, monkeypatch):
+    from pipeline import workflows
+    p = tmp_path / "workflows.json"; p.write_text('{"workflows": {}}')
+    monkeypatch.setattr(server, "_workflow_store", workflows.WorkflowStore(p))
+    r = client.post("/workflows", json={"name": "测试流", "stages": ["LRT", "AE", "PR"]})
+    assert r.status_code == 201
+    assert "测试流" in client.get("/workflows").json()["workflows"]
