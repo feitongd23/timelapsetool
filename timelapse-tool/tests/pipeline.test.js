@@ -1,4 +1,15 @@
-const { buildStartPayload, stageBoardModel, canContinue, continueLabel, buildExportConfig, collectWorkflowStages } = require("../electron/renderer/pipeline.js");
+const { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildExportConfig, collectWorkflowStages } = require("../electron/renderer/pipeline.js");
+
+test("guidanceText 停在 LRT 时含圣光提示", () => {
+  const g = guidanceText({ state: "waiting_for_user", current_stage: "LRT" });
+  expect(g).toContain("圣光");
+  expect(g).toContain("关键帧");
+});
+
+test("guidanceText 非等待态返回空", () => {
+  expect(guidanceText({ state: "running", current_stage: "LRT" })).toBe("");
+  expect(guidanceText({ state: "done", current_stage: "PR" })).toBe("");
+});
 
 test("collectWorkflowStages 按勾选返回固定顺序子集", () => {
   const checked = { BR: false, LRT: true, AE: true, PR: true };

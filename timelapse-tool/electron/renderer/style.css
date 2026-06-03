@@ -223,6 +223,11 @@ h1 { font-size: 22px; font-weight: 600; margin-bottom: 20px; letter-spacing: -0.
 .stage.failed { background: rgba(255, 59, 48, 0.16); border-color: rgba(255,59,48,0.5); }
 
 .error-text { font-size: 13px; color: var(--err); margin-top: 12px; min-height: 16px; }
+.stage-guide {
+  margin-top: 14px; padding: 14px 16px;
+  background: var(--accent-soft); border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm); font-size: 13px; line-height: 1.6; color: var(--text);
+}
 .hidden { display: none !important; }
 
 /* 路径输入 + 选择按钮 */

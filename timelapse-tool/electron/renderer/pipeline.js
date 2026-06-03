@@ -45,6 +45,18 @@ function canContinue(status) {
   return status.state === "waiting_for_user";
 }
 
+// 手动阶段的操作引导（含圣光 Holy Grail）
+const STAGE_GUIDE = {
+  BR: "BR · 在 Adobe Bridge 中全选该文件夹的 RAW，按 ⌘R 进入 Camera Raw，调整透视矫正 / 镜头配置文件 / 消色差，完成后点「继续」。",
+  LRT: "LRT · 在 LRTimelapse 中依次：① 关键帧向导设置关键帧 → ② 若是日转夜/夜转日素材，走「圣光 Holy Grail」向导处理曝光过渡 → ③ 视觉去闪（Deflicker）→ ④ 自动过渡 → ⑤ 导出图像序列到上面填的「LRT 导出序列文件夹」，完成后点「继续」。",
+};
+
+// 当前若停在某手动阶段，返回该阶段的引导文字，否则空串
+function guidanceText(status) {
+  if (status.state !== "waiting_for_user") return "";
+  return STAGE_GUIDE[status.current_stage] || "";
+}
+
 const WORKFLOW_ORDER = ["BR", "LRT", "AE", "PR"];
 
 // 把阶段勾选状态转成固定顺序的阶段名数组
@@ -260,6 +272,10 @@ async function initPipeline(httpBase) {
     const contBtn = id("btn-continue");
     contBtn.classList.toggle("hidden", !canContinue(status));
     contBtn.textContent = continueLabel(status);
+    const guide = guidanceText(status);
+    const guideEl = id("stage-guide");
+    guideEl.textContent = guide;
+    guideEl.classList.toggle("hidden", !guide);
     if (status.state === "failed") errEl.textContent = "失败：" + (status.error || "");
     return status;
   }
@@ -298,5 +314,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, buildExportConfig, collectWorkflowStages, STAGES };
+  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildExportConfig, collectWorkflowStages, STAGES };
 }
