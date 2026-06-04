@@ -93,11 +93,12 @@ def test_render_sequence_invokes_ae_then_aerender(tmp_path):
     result = ae.render_sequence(
         seq_folder=str(seq), output_dir=str(out), fps=24, stabilize={"enabled": False},
         emit=lambda m: None, run=fake_run,
-        aerender="/x/aerender", ae_app="/x/AE",
+        aerender="/x/aerender", ae_app_name="TestAE",
     )
     assert result == ae.intermediate_path(str(out))
     assert result.exists()
-    assert "/x/AE" in calls[0]
+    assert calls[0][0] == "osascript"
+    assert "DoScriptFile" in calls[0][2]
     assert calls[1][0] == "/x/aerender"
 
 
@@ -113,7 +114,7 @@ def test_render_sequence_missing_output_raises(tmp_path):
         ae.render_sequence(
             seq_folder=str(seq), output_dir=str(out), fps=24, stabilize={"enabled": False},
             emit=lambda m: None, run=fake_run,
-            aerender="/x/aerender", ae_app="/x/AE",
+            aerender="/x/aerender", ae_app_name="TestAE",
         )
 
 
@@ -129,5 +130,5 @@ def test_render_sequence_nonzero_returncode_raises(tmp_path):
         ae.render_sequence(
             seq_folder=str(seq), output_dir=str(out), fps=24, stabilize={"enabled": False},
             emit=lambda m: None, run=fake_run,
-            aerender="/x/aerender", ae_app="/x/AE",
+            aerender="/x/aerender", ae_app_name="TestAE",
         )

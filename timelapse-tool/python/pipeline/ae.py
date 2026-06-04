@@ -9,7 +9,8 @@ SEQUENCE_EXTS = {".jpg", ".jpeg", ".tif", ".tiff", ".png",
                  ".arw", ".dng", ".cr2", ".cr3", ".nef", ".raf", ".orf"}
 
 AERENDER = "/Applications/Adobe After Effects 2026/aerender"
-AE_APP = "/Applications/Adobe After Effects 2026/Adobe After Effects 2026.app/Contents/MacOS/After Effects"
+# 用 AppleScript DoScriptFile 驱动（AE 的命令行 -r 在 2026 上不可靠）
+AE_APP_NAME = "Adobe After Effects 2026"
 
 INTERMEDIATE_NAME = "_ae_intermediate.mov"
 PRORES_OM_TEMPLATE = "Apple ProRes 4444"
@@ -82,6 +83,16 @@ app.quit();
 """.strip()
 
 
+def build_run_script_cmd(jsx_path, app_name=AE_APP_NAME):
+    """用 AppleScript 让（运行中的/将启动的）AE 执行脚本文件。"""
+    apple = (
+        f'with timeout of 1800 seconds\n'
+        f'tell application "{app_name}" to DoScriptFile "{jsx_path}"\n'
+        f'end timeout'
+    )
+    return ["osascript", "-e", apple]
+
+
 def build_aerender_cmd(aerender, project_path, output_path):
     return [
         aerender,
@@ -93,7 +104,7 @@ def build_aerender_cmd(aerender, project_path, output_path):
 
 
 def render_sequence(seq_folder, output_dir, fps, stabilize, emit, run=subprocess.run,
-                    aerender=AERENDER, ae_app=AE_APP):
+                    aerender=AERENDER, ae_app_name=AE_APP_NAME):
     """跑完整 AE 阶段，返回中间视频路径。
 
     run: 可注入的命令执行器（默认 subprocess.run），签名 run(cmd, **kwargs) -> 有 returncode 的对象。
@@ -102,12 +113,12 @@ def render_sequence(seq_folder, output_dir, fps, stabilize, emit, run=subprocess
     out_video = intermediate_path(output_dir)
     proj_path = str(Path(tempfile.gettempdir()) / "timelapse_ae_project.aep")
 
-    emit("AE 阶段：新建工程并导入图像序列…")
+    emit("AE 阶段：打开 After Effects、新建工程并导入 RAW 序列…")
     jsx = build_ae_script(str(anchor), fps, proj_path, stabilize)
     with tempfile.NamedTemporaryFile("w", suffix=".jsx", delete=False) as f:
         f.write(jsx)
         jsx_path = f.name
-    r1 = run([ae_app, "-r", jsx_path])
+    r1 = run(build_run_script_cmd(jsx_path, ae_app_name))
     if getattr(r1, "returncode", 0) != 0:
         raise RuntimeError("AE 建工程失败")
 
