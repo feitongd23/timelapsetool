@@ -4,7 +4,9 @@ from pathlib import Path
 
 from pipeline import effects
 
-SEQUENCE_EXTS = {".jpg", ".jpeg", ".tif", ".tiff"}
+# AE 经 Camera Raw 直接导入 RAW 序列，也支持已导出的 JPG/TIF
+SEQUENCE_EXTS = {".jpg", ".jpeg", ".tif", ".tiff", ".png",
+                 ".arw", ".dng", ".cr2", ".cr3", ".nef", ".raf", ".orf"}
 
 AERENDER = "/Applications/Adobe After Effects 2026/aerender"
 AE_APP = "/Applications/Adobe After Effects 2026/Adobe After Effects 2026.app/Contents/MacOS/After Effects"

@@ -22,7 +22,6 @@ class PipelineState(str, Enum):
 class PipelineConfig:
     raw_folder: str
     camera_name: str
-    lrt_export_folder: str
     stabilize: dict
     resolution: List[int]
     fps: int
@@ -32,8 +31,6 @@ class PipelineConfig:
     def validate(self):
         if not Path(self.raw_folder).is_dir():
             raise ValueError(f"RAW 文件夹不存在: {self.raw_folder}")
-        if not Path(self.lrt_export_folder).is_dir():
-            raise ValueError(f"LRT 导出序列文件夹不存在: {self.lrt_export_folder}")
         if not Path(self.output_path).is_dir():
             raise ValueError(f"输出路径不存在: {self.output_path}")
         if not (MIN_FPS <= self.fps <= MAX_FPS):

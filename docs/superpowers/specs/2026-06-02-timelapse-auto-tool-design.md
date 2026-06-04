@@ -70,6 +70,10 @@
 > - **BR 阶段也改为手动**：用户的 Camera Raw 调整（透视矫正、镜头配置文件、消色差）每次拍摄都不同（镜头/焦段不同），无法用统一预设。因此工具不再「套预设」，而是帮用户「开门」——用 Adobe Bridge 打开该次延时文件夹、全选 RAW、进入 Camera Raw，用户手动调整后点"继续"。原「Camera Raw 预设 .xmp」字段移除。
 > - 结论：流水线有 **两个手动暂停点（BR、LRT）** + 两个自动段（AE、PR）。
 >
+> **四次修订（2026-06-05）—— AE 直接吃 RAW（Bridge/ACR/AE 工作流）**：
+> - 采用 LRTimelapse 的「Bridge / Camera Raw / After Effects 工作流」：LRT 把关键帧/去闪/圣光写进 RAW 的 XMP 边车，**AE 直接导入 RAW 序列**（经 Camera Raw 应用 XMP），**不再需要 LRT 导出 JPG/TIF 中间序列**。
+> - 移除「LRT 导出序列文件夹」字段与"导出序列就绪"关卡。AE 阶段读取 RAW 文件夹（若回绕则用整理后的 `_seq`）。LRT 阶段完成后直接继续。
+>
 > **三次修订（2026-06-03）—— 增稳归位到 AE，去闪只在 LRT**：
 > - **增稳在 AE 做**（不在 PR）：用 AE 自带的 **变形稳定器（Warp Stabilizer / matchName `ADBE SubspaceStabilizer`）**。PR 阶段不再增稳，只做导出。
 > - **去闪只在 LRT**：实测用户的 AE 2026 里没有可用的去闪效果（搜 flicker/去闪 均无；`Plug-ins/Effects/Deflicker.plugin` 是 PR/Media Encoder 内部用、AE 界面不暴露）。因此去闪只靠 LRT 手动那一遍，AE 不做去闪。

@@ -24,7 +24,6 @@ test("buildStartPayload 转换类型", () => {
   const payload = buildStartPayload({
     raw_folder: "/raw",
     camera_name: "Sony A7R IV",
-    lrt_export_folder: "/seq",
     resolution: "3840x2160",
     fps: "24",
     output_path: "/out",
@@ -41,7 +40,7 @@ test("buildStartPayload 转换类型", () => {
 
 test("buildStartPayload 带 stabilize", () => {
   const payload = buildStartPayload({
-    raw_folder: "/raw", camera_name: "Cam", lrt_export_folder: "/seq",
+    raw_folder: "/raw", camera_name: "Cam",
     resolution: "3840x2160", fps: "24", output_path: "/out",
     stabilize_enabled: true, stabilize_result: "smooth",
     stabilize_smoothness: "70", stabilize_method: "subspace",

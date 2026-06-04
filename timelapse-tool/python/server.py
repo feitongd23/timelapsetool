@@ -82,7 +82,6 @@ def add_camera(body: AddCameraBody):
 class StartBody(BaseModel):
     raw_folder: str
     camera_name: str
-    lrt_export_folder: str
     stabilize: dict
     resolution: list
     fps: int

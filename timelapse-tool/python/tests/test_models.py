@@ -10,7 +10,6 @@ def _valid_kwargs(tmp_path):
     return dict(
         raw_folder=str(raw),
         camera_name="Sony A7R IV",
-        lrt_export_folder=str(lrt),
         stabilize={"enabled": True, "result": "smooth", "smoothness": 50, "method": "subspace"},
         resolution=[3840, 2160],
         fps=24,

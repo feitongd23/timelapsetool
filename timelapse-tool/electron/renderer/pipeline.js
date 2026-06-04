@@ -7,7 +7,6 @@ function buildStartPayload(values) {
   return {
     raw_folder: values.raw_folder,
     camera_name: values.camera_name,
-    lrt_export_folder: values.lrt_export_folder,
     stabilize: Boolean(values.stabilize),
     resolution: [w, h],
     fps: parseInt(values.fps, 10),
@@ -48,7 +47,7 @@ function canContinue(status) {
 // 手动阶段的操作引导（含圣光 Holy Grail）
 const STAGE_GUIDE = {
   BR: "BR · 在 Adobe Bridge 中全选该文件夹的 RAW，按 ⌘R 进入 Camera Raw，调整透视矫正 / 镜头配置文件 / 消色差，完成后点「继续」。",
-  LRT: "LRT · 在 LRTimelapse 中依次：① 关键帧向导设置关键帧 → ② 若是日转夜/夜转日素材，走「圣光 Holy Grail」向导处理曝光过渡 → ③ 视觉去闪（Deflicker）→ ④ 自动过渡 → ⑤ 导出图像序列到上面填的「LRT 导出序列文件夹」，完成后点「继续」。",
+  LRT: "LRT · 在 LRTimelapse 中依次：① 关键帧向导设置关键帧 → ② 若是日转夜/夜转日素材，走「圣光 Holy Grail」向导处理曝光过渡 → ③ 视觉去闪（Deflicker）→ ④ 自动过渡 → ⑤ 保存（写入 XMP）。无需导出图像序列，AE 会直接读取 RAW。完成后点「继续」。",
 };
 
 // 当前若停在某手动阶段，返回该阶段的引导文字，否则空串
@@ -106,7 +105,6 @@ function readForm() {
   return {
     raw_folder: id("raw_folder").value,
     camera_name: id("camera_name").value,
-    lrt_export_folder: id("lrt_export_folder").value,
     resolution: id("resolution").value,
     fps: id("fps").value,
     output_path: id("output_path").value,

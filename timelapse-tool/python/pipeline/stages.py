@@ -1,9 +1,3 @@
-from pathlib import Path
-
-# LRT 导出的图像序列可能的扩展名
-SEQUENCE_EXTS = {".tif", ".tiff", ".jpg", ".jpeg", ".png"}
-
-
 class Stage:
     """流水线阶段基类。子类设置 name / manual，并实现 run()。"""
 
@@ -45,16 +39,9 @@ class LRTStage(Stage):
         emit("LRT 阶段：正在打开 LRTimelapse…")
         try:
             launcher.open_in_app(launcher.LRT_APP, config.raw_folder)
-            emit("LRT 阶段：请在 LRTimelapse 中完成关键帧/去闪/自动过渡，导出图像序列到指定文件夹后点继续")
+            emit("LRT 阶段：请在 LRTimelapse 中完成关键帧/去闪/自动过渡/圣光（写入 XMP），完成后点继续，无需导出")
         except Exception as exc:
             emit(f"LRT 阶段：无法自动打开 LRTimelapse（{exc}），请手动打开 {config.raw_folder} 操作后点继续")
-
-    def validate_resume(self, config):
-        # 恢复前校验：LRT 导出文件夹必须已有图像序列
-        folder = Path(config.lrt_export_folder)
-        has_image = any(p.suffix.lower() in SEQUENCE_EXTS for p in folder.iterdir())
-        if not has_image:
-            raise ValueError("LRT 导出文件夹里没有图像序列，请先在 LRTimelapse 中导出")
 
 
 class AEStage(Stage):
@@ -64,7 +51,7 @@ class AEStage(Stage):
     def run(self, config, emit):
         from pipeline import ae
         ae.render_sequence(
-            seq_folder=config.lrt_export_folder,
+            seq_folder=config.raw_folder,
             output_dir=config.output_path,
             fps=config.fps,
             stabilize=config.stabilize,

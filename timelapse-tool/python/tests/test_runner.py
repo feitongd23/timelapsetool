@@ -13,7 +13,6 @@ def _cfg(tmp_path, with_seq_image=False):
         (lrt / "0001.tif").write_text("img")
     return PipelineConfig(
         raw_folder=str(raw), camera_name="Cam",
-        lrt_export_folder=str(lrt),
         stabilize={"enabled": False},
         resolution=[3840, 2160],
         fps=24, export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"}, output_path=str(out),
@@ -57,18 +56,11 @@ def test_two_manual_stages_pause_twice(tmp_path):
     assert stages[2].ran is True
 
 
-def test_lrt_resume_requires_sequence(tmp_path):
+def test_lrt_resume_proceeds_without_export(tmp_path):
+    # LRT 写 XMP 后无需导出序列，continue 直接推进（AE 直接吃 RAW）
     stages = [LRTStage(), RecordingStage("AE")]
     runner = PipelineRunner(stages=stages, emit=lambda m: None)
-    runner.start(_cfg(tmp_path, with_seq_image=False))
-    with pytest.raises(ValueError, match="序列"):
-        runner.continue_()
-
-
-def test_lrt_resume_passes_with_sequence(tmp_path):
-    stages = [LRTStage(), RecordingStage("AE")]
-    runner = PipelineRunner(stages=stages, emit=lambda m: None)
-    runner.start(_cfg(tmp_path, with_seq_image=True))
+    runner.start(_cfg(tmp_path))
     runner.continue_()
     assert runner.status()["state"] == PipelineState.DONE
 

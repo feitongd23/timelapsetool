@@ -24,12 +24,8 @@ def test_br_stage_emits_progress():
     assert any("BR" in m for m in messages)
 
 
-def test_lrt_validate_resume_requires_sequence(tmp_path):
-    cfg = SimpleNamespace(lrt_export_folder=str(tmp_path))
-    with pytest.raises(ValueError, match="序列"):
-        LRTStage().validate_resume(cfg)
-    (tmp_path / "0001.tif").write_text("img")
-    LRTStage().validate_resume(cfg)  # 有图片后不抛
+def test_lrt_validate_resume_is_noop():
+    LRTStage().validate_resume(config=None)  # LRT 无需导出，继续无前置校验
 
 
 def test_br_validate_resume_is_noop():
@@ -51,14 +47,14 @@ def test_ae_stage_delegates_to_render(monkeypatch, tmp_path):
     monkeypatch.setattr(ae, "render_sequence", fake_render)
 
     class Cfg:
-        lrt_export_folder = str(tmp_path / "seq")
+        raw_folder = str(tmp_path / "raw")
         output_path = str(tmp_path / "out")
         fps = 30
         stabilize = {"enabled": False}
 
     msgs = []
     AEStage().run(Cfg(), msgs.append)
-    assert called["seq"] == str(tmp_path / "seq")
+    assert called["seq"] == str(tmp_path / "raw")
     assert called["fps"] == 30
     assert called["stabilize"] == {"enabled": False}
     assert any("AE" in m for m in msgs)

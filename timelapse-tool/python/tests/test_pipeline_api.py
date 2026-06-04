@@ -38,7 +38,7 @@ def test_pipeline_start_two_pauses_then_done(tmp_path, monkeypatch):
     out = tmp_path / "out"; out.mkdir()
     body = dict(
         raw_folder=str(raw), camera_name="Sony A7R IV",
-        lrt_export_folder=str(lrt), stabilize={"enabled": False}, resolution=[3840, 2160],
+        stabilize={"enabled": False}, resolution=[3840, 2160],
         fps=24, export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"}, output_path=str(out),
     )
     # start → 停在 BR（手动）
@@ -64,7 +64,7 @@ def test_pipeline_start_bad_fps_400(tmp_path):
     out = tmp_path / "out"; out.mkdir()
     body = dict(
         raw_folder=str(raw), camera_name="Sony A7R IV",
-        lrt_export_folder=str(lrt), stabilize={"enabled": False}, resolution=[3840, 2160],
+        stabilize={"enabled": False}, resolution=[3840, 2160],
         fps=0, export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"}, output_path=str(out),
     )
     r = client.post("/pipeline/start", json=body)
@@ -97,7 +97,7 @@ def test_pipeline_start_with_preset(tmp_path):
     out = tmp_path / "out"; out.mkdir()
     body = dict(
         raw_folder=str(raw), camera_name="Sony A7R IV",
-        lrt_export_folder=str(lrt), stabilize={"enabled": False}, resolution=[3840, 2160],
+        stabilize={"enabled": False}, resolution=[3840, 2160],
         fps=24, output_path=str(out), preset="母版 · ProRes 422 HQ",
     )
     r = client.post("/pipeline/start", json=body)
@@ -124,7 +124,7 @@ def test_start_with_custom_workflow_runs_only_those_stages(tmp_path, monkeypatch
     out = tmp_path / "out"; out.mkdir()
     body = dict(
         raw_folder=str(raw), camera_name="Sony A7R IV",
-        lrt_export_folder=str(lrt), stabilize={"enabled": False}, resolution=[3840, 2160],
+        stabilize={"enabled": False}, resolution=[3840, 2160],
         fps=24, export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"},
         output_path=str(out), workflow=["LRT", "AE"],
     )
@@ -177,7 +177,7 @@ def test_start_repairs_wrapped_sequence(tmp_path, monkeypatch):
     out = tmp_path / "out"; out.mkdir()
     body = dict(
         raw_folder=str(raw), camera_name="Sony A7R IV",
-        lrt_export_folder=str(lrt), stabilize={"enabled": False}, resolution=[3840, 2160],
+        stabilize={"enabled": False}, resolution=[3840, 2160],
         fps=24, export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"},
         output_path=str(out),
     )
