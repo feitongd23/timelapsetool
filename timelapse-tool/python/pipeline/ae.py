@@ -51,11 +51,13 @@ try {{ ws.property("{effects.WS_PROP_SMOOTHNESS}").setValue({smoothness}); }} ca
 """
 
 
-def build_ae_script(anchor_file, fps, project_save_path, stabilize):
-    """生成构建 AE 工程的 ExtendScript：导入序列→建合成→(增稳)→入渲染队列→保存。
+def build_ae_script(anchor_file, fps, resolution, project_save_path, stabilize):
+    """生成构建 AE 工程的 ExtendScript：导入序列→按导出分辨率建合成（画面缩放铺满）→(增稳)→入渲染队列→保存。
 
+    resolution: [宽, 高]。合成按此尺寸建，RAW 画面缩放铺满（cover，超出裁掉）。
     渲染由后续 aerender 执行；这里只搭好工程并保存。
     """
+    width, height = int(resolution[0]), int(resolution[1])
     return f"""
 var anchor = new File("{anchor_file}");
 var io = new ImportOptions(anchor);
@@ -68,13 +70,18 @@ footage.mainSource.conformFrameRate = {fps};
 
 var comp = app.project.items.addComp(
     "{COMP_NAME}",
-    footage.width,
-    footage.height,
-    footage.pixelAspect,
+    {width},
+    {height},
+    1.0,
     footage.duration,
     {fps}
 );
-comp.layers.add(footage);
+var layer = comp.layers.add(footage);
+// 缩放铺满合成（cover）：取宽高比例较大者
+var sx = comp.width / footage.width;
+var sy = comp.height / footage.height;
+var s = Math.max(sx, sy) * 100;
+layer.property("ADBE Transform Group").property("ADBE Scale").setValue([s, s]);
 {_stabilizer_jsx(stabilize)}
 app.project.renderQueue.items.add(comp);
 
@@ -103,7 +110,7 @@ def build_aerender_cmd(aerender, project_path, output_path):
     ]
 
 
-def render_sequence(seq_folder, output_dir, fps, stabilize, emit, run=subprocess.run,
+def render_sequence(seq_folder, output_dir, fps, resolution, stabilize, emit, run=subprocess.run,
                     aerender=AERENDER, ae_app_name=AE_APP_NAME):
     """跑完整 AE 阶段，返回中间视频路径。
 
@@ -114,7 +121,7 @@ def render_sequence(seq_folder, output_dir, fps, stabilize, emit, run=subprocess
     proj_path = str(Path(tempfile.gettempdir()) / "timelapse_ae_project.aep")
 
     emit("AE 阶段：打开 After Effects、新建工程并导入 RAW 序列…")
-    jsx = build_ae_script(str(anchor), fps, proj_path, stabilize)
+    jsx = build_ae_script(str(anchor), fps, resolution, proj_path, stabilize)
     with tempfile.NamedTemporaryFile("w", suffix=".jsx", delete=False) as f:
         f.write(jsx)
         jsx_path = f.name

@@ -36,10 +36,11 @@ def test_ae_stage_delegates_to_render(monkeypatch, tmp_path):
     from pipeline import ae
     called = {}
 
-    def fake_render(seq_folder, output_dir, fps, stabilize, emit, **kwargs):
+    def fake_render(seq_folder, output_dir, fps, resolution, stabilize, emit, **kwargs):
         called["seq"] = seq_folder
         called["out"] = output_dir
         called["fps"] = fps
+        called["resolution"] = resolution
         called["stabilize"] = stabilize
         emit("AE done")
         return ae.intermediate_path(output_dir)
@@ -50,6 +51,7 @@ def test_ae_stage_delegates_to_render(monkeypatch, tmp_path):
         raw_folder = str(tmp_path / "raw")
         output_path = str(tmp_path / "out")
         fps = 30
+        resolution = [3840, 2160]
         stabilize = {"enabled": False}
 
     msgs = []

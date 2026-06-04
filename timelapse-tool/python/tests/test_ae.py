@@ -36,6 +36,7 @@ def test_build_ae_script_contains_paths_and_fps():
     jsx = ae.build_ae_script(
         anchor_file="/seq/0001.jpg",
         fps=30,
+        resolution=[3840, 2160],
         project_save_path="/tmp/proj.aep",
         stabilize=DISABLED,
     )
@@ -48,7 +49,7 @@ def test_build_ae_script_contains_paths_and_fps():
 
 def test_build_ae_script_skips_stabilizer_when_disabled():
     jsx = ae.build_ae_script(
-        anchor_file="/seq/0001.jpg", fps=24,
+        anchor_file="/seq/0001.jpg", fps=24, resolution=[3840, 2160],
         project_save_path="/tmp/p.aep", stabilize={"enabled": False},
     )
     assert ae.effects.WARP_STABILIZER_MATCHNAME not in jsx
@@ -56,7 +57,8 @@ def test_build_ae_script_skips_stabilizer_when_disabled():
 
 def test_build_ae_script_adds_stabilizer_when_enabled():
     jsx = ae.build_ae_script(
-        anchor_file="/seq/0001.jpg", fps=24, project_save_path="/tmp/p.aep",
+        anchor_file="/seq/0001.jpg", fps=24, resolution=[3840, 2160],
+        project_save_path="/tmp/p.aep",
         stabilize={"enabled": True, "result": "smooth", "smoothness": 70, "method": "subspace"},
     )
     assert ae.effects.WARP_STABILIZER_MATCHNAME in jsx
@@ -91,7 +93,7 @@ def test_render_sequence_invokes_ae_then_aerender(tmp_path):
         return R()
 
     result = ae.render_sequence(
-        seq_folder=str(seq), output_dir=str(out), fps=24, stabilize={"enabled": False},
+        seq_folder=str(seq), output_dir=str(out), fps=24, resolution=[3840, 2160], stabilize={"enabled": False},
         emit=lambda m: None, run=fake_run,
         aerender="/x/aerender", ae_app_name="TestAE",
     )
@@ -112,7 +114,7 @@ def test_render_sequence_missing_output_raises(tmp_path):
 
     with pytest.raises(RuntimeError, match="中间视频"):
         ae.render_sequence(
-            seq_folder=str(seq), output_dir=str(out), fps=24, stabilize={"enabled": False},
+            seq_folder=str(seq), output_dir=str(out), fps=24, resolution=[3840, 2160], stabilize={"enabled": False},
             emit=lambda m: None, run=fake_run,
             aerender="/x/aerender", ae_app_name="TestAE",
         )
@@ -128,7 +130,7 @@ def test_render_sequence_nonzero_returncode_raises(tmp_path):
 
     with pytest.raises(RuntimeError, match="失败"):
         ae.render_sequence(
-            seq_folder=str(seq), output_dir=str(out), fps=24, stabilize={"enabled": False},
+            seq_folder=str(seq), output_dir=str(out), fps=24, resolution=[3840, 2160], stabilize={"enabled": False},
             emit=lambda m: None, run=fake_run,
             aerender="/x/aerender", ae_app_name="TestAE",
         )
