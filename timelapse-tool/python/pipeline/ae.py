@@ -100,25 +100,46 @@ def build_run_script_cmd(jsx_path, app_name=AE_APP_NAME):
     return ["osascript", "-e", apple]
 
 
-def build_aerender_cmd(aerender, project_path, output_path):
-    return [
+def build_aerender_cmd(aerender, project_path, output_path, start=None, end=None):
+    cmd = [
         aerender,
         "-project", project_path,
         "-comp", COMP_NAME,
         "-OMtemplate", PRORES_OM_TEMPLATE,
         "-output", output_path,
     ]
+    if start is not None:
+        cmd += ["-s", str(start)]
+    if end is not None:
+        cmd += ["-e", str(end)]
+    return cmd
+
+
+CHUNKS_DIRNAME = "_ae_chunks"
+
+
+def chunks_dir(output_dir):
+    return Path(output_dir) / CHUNKS_DIRNAME
+
+
+def frame_count(seq_folder):
+    """序列帧数 = 文件夹里图片数量（每张 RAW 一帧）。"""
+    return len([p for p in Path(seq_folder).iterdir()
+                if p.is_file() and p.suffix.lower() in SEQUENCE_EXTS])
 
 
 def render_sequence(seq_folder, output_dir, fps, resolution, stabilize, emit, run=subprocess.run,
-                    aerender=AERENDER, ae_app_name=AE_APP_NAME):
-    """跑完整 AE 阶段，返回中间视频路径。
+                    aerender=AERENDER, ae_app_name=AE_APP_NAME, chunk=100, retries=3):
+    """分块渲染（防崩+可重试），返回各段 ProRes 片段路径列表。
 
-    run: 可注入的命令执行器（默认 subprocess.run），签名 run(cmd, **kwargs) -> 有 returncode 的对象。
+    每段单独跑一个 aerender 进程（内存清零、抗累积崩溃）；某段失败自动重试。
+    run: 可注入的命令执行器。
     """
     anchor = find_sequence_anchor(seq_folder)
-    out_video = intermediate_path(output_dir)
+    total = frame_count(seq_folder)
     proj_path = str(Path(tempfile.gettempdir()) / "timelapse_ae_project.aep")
+    cdir = chunks_dir(output_dir)
+    cdir.mkdir(parents=True, exist_ok=True)
 
     emit("AE 阶段：打开 After Effects、新建工程并导入 RAW 序列…")
     jsx = build_ae_script(str(anchor), fps, resolution, proj_path, stabilize)
@@ -129,13 +150,20 @@ def render_sequence(seq_folder, output_dir, fps, resolution, stabilize, emit, ru
     if getattr(r1, "returncode", 0) != 0:
         raise RuntimeError("AE 建工程失败")
 
-    emit("AE 阶段：aerender 渲染中间视频（ProRes 4444）…")
-    cmd = build_aerender_cmd(aerender, proj_path, str(out_video))
-    r2 = run(cmd)
-    if getattr(r2, "returncode", 0) != 0:
-        raise RuntimeError("aerender 渲染失败")
-
-    if not out_video.exists():
-        raise RuntimeError(f"未生成中间视频: {out_video}")
-    emit("AE 阶段：完成")
-    return out_video
+    chunk_files = []
+    starts = list(range(0, total, chunk)) if total else [0]
+    for i, start in enumerate(starts):
+        end = min(start + chunk - 1, total - 1) if total else None
+        out = cdir / f"chunk_{i:03d}.mov"
+        ok = False
+        for attempt in range(retries):
+            emit(f"AE 阶段：渲染第 {i+1}/{len(starts)} 段（帧 {start}-{end}，第 {attempt+1} 次）…")
+            r = run(build_aerender_cmd(aerender, proj_path, str(out), start, end))
+            if getattr(r, "returncode", 0) == 0 and out.exists():
+                ok = True
+                break
+        if not ok:
+            raise RuntimeError(f"第 {i+1} 段渲染重试 {retries} 次仍失败")
+        chunk_files.append(str(out))
+    emit(f"AE 阶段：完成，共 {len(chunk_files)} 段 ProRes 片段")
+    return chunk_files

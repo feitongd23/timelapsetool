@@ -80,57 +80,81 @@ def test_build_aerender_cmd_args():
     assert "-OMtemplate" in cmd and "Apple ProRes 4444" in cmd
 
 
-def test_render_sequence_invokes_ae_then_aerender(tmp_path):
-    seq = tmp_path / "seq"; seq.mkdir(); (seq / "0001.jpg").write_text("i")
+def _mk_seq(tmp_path, n):
+    seq = tmp_path / "seq"; seq.mkdir()
+    for i in range(1, n + 1):
+        (seq / f"{i:04d}.jpg").write_text("i")
+    return seq
+
+
+def test_render_sequence_builds_then_chunks(tmp_path):
+    seq = _mk_seq(tmp_path, 250)  # 250 帧, chunk=100 → 3 段
     out = tmp_path / "out"; out.mkdir()
     calls = []
 
     def fake_run(cmd, **kwargs):
         calls.append(cmd)
         if cmd[0].endswith("aerender"):
-            ae.intermediate_path(str(out)).write_text("video")
+            # 模拟 aerender 生成该段输出文件（-output 的下一个参数）
+            outp = cmd[cmd.index("-output") + 1]
+            __import__("pathlib").Path(outp).write_text("clip")
         class R: returncode = 0
         return R()
 
-    result = ae.render_sequence(
-        seq_folder=str(seq), output_dir=str(out), fps=24, resolution=[3840, 2160], stabilize={"enabled": False},
-        emit=lambda m: None, run=fake_run,
-        aerender="/x/aerender", ae_app_name="TestAE",
+    chunks = ae.render_sequence(
+        seq_folder=str(seq), output_dir=str(out), fps=24, resolution=[3840, 2160],
+        stabilize={"enabled": False}, emit=lambda m: None, run=fake_run,
+        aerender="/x/aerender", ae_app_name="TestAE", chunk=100,
     )
-    assert result == ae.intermediate_path(str(out))
-    assert result.exists()
-    assert calls[0][0] == "osascript"
-    assert "DoScriptFile" in calls[0][2]
-    assert calls[1][0] == "/x/aerender"
+    # 先 AE 建工程，再 3 段 aerender
+    assert calls[0][0] == "osascript" and "DoScriptFile" in calls[0][2]
+    aer = [c for c in calls if c[0] == "/x/aerender"]
+    assert len(aer) == 3
+    # 帧范围正确
+    assert "-s" in aer[0] and aer[0][aer[0].index("-s") + 1] == "0"
+    assert aer[0][aer[0].index("-e") + 1] == "99"
+    assert aer[2][aer[2].index("-s") + 1] == "200"
+    assert aer[2][aer[2].index("-e") + 1] == "249"
+    assert len(chunks) == 3
+    assert all(__import__("pathlib").Path(c).exists() for c in chunks)
 
 
-def test_render_sequence_missing_output_raises(tmp_path):
-    seq = tmp_path / "seq"; seq.mkdir(); (seq / "0001.jpg").write_text("i")
+def test_render_sequence_retries_failed_chunk(tmp_path):
+    seq = _mk_seq(tmp_path, 50)  # 1 段
     out = tmp_path / "out"; out.mkdir()
+    attempts = {"n": 0}
 
     def fake_run(cmd, **kwargs):
+        if cmd[0].endswith("aerender"):
+            attempts["n"] += 1
+            if attempts["n"] < 2:
+                class F: returncode = 1  # 第一次失败
+                return F()
+            outp = cmd[cmd.index("-output") + 1]
+            __import__("pathlib").Path(outp).write_text("clip")
         class R: returncode = 0
         return R()
 
-    with pytest.raises(RuntimeError, match="中间视频"):
-        ae.render_sequence(
-            seq_folder=str(seq), output_dir=str(out), fps=24, resolution=[3840, 2160], stabilize={"enabled": False},
-            emit=lambda m: None, run=fake_run,
-            aerender="/x/aerender", ae_app_name="TestAE",
-        )
+    chunks = ae.render_sequence(
+        seq_folder=str(seq), output_dir=str(out), fps=24, resolution=[3840, 2160],
+        stabilize={"enabled": False}, emit=lambda m: None, run=fake_run,
+        aerender="/x/aerender", ae_app_name="TestAE", chunk=100, retries=3,
+    )
+    assert len(chunks) == 1
+    assert attempts["n"] == 2  # 重试后第二次成功
 
 
-def test_render_sequence_nonzero_returncode_raises(tmp_path):
-    seq = tmp_path / "seq"; seq.mkdir(); (seq / "0001.jpg").write_text("i")
+def test_render_sequence_chunk_fails_all_retries(tmp_path):
+    seq = _mk_seq(tmp_path, 50)
     out = tmp_path / "out"; out.mkdir()
 
     def fake_run(cmd, **kwargs):
-        class R: returncode = 1
+        class R: returncode = 0 if not cmd[0].endswith("aerender") else 1
         return R()
 
     with pytest.raises(RuntimeError, match="失败"):
         ae.render_sequence(
-            seq_folder=str(seq), output_dir=str(out), fps=24, resolution=[3840, 2160], stabilize={"enabled": False},
-            emit=lambda m: None, run=fake_run,
-            aerender="/x/aerender", ae_app_name="TestAE",
+            seq_folder=str(seq), output_dir=str(out), fps=24, resolution=[3840, 2160],
+            stabilize={"enabled": False}, emit=lambda m: None, run=fake_run,
+            aerender="/x/aerender", ae_app_name="TestAE", chunk=100, retries=3,
         )
