@@ -57,7 +57,7 @@ def build_ae_script(anchor_file, fps, resolution, project_save_path, stabilize):
     resolution: [宽, 高]。合成按此尺寸建，RAW 画面缩放铺满（cover，超出裁掉）。
     渲染由后续 aerender 执行；这里只搭好工程并保存。
     """
-    width, height = int(resolution[0]), int(resolution[1])
+    width = int(resolution[0])
     return f"""
 var anchor = new File("{anchor_file}");
 var io = new ImportOptions(anchor);
@@ -68,19 +68,21 @@ io.sequence = true;
 var footage = app.project.importFile(io);
 footage.mainSource.conformFrameRate = {fps};
 
+// 不裁切：合成按 RAW 原始宽高比，宽取目标宽，高按比例算
+var compW = {width};
+var compH = Math.round(compW * footage.height / footage.width);
+if (compH % 2 != 0) {{ compH += 1; }}  // 保持偶数，编码友好
 var comp = app.project.items.addComp(
     "{COMP_NAME}",
-    {width},
-    {height},
+    compW,
+    compH,
     1.0,
     footage.duration,
     {fps}
 );
 var layer = comp.layers.add(footage);
-// 缩放铺满合成（cover）：取宽高比例较大者
-var sx = comp.width / footage.width;
-var sy = comp.height / footage.height;
-var s = Math.max(sx, sy) * 100;
+// 缩放铺满（不裁切，宽高同比，因合成已是原始比例）
+var s = (compW / footage.width) * 100;
 layer.property("ADBE Transform Group").property("ADBE Scale").setValue([s, s]);
 {_stabilizer_jsx(stabilize)}
 app.project.renderQueue.items.add(comp);
