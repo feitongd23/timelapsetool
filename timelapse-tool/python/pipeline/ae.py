@@ -128,6 +128,35 @@ def frame_count(seq_folder):
                 if p.is_file() and p.suffix.lower() in SEQUENCE_EXTS])
 
 
+def is_valid_mov(path):
+    """检查 MOV 是否真正封口（含 moov 索引）。aerender 崩溃后可能假成功留下无索引残档。"""
+    import struct
+    p = Path(path)
+    if not p.exists() or p.stat().st_size < 1024:
+        return False
+    try:
+        size = p.stat().st_size
+        off = 0
+        with open(p, "rb") as fh:
+            while off < size:
+                fh.seek(off)
+                h = fh.read(8)
+                if len(h) < 8:
+                    break
+                asz = struct.unpack(">I", h[:4])[0]
+                atype = h[4:8]
+                if atype == b"moov":
+                    return True
+                if asz == 1:
+                    asz = struct.unpack(">Q", fh.read(8))[0]
+                if asz == 0:
+                    break
+                off += asz
+    except Exception:
+        return False
+    return False
+
+
 def render_sequence(seq_folder, output_dir, fps, resolution, stabilize, emit, run=subprocess.run,
                     aerender=AERENDER, ae_app_name=AE_APP_NAME, chunk=100, retries=3):
     """分块渲染（防崩+可重试），返回各段 ProRes 片段路径列表。
@@ -155,13 +184,22 @@ def render_sequence(seq_folder, output_dir, fps, resolution, stabilize, emit, ru
     for i, start in enumerate(starts):
         end = min(start + chunk - 1, total - 1) if total else None
         out = cdir / f"chunk_{i:03d}.mov"
+        # 断点续渲：已存在且封口完整的段跳过
+        if is_valid_mov(out):
+            emit(f"AE 阶段：第 {i+1}/{len(starts)} 段已完成，跳过")
+            chunk_files.append(str(out))
+            continue
         ok = False
         for attempt in range(retries):
             emit(f"AE 阶段：渲染第 {i+1}/{len(starts)} 段（帧 {start}-{end}，第 {attempt+1} 次）…")
-            r = run(build_aerender_cmd(aerender, proj_path, str(out), start, end))
-            if getattr(r, "returncode", 0) == 0 and out.exists():
+            if out.exists():
+                out.unlink()  # 清掉上次的残档再渲
+            run(build_aerender_cmd(aerender, proj_path, str(out), start, end))
+            # 只认真正封口（有 moov）的输出，规避 aerender 崩溃后假成功
+            if is_valid_mov(out):
                 ok = True
                 break
+            emit(f"AE 阶段：第 {i+1} 段未封口（崩溃残档），重试…")
         if not ok:
             raise RuntimeError(f"第 {i+1} 段渲染重试 {retries} 次仍失败")
         chunk_files.append(str(out))

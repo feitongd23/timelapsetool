@@ -97,7 +97,7 @@ def test_render_sequence_builds_then_chunks(tmp_path):
         if cmd[0].endswith("aerender"):
             # 模拟 aerender 生成该段输出文件（-output 的下一个参数）
             outp = cmd[cmd.index("-output") + 1]
-            __import__("pathlib").Path(outp).write_text("clip")
+            __import__("pathlib").Path(outp).write_bytes(b"\x00\x00\x00\x08moov" + b"\x00" * 1100)
         class R: returncode = 0
         return R()
 
@@ -131,7 +131,7 @@ def test_render_sequence_retries_failed_chunk(tmp_path):
                 class F: returncode = 1  # 第一次失败
                 return F()
             outp = cmd[cmd.index("-output") + 1]
-            __import__("pathlib").Path(outp).write_text("clip")
+            __import__("pathlib").Path(outp).write_bytes(b"\x00\x00\x00\x08moov" + b"\x00" * 1100)
         class R: returncode = 0
         return R()
 
