@@ -58,8 +58,16 @@ def is_continuous(folder, time_of=None):
     return by_time == sorted(by_time)
 
 
+# 调色/元数据边车扩展名，整理时随 RAW 一起改名带过去（否则 AE 读不到调色）
+SIDECAR_EXTS = [".xmp", ".acr"]
+
+
 def repair(folder, time_of=None, link=os.link):
-    """若序列不连续，硬链接重排到 <folder>_seq 并返回其路径；否则返回原文件夹。"""
+    """若序列不连续，硬链接重排到 <folder>_seq 并返回其路径；否则返回原文件夹。
+
+    每帧 RAW 连同同名的 .xmp/.acr 调色边车一起按 TL_NNNN 改名带过去，
+    保证 AE 导入时能读到 LRT/ACR 的调色。
+    """
     folder = Path(folder)
     ordered = ordered_frames(str(folder), time_of)
     if not ordered or ordered == sorted(ordered):
@@ -69,9 +77,19 @@ def repair(folder, time_of=None, link=os.link):
     dest.mkdir(exist_ok=True)
     width = max(4, len(str(len(ordered))))
     for i, name in enumerate(ordered, 1):
+        stem = Path(name).stem
         ext = Path(name).suffix
-        target = dest / f"TL_{str(i).zfill(width)}{ext}"
+        base = f"TL_{str(i).zfill(width)}"
+        target = dest / f"{base}{ext}"
         if target.exists():
             target.unlink()
         link(str(folder / name), str(target))
+        # 同名调色边车一并带过去
+        for sc_ext in SIDECAR_EXTS:
+            sc = folder / f"{stem}{sc_ext}"
+            if sc.exists():
+                sc_target = dest / f"{base}{sc_ext}"
+                if sc_target.exists():
+                    sc_target.unlink()
+                link(str(sc), str(sc_target))
     return str(dest)

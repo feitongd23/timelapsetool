@@ -43,6 +43,21 @@ def test_repair_noop_when_continuous(tmp_path):
     assert out == str(tmp_path)  # 未整理，返回原文件夹
 
 
+def test_repair_carries_xmp_sidecars(tmp_path):
+    src = tmp_path / "raw"; src.mkdir()
+    # 回绕：9999 早于 0001；每张带同名 .xmp 调色边车
+    for n in ["DSC09999", "DSC00001"]:
+        (src / f"{n}.ARW").write_text("raw")
+        (src / f"{n}.xmp").write_text(f"grade-{n}")
+    times = {"DSC09999.ARW": "2026-06-03 01:00:00 +0000",
+             "DSC00001.ARW": "2026-06-03 01:00:05 +0000"}
+    out = sequence.repair(str(src), time_of=lambda p: times[os.path.basename(p)])
+    out_p = tmp_path / "raw_seq"
+    # 调色边车跟着改名带过来了
+    assert (out_p / "TL_0001.xmp").read_text() == "grade-DSC09999"
+    assert (out_p / "TL_0002.xmp").read_text() == "grade-DSC00001"
+
+
 def test_repair_creates_hardlinked_continuous_sequence(tmp_path):
     src = tmp_path / "raw"; src.mkdir()
     _touch(src, ["DSC09999.ARW", "DSC00001.ARW", "DSC00002.ARW"])
