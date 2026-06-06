@@ -65,3 +65,50 @@ def test_validate_unknown_codec():
 def test_validate_wrong_container_for_codec():
     with pytest.raises(ValueError, match="容器"):
         validate_export({"codec": "ProRes", "container": "MP4", "prores_profile": "422"})
+
+
+from pipeline import export_formats as ef
+
+
+def test_social_pixels_landscape_and_portrait():
+    assert ef.social_pixels("16:9", "1080p") == (1920, 1080)
+    assert ef.social_pixels("9:16", "1080p") == (1080, 1920)
+    assert ef.social_pixels("3:4", "1080p") == (1080, 1440)
+    assert ef.social_pixels("3:4", "720p") == (720, 960)
+    assert ef.social_pixels("1:1", "1080p") == (1080, 1080)
+    assert ef.social_pixels("3:2", "1080p") == (1620, 1080)
+    assert ef.social_pixels("16:9", "4K") == (3840, 2160)
+
+
+def test_social_pixels_always_even():
+    for aspect in ef.ASPECT_RATIO:
+        for res in ef.SOCIAL_RESOLUTIONS:
+            w, h = ef.social_pixels(aspect, res)
+            assert w % 2 == 0 and h % 2 == 0
+
+
+def test_crop_rect_center_portrait_from_3to2():
+    assert ef.crop_rect(3840, 2560, "9:16") == (1200, 0, 1440, 2560)
+
+
+def test_crop_rect_center_landscape_169():
+    assert ef.crop_rect(3840, 2560, "16:9") == (0, 200, 3840, 2160)
+
+
+def test_crop_rect_square_and_34():
+    assert ef.crop_rect(3840, 2560, "1:1") == (640, 0, 2560, 2560)
+    assert ef.crop_rect(3840, 2560, "3:4") == (960, 0, 1920, 2560)
+
+
+def test_crop_rect_native_3to2_is_full_frame():
+    assert ef.crop_rect(3840, 2560, "3:2") == (0, 0, 3840, 2560)
+
+
+def test_validate_social_ok_and_rejects():
+    ef.validate_social({"format": "H.265", "aspect": "9:16", "resolution": "1080p"})
+    with pytest.raises(ValueError, match="格式"):
+        ef.validate_social({"format": "AV1", "aspect": "9:16", "resolution": "1080p"})
+    with pytest.raises(ValueError, match="画幅"):
+        ef.validate_social({"format": "H.265", "aspect": "21:9", "resolution": "1080p"})
+    with pytest.raises(ValueError, match="分辨率"):
+        ef.validate_social({"format": "H.265", "aspect": "9:16", "resolution": "8K"})

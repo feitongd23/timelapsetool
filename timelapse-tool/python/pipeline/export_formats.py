@@ -42,3 +42,65 @@ def validate_export(export):
             raise ValueError(f"H.264 质量档不支持: {export.get('quality')}")
         if codec == "H.265" and export.get("bit_depth") not in H265_BIT_DEPTHS:
             raise ValueError(f"位深不支持: {export.get('bit_depth')}")
+
+
+# ---- 社媒导出维度（唯一事实来源）----
+
+SOCIAL_FORMATS = {"H.265", "H.264"}
+# 画幅 → (横向 w:h)
+ASPECT_RATIO = {
+    "16:9": (16, 9),
+    "9:16": (9, 16),
+    "3:4": (3, 4),
+    "1:1": (1, 1),
+    "3:2": (3, 2),
+}
+# 分辨率档 → 短边像素
+SOCIAL_RESOLUTIONS = {"720p": 720, "1080p": 1080, "4K": 2160}
+
+# 格式 → 文件名后缀 / Swift 编码标识
+FORMAT_TAG = {"H.265": "h265", "H.264": "h264"}
+FORMAT_SWIFT = {"H.265": "hevc", "H.264": "h264"}
+
+
+def _even(n):
+    n = int(round(n))
+    return n if n % 2 == 0 else n + 1
+
+
+def social_pixels(aspect, resolution):
+    """画幅+分辨率 → (宽, 高) 偶数像素。短边 = 分辨率档。"""
+    a, b = ASPECT_RATIO[aspect]
+    short = SOCIAL_RESOLUTIONS[resolution]
+    long = short * max(a, b) / min(a, b)
+    if a > b:        # 横向：高是短边
+        return (_even(long), _even(short))
+    if a < b:        # 竖向：宽是短边
+        return (_even(short), _even(long))
+    return (_even(short), _even(short))  # 方形
+
+
+def crop_rect(src_w, src_h, aspect):
+    """母版中心裁出 aspect 比例的最大矩形 → (x, y, w, h) 偶数。"""
+    a, b = ASPECT_RATIO[aspect]
+    r = a / b               # 目标横向比
+    sr = src_w / src_h
+    if abs(r - sr) < 1e-9:  # 与母版同比 → 全画幅不裁
+        return (0, 0, _even(src_w), _even(src_h))
+    if r > sr:              # 目标更宽 → 按宽定，裁上下
+        cw, ch = src_w, src_w / r
+    else:                   # 目标更高/窄 → 按高定，裁左右
+        cw, ch = src_h * r, src_h
+    cw, ch = _even(cw), _even(ch)
+    x = _even((src_w - cw) / 2)
+    y = _even((src_h - ch) / 2)
+    return (x, y, cw, ch)
+
+
+def validate_social(social):
+    if social.get("format") not in SOCIAL_FORMATS:
+        raise ValueError(f"格式不支持: {social.get('format')}")
+    if social.get("aspect") not in ASPECT_RATIO:
+        raise ValueError(f"画幅不支持: {social.get('aspect')}")
+    if social.get("resolution") not in SOCIAL_RESOLUTIONS:
+        raise ValueError(f"分辨率不支持: {social.get('resolution')}")
