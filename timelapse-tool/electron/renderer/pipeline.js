@@ -77,8 +77,30 @@ function socialPixels(aspect, resolution) {
   return [_even(short), _even(short)];
 }
 
+// 运镜方向选项随类型联动（与后端 export_formats.DIRECTIONS 同口径）
+const MOTION_DIRECTIONS = {
+  none: [],
+  kenburns: [["in", "放大（推近）"], ["out", "缩小（拉远）"]],
+  pan: [["left", "镜头左移"], ["right", "镜头右移"], ["up", "镜头上移"], ["down", "镜头下移"]],
+  sweep: [["lr", "左 → 右"], ["rl", "右 → 左"]],
+};
+
+function motionDirections(type) {
+  return MOTION_DIRECTIONS[type] || [];
+}
+
+function buildMotionConfig(values) {
+  return { type: values.motion_type, direction: values.motion_direction, intensity: values.motion_intensity };
+}
+
 function buildSocialConfig(values) {
-  return { format: values.social_format, aspect: values.social_aspect, resolution: values.social_resolution };
+  return {
+    format: values.social_format,
+    aspect: values.social_aspect,
+    resolution: values.social_resolution,
+    motion: buildMotionConfig(values),
+    subject: Boolean(values.motion_subject),
+  };
 }
 
 // 「继续」按钮文案随当前手动阶段变化
@@ -112,6 +134,10 @@ function readForm() {
     social_format: id("social_format").value,
     social_aspect: id("social_aspect").value,
     social_resolution: id("social_resolution").value,
+    motion_type: id("motion_type").value,
+    motion_direction: id("motion_direction").value,
+    motion_intensity: id("motion_intensity").value,
+    motion_subject: id("motion_subject").checked,
   };
 }
 
@@ -201,6 +227,23 @@ async function initPipeline(httpBase) {
   ["social_format", "social_aspect", "social_resolution"].forEach((x) =>
     id(x).addEventListener("change", syncSocialPreview));
   syncSocialPreview();
+
+  // 运镜：方向随类型联动，无运镜时方向/强度禁用
+  function syncMotion() {
+    const type = id("motion_type").value;
+    const dirSel = id("motion_direction");
+    dirSel.innerHTML = "";
+    for (const [val, label] of motionDirections(type)) {
+      const opt = document.createElement("option");
+      opt.value = val; opt.textContent = label;
+      dirSel.appendChild(opt);
+    }
+    const off = type === "none";
+    dirSel.disabled = off;
+    id("motion_intensity").disabled = off || type === "sweep";  // 横扫无强度
+  }
+  id("motion_type").addEventListener("change", syncMotion);
+  syncMotion();
 
   // AE 去闪 / 增稳 开关的细项显隐联动
   function syncToggle(cbId, fieldsId) {
@@ -328,5 +371,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, socialPixels, collectWorkflowStages, STAGES };
+  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, socialPixels, collectWorkflowStages, STAGES };
 }

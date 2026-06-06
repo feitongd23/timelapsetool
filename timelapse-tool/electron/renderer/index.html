@@ -104,6 +104,33 @@
           </div>
         </div>
         <div id="social-preview" class="hint-line"></div>
+        <div class="row">
+          <div class="field">
+            <label>运镜</label>
+            <select id="motion_type">
+              <option value="none">无</option>
+              <option value="kenburns">Ken Burns 推拉</option>
+              <option value="pan">平移 Pan</option>
+              <option value="sweep">竖屏横扫</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>方向</label>
+            <select id="motion_direction"></select>
+          </div>
+          <div class="field">
+            <label>强度</label>
+            <select id="motion_intensity">
+              <option value="light">轻</option>
+              <option value="medium" selected>中</option>
+              <option value="strong">明显</option>
+            </select>
+          </div>
+        </div>
+        <div class="field switch-field">
+          <label for="motion_subject">自动对准主体（Vision 显著性）</label>
+          <input id="motion_subject" type="checkbox" />
+        </div>
         <div class="field">
           <label>输出路径</label>
           <div class="path-input">

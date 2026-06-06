@@ -1,4 +1,4 @@
-const { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, socialPixels, collectWorkflowStages } = require("../electron/renderer/pipeline.js");
+const { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, socialPixels, collectWorkflowStages } = require("../electron/renderer/pipeline.js");
 
 test("guidanceText 停在 LRT 时含圣光提示", () => {
   const g = guidanceText({ state: "waiting_for_user", current_stage: "LRT" });
@@ -78,9 +78,22 @@ test("canContinue 仅在等待态为真", () => {
   expect(canContinue({ state: "done" })).toBe(false);
 });
 
-test("buildSocialConfig 取三个下拉值", () => {
-  expect(buildSocialConfig({ social_format: "H.265", social_aspect: "9:16", social_resolution: "1080p" }))
-    .toEqual({ format: "H.265", aspect: "9:16", resolution: "1080p" });
+test("buildSocialConfig 含格式/画幅/分辨率/运镜/主体", () => {
+  expect(buildSocialConfig({
+    social_format: "H.265", social_aspect: "9:16", social_resolution: "1080p",
+    motion_type: "kenburns", motion_direction: "in", motion_intensity: "medium", motion_subject: true,
+  })).toEqual({
+    format: "H.265", aspect: "9:16", resolution: "1080p",
+    motion: { type: "kenburns", direction: "in", intensity: "medium" },
+    subject: true,
+  });
+});
+
+test("motionDirections 按类型联动", () => {
+  expect(motionDirections("kenburns").map((d) => d[0])).toEqual(["in", "out"]);
+  expect(motionDirections("pan").map((d) => d[0])).toEqual(["left", "right", "up", "down"]);
+  expect(motionDirections("sweep").map((d) => d[0])).toEqual(["lr", "rl"]);
+  expect(motionDirections("none")).toEqual([]);
 });
 
 test("socialPixels 与后端同口径", () => {
