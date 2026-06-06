@@ -241,3 +241,21 @@ def test_merge_chunks_invalid_output_raises(tmp_path):
     with pytest.raises(RuntimeError, match="合并"):
         ae.merge_chunks(chunks, str(out), emit=lambda m: None,
                         run=fake_run, binary=str(fake_bin))
+
+
+def test_merge_chunks_removes_chunks_dir_after_merge(tmp_path):
+    out = tmp_path / "out"; out.mkdir()
+    cdir = ae.chunks_dir(str(out)); cdir.mkdir(parents=True)
+    chunks = [str(cdir / f"chunk_{i:03d}.mov") for i in range(2)]
+    for c in chunks:
+        Path(c).write_bytes(_MOOV)
+    fake_bin = tmp_path / "concat_bin"; fake_bin.write_text("bin")
+
+    def fake_run(cmd, **kw):
+        if cmd[0] == str(fake_bin):
+            Path(cmd[1]).write_bytes(_MOOV)
+        class R: returncode = 0
+        return R()
+
+    ae.merge_chunks(chunks, str(out), emit=lambda m: None, run=fake_run, binary=str(fake_bin))
+    assert not cdir.exists()

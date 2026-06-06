@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -157,6 +158,11 @@ def merge_chunks(chunk_files, output_dir, emit, run=subprocess.run, binary=CONCA
     if not is_valid_mov(out):
         raise RuntimeError(f"中间视频合并失败（未封口）: {out}")
     emit("AE 阶段：中间视频合并完成")
+    # 完整 ProRes 中间视频已生成，删除分块临时片段（省空间）
+    cdir = chunks_dir(output_dir)
+    if cdir.is_dir():
+        shutil.rmtree(cdir, ignore_errors=True)
+        emit("AE 阶段：已清理分块临时片段")
     return out
 
 
