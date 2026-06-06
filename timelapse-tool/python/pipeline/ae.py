@@ -13,7 +13,9 @@ AERENDER = "/Applications/Adobe After Effects 2026/aerender"
 AE_APP_NAME = "Adobe After Effects 2026"
 
 INTERMEDIATE_NAME = "_ae_intermediate.mov"
-PRORES_OM_TEMPLATE = "Apple ProRes 4444"
+# AE 内置输出模块模板名就叫「ProRes 4444」（不带 Apple）。带 Apple 会让 aerender
+# 报 "No output module template was found"，既渲不出、回退默认还可能改帧率。实机确认。
+PRORES_OM_TEMPLATE = "ProRes 4444"
 COMP_NAME = "Timelapse"
 
 
@@ -119,9 +121,48 @@ def build_aerender_cmd(aerender, project_path, output_path, start=None, end=None
 
 CHUNKS_DIRNAME = "_ae_chunks"
 
+# 无损拼接工具：用 AVFoundation passthrough 把分块 ProRes 拼成一条（见 mov_concat.swift）
+CONCAT_SWIFT = Path(__file__).parent / "mov_concat.swift"
+CONCAT_BIN = str(Path(tempfile.gettempdir()) / "timelapse_mov_concat")
+
 
 def chunks_dir(output_dir):
     return Path(output_dir) / CHUNKS_DIRNAME
+
+
+def build_concat_cmd(binary, output_path, chunk_files):
+    """拼接命令：<binary> <输出> <片段1> <片段2> …（顺序即拼接顺序）。"""
+    return [binary, output_path, *chunk_files]
+
+
+def ensure_concat_binary(run=subprocess.run, binary=CONCAT_BIN, source=CONCAT_SWIFT):
+    """首次用时把 Swift 拼接工具编译到缓存二进制；已存在则跳过。返回二进制路径。"""
+    if Path(binary).exists():
+        return binary
+    r = run(["swiftc", "-O", str(source), "-o", binary])
+    if getattr(r, "returncode", 0) != 0 or not Path(binary).exists():
+        raise RuntimeError("无法编译 MOV 拼接工具（swiftc）")
+    return binary
+
+
+def merge_chunks(chunk_files, output_dir, emit, run=subprocess.run, binary=CONCAT_BIN):
+    """把分块 ProRes 片段无损拼接成 _ae_intermediate.mov，返回其路径。
+
+    各 chunk 同编码/同尺寸/同帧率（分块渲染天然满足），passthrough 拼接不重编码。
+    """
+    if not chunk_files:
+        raise RuntimeError("没有可合并的渲染片段")
+    out = intermediate_path(output_dir)
+    emit(f"AE 阶段：合并 {len(chunk_files)} 段为中间视频…")
+    bin_path = ensure_concat_binary(run=run, binary=binary)
+    if out.exists():
+        out.unlink()  # 清掉旧的再拼
+    run(build_concat_cmd(bin_path, str(out), list(chunk_files)))
+    # 只认真正封口（有 moov）的输出
+    if not is_valid_mov(out):
+        raise RuntimeError(f"中间视频合并失败（未封口）: {out}")
+    emit("AE 阶段：中间视频合并完成")
+    return out
 
 
 def frame_count(seq_folder):

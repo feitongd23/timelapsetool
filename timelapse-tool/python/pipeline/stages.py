@@ -50,7 +50,7 @@ class AEStage(Stage):
 
     def run(self, config, emit):
         from pipeline import ae
-        ae.render_sequence(
+        chunks = ae.render_sequence(
             seq_folder=config.raw_folder,
             output_dir=config.output_path,
             fps=config.fps,
@@ -58,6 +58,8 @@ class AEStage(Stage):
             stabilize=config.stabilize,
             emit=emit,
         )
+        # 把分块片段无损拼成 _ae_intermediate.mov，供 PR 阶段消费
+        ae.merge_chunks(chunks, config.output_path, emit)
 
 
 class PRStage(Stage):

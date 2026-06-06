@@ -31,6 +31,8 @@ def test_pipeline_start_two_pauses_then_done(tmp_path, monkeypatch):
     from pipeline import ae, pr
     monkeypatch.setattr(ae, "render_sequence",
                         lambda seq_folder, output_dir, fps, emit, **kw: emit("AE mock"))
+    monkeypatch.setattr(ae, "merge_chunks",
+                        lambda chunks, output_dir, emit, **kw: emit("merge mock"))
     monkeypatch.setattr(pr, "render_final",
                         lambda intermediate_video, output_dir, export, emit, **kw: emit("PR mock"))
     raw = tmp_path / "raw"; raw.mkdir()
@@ -117,6 +119,8 @@ def test_start_with_custom_workflow_runs_only_those_stages(tmp_path, monkeypatch
     from pipeline import ae, pr
     monkeypatch.setattr(ae, "render_sequence",
                         lambda seq_folder, output_dir, fps, emit, **kw: emit("AE"))
+    monkeypatch.setattr(ae, "merge_chunks",
+                        lambda chunks, output_dir, emit, **kw: emit("merge"))
     monkeypatch.setattr(pr, "render_final",
                         lambda intermediate_video, output_dir, export, emit, **kw: emit("PR"))
     raw = tmp_path / "raw"; raw.mkdir()
@@ -165,6 +169,8 @@ def test_start_repairs_wrapped_sequence(tmp_path, monkeypatch):
     from pipeline import ae, pr, sequence
     monkeypatch.setattr(ae, "render_sequence",
                         lambda seq_folder, output_dir, fps, emit, **kw: emit("AE"))
+    monkeypatch.setattr(ae, "merge_chunks",
+                        lambda chunks, output_dir, emit, **kw: emit("merge"))
     monkeypatch.setattr(pr, "render_final",
                         lambda intermediate_video, output_dir, export, emit, **kw: emit("PR"))
     times = {"DSC09999.ARW": "2026-06-03 01:00:00 +0000",

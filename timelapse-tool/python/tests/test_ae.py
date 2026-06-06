@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from pipeline import ae
@@ -77,7 +79,7 @@ def test_build_aerender_cmd_args():
     assert "-project" in cmd and "/tmp/proj.aep" in cmd
     assert "-comp" in cmd and "Timelapse" in cmd
     assert "-output" in cmd and "/out/_ae_intermediate.mov" in cmd
-    assert "-OMtemplate" in cmd and "Apple ProRes 4444" in cmd
+    assert "-OMtemplate" in cmd and "ProRes 4444" in cmd
 
 
 def _mk_seq(tmp_path, n):
@@ -158,3 +160,84 @@ def test_render_sequence_chunk_fails_all_retries(tmp_path):
             stabilize={"enabled": False}, emit=lambda m: None, run=fake_run,
             aerender="/x/aerender", ae_app_name="TestAE", chunk=100, retries=3,
         )
+
+
+# ---- 分块片段合并成中间视频 ----
+
+_MOOV = b"\x00\x00\x00\x08moov" + b"\x00" * 1100  # 假装封口完整的 MOV
+
+
+def test_build_concat_cmd_order():
+    cmd = ae.build_concat_cmd("/x/bin", "/out/_ae_intermediate.mov",
+                              ["/a/chunk_000.mov", "/a/chunk_001.mov"])
+    assert cmd == ["/x/bin", "/out/_ae_intermediate.mov",
+                   "/a/chunk_000.mov", "/a/chunk_001.mov"]
+
+
+def test_merge_chunks_builds_intermediate(tmp_path):
+    out = tmp_path / "out"; out.mkdir()
+    chunks = [str(tmp_path / f"chunk_{i:03d}.mov") for i in range(3)]
+    for c in chunks:
+        Path(c).write_bytes(_MOOV)
+    fake_bin = tmp_path / "concat_bin"; fake_bin.write_text("bin")  # 已存在→跳过编译
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        if cmd[0] == str(fake_bin):
+            Path(cmd[1]).write_bytes(_MOOV)  # 模拟拼接出封口 MOV
+        class R: returncode = 0
+        return R()
+
+    result = ae.merge_chunks(chunks, str(out), emit=lambda m: None,
+                             run=fake_run, binary=str(fake_bin))
+    assert result == ae.intermediate_path(str(out))
+    assert result.exists()
+    # 拼接命令含全部片段、按序、输出在前
+    concat = calls[-1]
+    assert concat[0] == str(fake_bin)
+    assert concat[1] == str(ae.intermediate_path(str(out)))
+    assert concat[2:] == chunks
+
+
+def test_merge_chunks_compiles_binary_when_missing(tmp_path):
+    out = tmp_path / "out"; out.mkdir()
+    chunks = [str(tmp_path / "chunk_000.mov")]; Path(chunks[0]).write_bytes(_MOOV)
+    binary = tmp_path / "concat_bin"  # 不存在 → 触发 swiftc 编译
+    compiled = []
+
+    def fake_run(cmd, **kw):
+        if cmd[0] == "swiftc":
+            out_i = cmd.index("-o")
+            Path(cmd[out_i + 1]).write_text("compiled")
+            compiled.append(cmd)
+        else:
+            Path(cmd[1]).write_bytes(_MOOV)
+        class R: returncode = 0
+        return R()
+
+    ae.merge_chunks(chunks, str(out), emit=lambda m: None,
+                    run=fake_run, binary=str(binary))
+    assert binary.exists()
+    assert compiled and "mov_concat.swift" in compiled[0][-3]
+
+
+def test_merge_chunks_empty_raises(tmp_path):
+    out = tmp_path / "out"; out.mkdir()
+    with pytest.raises(RuntimeError, match="片段"):
+        ae.merge_chunks([], str(out), emit=lambda m: None,
+                        run=lambda c, **k: None, binary=str(tmp_path / "b"))
+
+
+def test_merge_chunks_invalid_output_raises(tmp_path):
+    out = tmp_path / "out"; out.mkdir()
+    chunks = [str(tmp_path / "chunk_000.mov")]; Path(chunks[0]).write_bytes(_MOOV)
+    fake_bin = tmp_path / "b"; fake_bin.write_text("b")
+
+    def fake_run(cmd, **kw):
+        class R: returncode = 0
+        return R()  # 不生成有效 MOV
+
+    with pytest.raises(RuntimeError, match="合并"):
+        ae.merge_chunks(chunks, str(out), emit=lambda m: None,
+                        run=fake_run, binary=str(fake_bin))

@@ -32,7 +32,7 @@ def test_br_validate_resume_is_noop():
     BRStage().validate_resume(config=None)  # 不抛异常
 
 
-def test_ae_stage_delegates_to_render(monkeypatch, tmp_path):
+def test_ae_stage_renders_then_merges(monkeypatch, tmp_path):
     from pipeline import ae
     called = {}
 
@@ -43,9 +43,16 @@ def test_ae_stage_delegates_to_render(monkeypatch, tmp_path):
         called["resolution"] = resolution
         called["stabilize"] = stabilize
         emit("AE done")
+        return ["/c/chunk_000.mov", "/c/chunk_001.mov"]
+
+    def fake_merge(chunk_files, output_dir, emit, **kwargs):
+        called["chunks"] = chunk_files
+        called["merge_out"] = output_dir
+        emit("merged")
         return ae.intermediate_path(output_dir)
 
     monkeypatch.setattr(ae, "render_sequence", fake_render)
+    monkeypatch.setattr(ae, "merge_chunks", fake_merge)
 
     class Cfg:
         raw_folder = str(tmp_path / "raw")
@@ -59,6 +66,9 @@ def test_ae_stage_delegates_to_render(monkeypatch, tmp_path):
     assert called["seq"] == str(tmp_path / "raw")
     assert called["fps"] == 30
     assert called["stabilize"] == {"enabled": False}
+    # 渲染产出的分块被原样交给合并，输出目录一致
+    assert called["chunks"] == ["/c/chunk_000.mov", "/c/chunk_001.mov"]
+    assert called["merge_out"] == str(tmp_path / "out")
     assert any("AE" in m for m in msgs)
 
 
