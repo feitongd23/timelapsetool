@@ -289,3 +289,4 @@ h1 { font-size: 22px; font-weight: 600; margin-bottom: 20px; letter-spacing: -0.
 .wf-checks { display: flex; gap: 16px; margin-bottom: 10px; }
 .wf-checks label { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--text); cursor: pointer; }
 .wf-checks input { width: auto; height: auto; }
+.hint-line { font-size: 12px; opacity: 0.6; margin-top: 4px; }

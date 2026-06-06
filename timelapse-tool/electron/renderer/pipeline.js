@@ -63,25 +63,22 @@ function collectWorkflowStages(checked) {
   return WORKFLOW_ORDER.filter((name) => checked[name]);
 }
 
-const CONTAINER = { ProRes: "MOV", "H.264": "MP4", "H.265": "MP4" };
+const SOCIAL_RATIO = { "16:9": [16, 9], "9:16": [9, 16], "3:4": [3, 4], "1:1": [1, 1], "3:2": [3, 2] };
+const SOCIAL_SHORT = { "720p": 720, "1080p": 1080, "4K": 2160 };
 
-// 把导出区域的表单态转成后端要的 export dict
-function buildExportConfig(state, presetTable) {
-  if (state.mode === "preset") {
-    return Object.assign({}, presetTable[state.preset]);
-  }
-  const codec = state.codec;
-  const exp = { codec: codec, container: CONTAINER[codec] };
-  if (codec === "ProRes") {
-    exp.prores_profile = state.prores_profile;
-  } else if (codec === "H.264") {
-    exp.bitrate_mbps = parseInt(state.bitrate_mbps, 10);
-    exp.quality = state.quality;
-  } else if (codec === "H.265") {
-    exp.bitrate_mbps = parseInt(state.bitrate_mbps, 10);
-    exp.bit_depth = parseInt(state.bit_depth, 10);
-  }
-  return exp;
+function _even(n) { n = Math.round(n); return n % 2 === 0 ? n : n + 1; }
+
+function socialPixels(aspect, resolution) {
+  const [a, b] = SOCIAL_RATIO[aspect];
+  const short = SOCIAL_SHORT[resolution];
+  const long = short * Math.max(a, b) / Math.min(a, b);
+  if (a > b) return [_even(long), _even(short)];
+  if (a < b) return [_even(short), _even(long)];
+  return [_even(short), _even(short)];
+}
+
+function buildSocialConfig(values) {
+  return { format: values.social_format, aspect: values.social_aspect, resolution: values.social_resolution };
 }
 
 // 「继续」按钮文案随当前手动阶段变化
@@ -112,6 +109,9 @@ function readForm() {
     stabilize_result: id("stabilize_result").value,
     stabilize_smoothness: id("stabilize_smoothness").value,
     stabilize_method: id("stabilize_method").value,
+    social_format: id("social_format").value,
+    social_aspect: id("social_aspect").value,
+    social_resolution: id("social_resolution").value,
   };
 }
 
@@ -148,22 +148,6 @@ async function initPipeline(httpBase) {
   }
   cameraSel.addEventListener("change", loadResolutions);
   await loadResolutions();
-
-  // 加载导出预设
-  try {
-    const data = await fetch(httpBase + "/export/presets").then((r) => r.json());
-    const presetSel = id("export_preset");
-    presetSel.innerHTML = "";
-    for (const name of data.presets) {
-      const opt = document.createElement("option");
-      opt.value = name;
-      opt.textContent = name;
-      presetSel.appendChild(opt);
-    }
-  } catch (_) {
-    errEl.textContent = "无法加载导出预设";
-    return;
-  }
 
   // 加载工作流模板（内置 + 自定义）
   let workflowMap = {};
@@ -208,25 +192,15 @@ async function initPipeline(httpBase) {
     await loadWorkflows(name);
   });
 
-  // 导出模式切换：预设 / 手动
-  function syncExportMode() {
-    const manual = id("export_mode").value === "manual";
-    id("preset-field").classList.toggle("hidden", manual);
-    id("manual-fields").classList.toggle("hidden", !manual);
+  // 社媒导出预览
+  function syncSocialPreview() {
+    const [w, h] = socialPixels(id("social_aspect").value, id("social_resolution").value);
+    const tag = id("social_format").value === "H.265" ? "h265" : "h264";
+    id("social-preview").textContent = `${w}×${h} · ${id("social_format").value} · timelapse_social_${w}x${h}_${tag}.mp4`;
   }
-  id("export_mode").addEventListener("change", syncExportMode);
-  syncExportMode();
-
-  // 手动编码切换：显示对应质量控件
-  function syncManualCodec() {
-    const codec = id("manual_codec").value;
-    id("prores-field").classList.toggle("hidden", codec !== "ProRes");
-    id("bitrate-row").classList.toggle("hidden", codec === "ProRes");
-    id("h264-quality-field").classList.toggle("hidden", codec !== "H.264");
-    id("h265-depth-field").classList.toggle("hidden", codec !== "H.265");
-  }
-  id("manual_codec").addEventListener("change", syncManualCodec);
-  syncManualCodec();
+  ["social_format", "social_aspect", "social_resolution"].forEach((x) =>
+    id(x).addEventListener("change", syncSocialPreview));
+  syncSocialPreview();
 
   // AE 去闪 / 增稳 开关的细项显隐联动
   function syncToggle(cbId, fieldsId) {
@@ -298,20 +272,7 @@ async function initPipeline(httpBase) {
 
   function buildStartBody() {
     const payload = buildStartPayload(readForm());
-    const mode = id("export_mode").value;
-    if (mode === "preset") {
-      payload.export = null;
-      payload.preset = id("export_preset").value;
-    } else {
-      payload.export = buildExportConfig({
-        mode: "manual",
-        codec: id("manual_codec").value,
-        prores_profile: id("prores_profile").value,
-        bitrate_mbps: id("bitrate_mbps").value,
-        quality: id("h264_quality").value,
-        bit_depth: id("h265_bit_depth").value,
-      });
-    }
+    payload.social = buildSocialConfig(readForm());
     payload.workflow = workflowMap[id("workflow_select").value] || null;
     return payload;
   }
@@ -367,5 +328,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildExportConfig, collectWorkflowStages, STAGES };
+  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, socialPixels, collectWorkflowStages, STAGES };
 }
