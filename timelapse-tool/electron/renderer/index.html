@@ -161,6 +161,10 @@
             </select>
           </div>
         </div>
+        <div id="motion-box-row" class="field hidden">
+          <button type="button" id="btn-pick-box" class="btn-browse">选放大区域…</button>
+          <span id="motion-box-hint" class="hint-line"></span>
+        </div>
         <div class="field switch-field">
           <label for="motion_subject">自动对准主体（Vision 显著性）</label>
           <input id="motion_subject" type="checkbox" />
@@ -203,6 +207,20 @@
       <p>（占位 — 由后续计划实现）</p>
     </section>
   </main>
+  <div id="crop-modal" class="modal hidden">
+    <div class="modal-card glass">
+      <div class="modal-head">框选放大区域（Ken Burns 终点）</div>
+      <div id="crop-stage" class="crop-stage">
+        <img id="crop-img" alt="底图" />
+        <div id="crop-box" class="crop-box"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="crop-reset" class="btn btn-ghost">重置为自动</button>
+        <button type="button" id="crop-cancel" class="btn btn-ghost">取消</button>
+        <button type="button" id="crop-ok" class="btn btn-primary">确定</button>
+      </div>
+    </div>
+  </div>
   <script src="preview.js"></script>
   <script src="pipeline.js"></script>
   <script src="app.js"></script>

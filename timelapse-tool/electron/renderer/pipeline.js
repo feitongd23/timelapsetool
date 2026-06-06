@@ -235,6 +235,7 @@ async function initPipeline(httpBase) {
     const off = type === "none";
     dirSel.disabled = off;
     id("motion_intensity").disabled = off || type === "sweep";  // 横扫无强度
+    id("motion-box-row").classList.toggle("hidden", type !== "kenburns");
   }
   id("motion_type").addEventListener("change", syncMotion);
 
@@ -254,6 +255,18 @@ async function initPipeline(httpBase) {
   }
   id("social_aspect").addEventListener("change", syncMotionTypes);
   syncMotionTypes();
+
+  let pickedBox = null;
+  function refreshBoxHint() { id("motion-box-hint").textContent = pickedBox ? "已框选放大区域" : "未选（自动）"; }
+  refreshBoxHint();
+  id("btn-pick-box").addEventListener("click", () => {
+    const folder = id("raw_folder").value.trim();
+    if (!folder) { id("motion-box-hint").textContent = "请先选 RAW 文件夹"; return; }
+    fetch(httpBase + "/preview/frames?folder=" + encodeURIComponent(folder)).then((r) => r.json()).then((d) => {
+      if (!d.count) { id("motion-box-hint").textContent = "该文件夹无可预览帧"; return; }
+      window.cropModal.open(window.preview.thumbUrl(httpBase, folder, d.strip[0]), (box) => { pickedBox = box; refreshBoxHint(); });
+    });
+  });
 
   // AE 去闪 / 增稳 开关的细项显隐联动
   function syncToggle(cbId, fieldsId) {
@@ -367,8 +380,10 @@ async function initPipeline(httpBase) {
   });
 
   function buildStartBody() {
-    const payload = buildStartPayload(readForm());
-    payload.social = buildSocialConfig(readForm());
+    const form = readForm();
+    form.motion_box = pickedBox;
+    const payload = buildStartPayload(form);
+    payload.social = buildSocialConfig(form);
     payload.workflow = workflowMap[id("workflow_select").value] || null;
     return payload;
   }
@@ -422,6 +437,31 @@ async function initPipeline(httpBase) {
 if (typeof window !== "undefined") {
   window.initPipeline = initPipeline;
 }
+
+function setupCropModal() {
+  const id = (x) => document.getElementById(x);
+  const modal = id("crop-modal"), img = id("crop-img"), boxEl = id("crop-box");
+  let onConfirm = null;
+  function close() { modal.classList.add("hidden"); window.onmousemove = null; window.onmouseup = null; }
+  function open(thumbSrc, cb) {
+    onConfirm = cb; img.src = thumbSrc; modal.classList.remove("hidden");
+    img.onload = () => {
+      const w = img.clientWidth, h = img.clientHeight;
+      let rect = { x: w * 0.25, y: h * 0.25, w: w * 0.5, h: h * 0.5 };
+      const draw = () => { boxEl.style.left = rect.x + "px"; boxEl.style.top = rect.y + "px"; boxEl.style.width = rect.w + "px"; boxEl.style.height = rect.h + "px"; };
+      draw();
+      let drag = null;
+      boxEl.onmousedown = (e) => { drag = { sx: e.clientX, sy: e.clientY, ox: rect.x, oy: rect.y }; e.preventDefault(); };
+      window.onmousemove = (e) => { if (!drag) return; rect.x = Math.max(0, Math.min(drag.ox + (e.clientX - drag.sx), w - rect.w)); rect.y = Math.max(0, Math.min(drag.oy + (e.clientY - drag.sy), h - rect.h)); draw(); };
+      window.onmouseup = () => { drag = null; };
+      id("crop-ok").onclick = () => { if (onConfirm) onConfirm(boxToNormalized(rect, w, h)); close(); };
+    };
+  }
+  id("crop-cancel").onclick = close;
+  id("crop-reset").onclick = () => { if (onConfirm) onConfirm(null); close(); };
+  return { open };
+}
+if (typeof window !== "undefined") window.addEventListener("DOMContentLoaded", () => { window.cropModal = setupCropModal(); });
 
 if (typeof module !== "undefined") {
   module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, formatMeta, boxToNormalized, STAGES };
