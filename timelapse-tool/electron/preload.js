@@ -9,4 +9,5 @@ contextBridge.exposeInMainWorld("backend", {
 // 暴露原生文件夹选择对话框
 contextBridge.exposeInMainWorld("api", {
   chooseDirectory: () => ipcRenderer.invoke("choose-directory"),
+  chooseFile: () => ipcRenderer.invoke("choose-file"),
 });

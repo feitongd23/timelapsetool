@@ -9,6 +9,16 @@ ipcMain.handle("choose-directory", async () => {
   return result.filePaths[0];
 });
 
+// 渲染进程请求选择单个视频文件（成片转社媒）
+ipcMain.handle("choose-file", async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openFile"],
+    filters: [{ name: "视频", extensions: ["mov", "mp4", "m4v"] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
 let pyProc = null;
 
 function startBackend() {
