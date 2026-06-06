@@ -10,6 +10,7 @@
   <nav class="tabs">
     <button class="tab active" data-tab="pipeline">延时流水线</button>
     <button class="tab" data-tab="selector">照片筛选</button>
+    <button class="tab" data-tab="social">成片转社媒</button>
     <span id="conn-status" class="status">连接中…</span>
   </nav>
   <main>
@@ -206,6 +207,60 @@
       <h1>照片筛选</h1>
       <p>（占位 — 由后续计划实现）</p>
     </section>
+    <section id="social" class="panel">
+      <div class="pipeline-wrap">
+      <div class="glass form-section">
+        <h2 class="section-title">成片转社媒</h2>
+        <div class="field">
+          <label>成片文件（mov）</label>
+          <div class="path-input">
+            <input id="b_src" type="text" placeholder="点右侧选择成片" />
+            <button type="button" id="b_choose" class="btn-browse">选择…</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field"><label>社媒格式</label>
+            <select id="b_social_format"><option value="H.265">H.265（更小）</option><option value="H.264">H.264（最兼容）</option></select>
+          </div>
+          <div class="field"><label>画幅</label>
+            <select id="b_social_aspect">
+              <option value="9:16">9:16 竖（抖音/小红书）</option>
+              <option value="3:4">3:4 竖（小红书）</option>
+              <option value="16:9">16:9 横（B站/横屏）</option>
+              <option value="1:1">1:1 方</option>
+              <option value="3:2">3:2 原始（不裁）</option>
+            </select>
+          </div>
+          <div class="field"><label>分辨率</label>
+            <select id="b_social_resolution"><option value="1080p">1080p</option><option value="720p">720p</option><option value="4K">4K</option></select>
+          </div>
+        </div>
+        <div id="b_social-preview" class="hint-line"></div>
+        <div class="row">
+          <div class="field"><label>运镜</label>
+            <select id="b_motion_type"><option value="none">无</option><option value="kenburns">Ken Burns 推拉</option><option value="pan">平移 Pan</option><option value="sweep">竖屏横扫</option></select>
+          </div>
+          <div class="field"><label>方向</label><select id="b_motion_direction"></select></div>
+          <div class="field"><label>强度</label>
+            <select id="b_motion_intensity"><option value="light">轻</option><option value="medium" selected>中</option><option value="strong">明显</option></select>
+          </div>
+        </div>
+        <div id="b_motion-box-row" class="field hidden">
+          <button type="button" id="b_btn-pick-box" class="btn-browse">选放大区域…</button>
+          <span id="b_motion-box-hint" class="hint-line"></span>
+        </div>
+        <div class="field switch-field">
+          <label for="b_motion_subject">自动对准主体（Vision 显著性）</label>
+          <input id="b_motion_subject" type="checkbox" />
+        </div>
+        <div class="pipeline-actions">
+          <button id="b_convert" class="btn btn-primary">转换为社媒版</button>
+        </div>
+        <div id="b_result" class="hint-line"></div>
+        <div id="b_error" class="error-text"></div>
+      </div>
+      </div>
+    </section>
   </main>
   <div id="crop-modal" class="modal hidden">
     <div class="modal-card glass">
@@ -223,6 +278,7 @@
   </div>
   <script src="preview.js"></script>
   <script src="pipeline.js"></script>
+  <script src="social_tab.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

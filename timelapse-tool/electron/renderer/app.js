@@ -46,6 +46,9 @@ if (typeof window !== "undefined" && window.backend) {
       if (typeof window.initPipeline === "function") {
         window.initPipeline(window.backend.httpBase);
       }
+      if (typeof window.initSocialTab === "function") {
+        window.initSocialTab(window.backend.httpBase);
+      }
     }
   });
 }
