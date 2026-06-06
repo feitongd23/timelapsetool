@@ -2,19 +2,19 @@ from types import SimpleNamespace
 
 import pytest
 
-from pipeline.stages import BRStage, LRTStage, AEStage, PRStage, default_stages
+from pipeline.stages import BRStage, LRTStage, AEStage, ExportStage, default_stages
 
 
 def test_default_stages_order():
     names = [s.name for s in default_stages()]
-    assert names == ["BR", "LRT", "AE", "PR"]
+    assert names == ["BR", "LRT", "AE", "导出"]
 
 
 def test_br_and_lrt_are_manual():
     assert BRStage().manual is True
     assert LRTStage().manual is True
     assert AEStage().manual is False
-    assert PRStage().manual is False
+    assert ExportStage().manual is False
 
 
 def test_br_stage_emits_progress():
@@ -72,23 +72,25 @@ def test_ae_stage_renders_then_merges(monkeypatch, tmp_path):
     assert any("AE" in m for m in msgs)
 
 
-def test_pr_stage_delegates_to_render(monkeypatch, tmp_path):
-    from pipeline import pr
+def test_export_stage_delegates(monkeypatch, tmp_path):
+    from pipeline import ae, export
     called = {}
 
-    def fake_render(intermediate_video, output_dir, export, emit, **kwargs):
+    def fake_render(intermediate_video, output_dir, social, emit, **kwargs):
+        called["inter"] = intermediate_video
         called["out"] = output_dir
-        called["export"] = export
-        emit("PR done")
+        called["social"] = social
+        emit("导出 done")
+        return (export.master_path(output_dir), tmp_path / "s.mp4")
 
-    monkeypatch.setattr(pr, "render_final", fake_render)
+    monkeypatch.setattr(export, "render_exports", fake_render)
 
     class Cfg:
         output_path = str(tmp_path / "out")
-        export = {"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"}
+        social = {"format": "H.265", "aspect": "9:16", "resolution": "1080p"}
 
     msgs = []
-    PRStage().run(Cfg(), msgs.append)
-    assert called["out"] == str(tmp_path / "out")
-    assert called["export"]["codec"] == "ProRes"
-    assert any("PR" in m for m in msgs)
+    ExportStage().run(Cfg(), msgs.append)
+    assert called["inter"] == str(ae.intermediate_path(str(tmp_path / "out")))
+    assert called["social"]["aspect"] == "9:16"
+    assert any("导出" in m for m in msgs)

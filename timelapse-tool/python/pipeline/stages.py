@@ -62,20 +62,20 @@ class AEStage(Stage):
         ae.merge_chunks(chunks, config.output_path, emit)
 
 
-class PRStage(Stage):
-    name = "PR"
+class ExportStage(Stage):
+    name = "导出"
     manual = False
 
     def run(self, config, emit):
-        from pipeline import ae, pr
+        from pipeline import ae, export
         intermediate = ae.intermediate_path(config.output_path)
-        pr.render_final(
+        export.render_exports(
             intermediate_video=str(intermediate),
             output_dir=config.output_path,
-            export=config.export,
+            social=config.social,
             emit=emit,
         )
 
 
 def default_stages():
-    return [BRStage(), LRTStage(), AEStage(), PRStage()]
+    return [BRStage(), LRTStage(), AEStage(), ExportStage()]
