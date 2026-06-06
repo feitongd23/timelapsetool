@@ -15,7 +15,7 @@ def _cfg(tmp_path, with_seq_image=False):
         raw_folder=str(raw), camera_name="Cam",
         stabilize={"enabled": False},
         resolution=[3840, 2160],
-        fps=24, export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"}, output_path=str(out),
+        fps=24, social={"format": "H.265", "aspect": "9:16", "resolution": "1080p"}, output_path=str(out),
     )
 
 

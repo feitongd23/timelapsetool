@@ -1,16 +1,16 @@
 import json
 from pathlib import Path
 
-from pipeline.stages import BRStage, LRTStage, AEStage, PRStage
+from pipeline.stages import BRStage, LRTStage, AEStage, ExportStage
 
 # 固定顺序与阶段注册表
-CANONICAL_ORDER = ["BR", "LRT", "AE", "PR"]
-_REGISTRY = {"BR": BRStage, "LRT": LRTStage, "AE": AEStage, "PR": PRStage}
+CANONICAL_ORDER = ["BR", "LRT", "AE", "导出"]
+_REGISTRY = {"BR": BRStage, "LRT": LRTStage, "AE": AEStage, "导出": ExportStage}
 
 BUILTIN = {
-    "全流程": ["BR", "LRT", "AE", "PR"],
-    "跳过BR": ["LRT", "AE", "PR"],
-    "无PR": ["BR", "LRT", "AE"],
+    "全流程": ["BR", "LRT", "AE", "导出"],
+    "跳过BR": ["LRT", "AE", "导出"],
+    "无导出": ["BR", "LRT", "AE"],
     "极简": ["LRT", "AE"],
 }
 
@@ -28,8 +28,8 @@ def validate_workflow(names):
         if n not in _REGISTRY:
             raise ValueError(f"未知阶段: {n}")
     chosen = set(names)
-    if "PR" in chosen and "AE" not in chosen:
-        raise ValueError("含 PR 的工作流必须包含 AE（PR 需要 AE 的中间视频）")
+    if "导出" in chosen and "AE" not in chosen:
+        raise ValueError("含 导出 的工作流必须包含 AE（导出 需要 AE 的中间视频）")
 
 
 def build_stages(names):

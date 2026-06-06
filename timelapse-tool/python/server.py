@@ -35,7 +35,6 @@ from pipeline.cameras import CameraStore
 from pipeline.models import PipelineConfig
 from pipeline.runner import PipelineRunner
 from pipeline.stages import default_stages
-from pipeline.export_formats import PRESETS
 from pipeline import workflows
 from pipeline import preview
 from pipeline import sequence
@@ -85,8 +84,7 @@ class StartBody(BaseModel):
     stabilize: dict
     resolution: list
     fps: int
-    export: Optional[dict] = None
-    preset: Optional[str] = None
+    social: dict
     workflow: Optional[list] = None
     output_path: str
 
@@ -96,15 +94,7 @@ def pipeline_start(body: StartBody):
     global _runner
     data = body.dict()
     workflow_names = data.pop("workflow", None)
-    preset = data.pop("preset", None)
-    if data.get("export") is None and preset:
-        from pipeline.export_formats import expand_preset
-        try:
-            data["export"] = expand_preset(preset)
-        except KeyError:
-            raise HTTPException(status_code=400, detail=f"未知导出预设: {preset}")
     config = PipelineConfig(**data)
-    # 自动检查相机计数器回绕（如 9999→0001），不连续则硬链接重排到 _seq 并改用之
     notice = None
     try:
         original = config.raw_folder
@@ -114,7 +104,7 @@ def pipeline_start(body: StartBody):
             config.raw_folder = repaired
             notice = f"检测到序列回绕，已按拍摄时间整理 {n} 帧到「{repaired}」，请在该文件夹操作。"
     except Exception:
-        pass  # 整理失败不阻断流程，沿用原文件夹
+        pass
     try:
         stages = workflows.build_stages(workflow_names) if workflow_names else default_stages()
         _runner = PipelineRunner(stages=stages, emit=_progress_log.append)
@@ -139,11 +129,6 @@ def pipeline_continue():
 @app.get("/pipeline/status")
 def pipeline_status():
     return _runner.status()
-
-
-@app.get("/export/presets")
-def get_export_presets():
-    return {"presets": list(PRESETS.keys())}
 
 
 @app.get("/workflows")

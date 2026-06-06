@@ -13,7 +13,7 @@ def _valid_kwargs(tmp_path):
         stabilize={"enabled": True, "result": "smooth", "smoothness": 50, "method": "subspace"},
         resolution=[3840, 2160],
         fps=24,
-        export={"codec": "ProRes", "container": "MOV", "prores_profile": "422 HQ"},
+        social={"format": "H.265", "aspect": "9:16", "resolution": "1080p"},
         output_path=str(out),
     )
 
@@ -50,16 +50,16 @@ def test_custom_fps_in_range_passes(tmp_path):
     PipelineConfig(**kwargs).validate()
 
 
-def test_bad_export_fails(tmp_path):
+def test_bad_social_fails(tmp_path):
     kwargs = _valid_kwargs(tmp_path)
-    kwargs["export"] = {"codec": "WMV", "container": "MP4"}
-    with pytest.raises(ValueError, match="编码"):
+    kwargs["social"] = {"format": "AV1", "aspect": "9:16", "resolution": "1080p"}
+    with pytest.raises(ValueError, match="格式"):
         PipelineConfig(**kwargs).validate()
 
 
-def test_valid_h265_export_passes(tmp_path):
+def test_valid_h264_social_passes(tmp_path):
     kwargs = _valid_kwargs(tmp_path)
-    kwargs["export"] = {"codec": "H.265", "container": "MP4", "bitrate_mbps": 60, "bit_depth": 10}
+    kwargs["social"] = {"format": "H.264", "aspect": "16:9", "resolution": "4K"}
     PipelineConfig(**kwargs).validate()
 
 
