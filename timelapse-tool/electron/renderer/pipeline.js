@@ -1,5 +1,5 @@
 // 四个阶段固定顺序
-const STAGES = ["BR", "LRT", "AE", "PR"];
+const STAGES = ["BR", "LRT", "AE", "导出"];
 
 // 把表单原始值转成后端 /pipeline/start 需要的 payload
 function buildStartPayload(values) {
@@ -56,7 +56,7 @@ function guidanceText(status) {
   return STAGE_GUIDE[status.current_stage] || "";
 }
 
-const WORKFLOW_ORDER = ["BR", "LRT", "AE", "PR"];
+const WORKFLOW_ORDER = ["BR", "LRT", "AE", "导出"];
 
 // 把阶段勾选状态转成固定顺序的阶段名数组
 function collectWorkflowStages(checked) {

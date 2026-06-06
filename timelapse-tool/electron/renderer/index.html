@@ -16,8 +16,10 @@
       <div class="pipeline-wrap">
       <div class="pipeline-layout">
       <div class="pipeline-main">
-      <div class="glass pipeline-form">
-        <h1>延时流水线</h1>
+
+      <!-- ① 素材与流程 -->
+      <div class="glass form-section">
+        <h2 class="section-title">素材与流程</h2>
         <div class="field">
           <label>工作流模板</label>
           <select id="workflow_select"></select>
@@ -28,7 +30,7 @@
             <label><input type="checkbox" class="wf-stage" value="BR" checked /> BR</label>
             <label><input type="checkbox" class="wf-stage" value="LRT" checked /> LRT</label>
             <label><input type="checkbox" class="wf-stage" value="AE" checked /> AE</label>
-            <label><input type="checkbox" class="wf-stage" value="PR" checked /> PR</label>
+            <label><input type="checkbox" class="wf-stage" value="导出" checked /> 导出</label>
           </div>
           <div class="path-input">
             <input id="wf_name" type="text" placeholder="模板名" />
@@ -44,6 +46,18 @@
             <button type="button" class="btn-browse btn-preview" data-folder="raw_folder">预览</button>
           </div>
         </div>
+        <div class="field">
+          <label>输出路径</label>
+          <div class="path-input">
+            <input id="output_path" type="text" placeholder="点右侧选择文件夹" />
+            <button type="button" class="btn-browse" data-target="output_path">选择…</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ② 渲染参数 -->
+      <div class="glass form-section">
+        <h2 class="section-title">渲染参数</h2>
         <div class="row">
           <div class="field">
             <label>相机机型</label>
@@ -54,24 +68,49 @@
             <select id="resolution"></select>
           </div>
         </div>
-        <div class="row">
+        <div class="field">
+          <label>帧率 fps（可自填）</label>
+          <input id="fps" type="number" min="1" max="120" step="1" value="24" list="fps-presets" />
+          <datalist id="fps-presets">
+            <option value="12"></option><option value="15"></option><option value="24"></option>
+            <option value="25"></option><option value="30"></option><option value="48"></option>
+            <option value="50"></option><option value="60"></option><option value="90"></option>
+            <option value="120"></option>
+          </datalist>
+        </div>
+        <div class="field switch-field">
+          <label for="stabilize_enabled">AE 增稳 (变形稳定器)</label>
+          <input id="stabilize_enabled" type="checkbox" />
+        </div>
+        <div id="stabilize-fields" class="hidden">
+          <div class="row">
+            <div class="field">
+              <label>结果</label>
+              <select id="stabilize_result">
+                <option value="smooth">平滑运动</option>
+                <option value="none">无运动</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>平滑度 (0–100)</label>
+              <input id="stabilize_smoothness" type="number" min="0" max="100" value="50" />
+            </div>
+          </div>
           <div class="field">
-            <label>帧率 fps（可自填）</label>
-            <input id="fps" type="number" min="1" max="120" step="1" value="24" list="fps-presets" />
-            <datalist id="fps-presets">
-              <option value="12"></option>
-              <option value="15"></option>
-              <option value="24"></option>
-              <option value="25"></option>
-              <option value="30"></option>
-              <option value="48"></option>
-              <option value="50"></option>
-              <option value="60"></option>
-              <option value="90"></option>
-              <option value="120"></option>
-            </datalist>
+            <label>方法</label>
+            <select id="stabilize_method">
+              <option value="subspace">子空间变形</option>
+              <option value="perspective">透视</option>
+              <option value="pos_scale_rot">位置、缩放、旋转</option>
+              <option value="position">位置</option>
+            </select>
           </div>
         </div>
+      </div>
+
+      <!-- ③ 成片导出 -->
+      <div class="glass form-section">
+        <h2 class="section-title">成片导出</h2>
         <div class="field">
           <label>母版</label>
           <div class="hint-line">自动保留 ProRes 母版 → timelapse_master.mov</div>
@@ -131,41 +170,11 @@
           <label for="motion_subject">自动对准主体（Vision 显著性）</label>
           <input id="motion_subject" type="checkbox" />
         </div>
-        <div class="field">
-          <label>输出路径</label>
-          <div class="path-input">
-            <input id="output_path" type="text" placeholder="点右侧选择文件夹" />
-            <button type="button" class="btn-browse" data-target="output_path">选择…</button>
-          </div>
-        </div>
-        <div class="field switch-field">
-          <label for="stabilize_enabled">AE 增稳 (变形稳定器)</label>
-          <input id="stabilize_enabled" type="checkbox" />
-        </div>
-        <div id="stabilize-fields" class="hidden">
-          <div class="row">
-            <div class="field">
-              <label>结果</label>
-              <select id="stabilize_result">
-                <option value="smooth">平滑运动</option>
-                <option value="none">无运动</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>平滑度 (0–100)</label>
-              <input id="stabilize_smoothness" type="number" min="0" max="100" value="50" />
-            </div>
-          </div>
-          <div class="field">
-            <label>方法</label>
-            <select id="stabilize_method">
-              <option value="subspace">子空间变形</option>
-              <option value="perspective">透视</option>
-              <option value="pos_scale_rot">位置、缩放、旋转</option>
-              <option value="position">位置</option>
-            </select>
-          </div>
-        </div>
+      </div>
+
+      <!-- ④ 执行 -->
+      <div class="glass form-section">
+        <h2 class="section-title">执行</h2>
         <div class="pipeline-actions">
           <button id="btn-start" class="btn btn-primary">开始处理</button>
           <button id="btn-continue" class="btn btn-ghost hidden">我已在 LRT 完成，继续</button>
@@ -173,14 +182,14 @@
         <div id="pipeline-error" class="error-text"></div>
         <div id="pipeline-notice" class="notice-text hidden"></div>
         <div id="stage-guide" class="stage-guide hidden"></div>
+        <div class="board" id="stage-board">
+          <div class="stage" data-stage="BR"><div class="stage-name">BR</div><div class="stage-hint">手动·ACR</div></div>
+          <div class="stage" data-stage="LRT"><div class="stage-name">LRT</div><div class="stage-hint">手动操作</div></div>
+          <div class="stage" data-stage="AE"><div class="stage-name">AE</div><div class="stage-hint">渲染序列</div></div>
+          <div class="stage" data-stage="导出"><div class="stage-name">导出</div><div class="stage-hint">母版+社媒</div></div>
+        </div>
       </div>
 
-      <div class="board" id="stage-board">
-        <div class="stage" data-stage="BR"><div class="stage-name">BR</div><div class="stage-hint">手动·ACR</div></div>
-        <div class="stage" data-stage="LRT"><div class="stage-name">LRT</div><div class="stage-hint">手动操作</div></div>
-        <div class="stage" data-stage="AE"><div class="stage-name">AE</div><div class="stage-hint">渲染序列</div></div>
-        <div class="stage" data-stage="PR"><div class="stage-name">PR</div><div class="stage-hint">导出成片</div></div>
-      </div>
       </div>
 
       <div class="glass preview-panel hidden" id="preview-panel">
@@ -190,6 +199,7 @@
         </div>
         <div class="preview-strip" id="preview-strip"></div>
         <img id="preview-stage" class="preview-stage hidden" alt="预览" />
+      </div>
       </div>
       </div>
     </section>

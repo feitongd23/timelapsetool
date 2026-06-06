@@ -8,16 +8,16 @@ test("guidanceText 停在 LRT 时含圣光提示", () => {
 
 test("guidanceText 非等待态返回空", () => {
   expect(guidanceText({ state: "running", current_stage: "LRT" })).toBe("");
-  expect(guidanceText({ state: "done", current_stage: "PR" })).toBe("");
+  expect(guidanceText({ state: "done", current_stage: "导出" })).toBe("");
 });
 
 test("collectWorkflowStages 按勾选返回固定顺序子集", () => {
-  const checked = { BR: false, LRT: true, AE: true, PR: true };
-  expect(collectWorkflowStages(checked)).toEqual(["LRT", "AE", "PR"]);
+  const checked = { BR: false, LRT: true, AE: true, "导出": true };
+  expect(collectWorkflowStages(checked)).toEqual(["LRT", "AE", "导出"]);
 });
 
 test("collectWorkflowStages 全不选返回空", () => {
-  expect(collectWorkflowStages({ BR: false, LRT: false, AE: false, PR: false })).toEqual([]);
+  expect(collectWorkflowStages({ BR: false, LRT: false, AE: false, "导出": false })).toEqual([]);
 });
 
 test("buildStartPayload 转换类型", () => {
@@ -67,9 +67,9 @@ test("stageBoardModel 失败态标记失败阶段", () => {
 });
 
 test("stageBoardModel 完成态全部 done", () => {
-  const model = stageBoardModel({ state: "done", current_stage: "PR", completed: ["BR", "AE", "PR"], error: null });
+  const model = stageBoardModel({ state: "done", current_stage: "导出", completed: ["BR", "AE", "导出"], error: null });
   expect(model.BR).toBe("done");
-  expect(model.PR).toBe("done");
+  expect(model["导出"]).toBe("done");
 });
 
 test("canContinue 仅在等待态为真", () => {

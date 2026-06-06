@@ -139,6 +139,19 @@ h1 { font-size: 22px; font-weight: 600; margin-bottom: 20px; letter-spacing: -0.
 }
 .pipeline-form { padding: 26px; }
 
+/* 功能分区卡片 */
+.form-section { padding: 22px 26px; }
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--glass-border);
+}
+.form-section .board { margin-top: 16px; }
+
 /* ============ 表单字段 ============ */
 .field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 18px; }
 .field:last-child { margin-bottom: 0; }
