@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import List
 
 from pipeline.export_formats import validate_social
 from pipeline.effects import validate_stabilize
@@ -21,9 +20,7 @@ class PipelineState(str, Enum):
 @dataclass
 class PipelineConfig:
     raw_folder: str
-    camera_name: str
     stabilize: dict
-    resolution: List[int]
     fps: int
     social: dict
     output_path: str
@@ -37,5 +34,3 @@ class PipelineConfig:
             raise ValueError(f"帧率不支持: {self.fps}（应在 {MIN_FPS}-{MAX_FPS}）")
         validate_social(self.social)
         validate_stabilize(self.stabilize)
-        if not (isinstance(self.resolution, list) and len(self.resolution) == 2):
-            raise ValueError("分辨率必须是 [宽, 高]")

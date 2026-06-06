@@ -54,21 +54,15 @@
             <button type="button" class="btn-browse" data-target="output_path">选择…</button>
           </div>
         </div>
+        <div id="material-info" class="material-info hidden">
+          <div class="material-title">素材信息（自动识别）</div>
+          <div id="material-rows"></div>
+        </div>
       </div>
 
       <!-- ② 渲染参数 -->
       <div class="glass form-section">
         <h2 class="section-title">渲染参数</h2>
-        <div class="row">
-          <div class="field">
-            <label>相机机型</label>
-            <select id="camera_name"></select>
-          </div>
-          <div class="field">
-            <label>分辨率</label>
-            <select id="resolution"></select>
-          </div>
-        </div>
         <div class="field">
           <label>帧率 fps（可自填）</label>
           <input id="fps" type="number" min="1" max="120" step="1" value="24" list="fps-presets" />

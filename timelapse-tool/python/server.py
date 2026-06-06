@@ -31,7 +31,6 @@ from fastapi import HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from pipeline.cameras import CameraStore
 from pipeline.models import PipelineConfig
 from pipeline.runner import PipelineRunner
 from pipeline.stages import default_stages
@@ -41,9 +40,6 @@ from pipeline import sequence
 
 _THUMB_CACHE = str(Path(tempfile.gettempdir()) / "timelapse_thumbs")
 
-_CAMERAS_PATH = Path(__file__).parent / "cameras.json"
-_camera_store = CameraStore(_CAMERAS_PATH)
-
 _WORKFLOWS_PATH = Path(__file__).parent / "workflows.json"
 _workflow_store = workflows.WorkflowStore(_WORKFLOWS_PATH)
 
@@ -51,38 +47,9 @@ _progress_log = []
 _runner = PipelineRunner(stages=default_stages(), emit=_progress_log.append)
 
 
-@app.get("/cameras")
-def get_cameras():
-    return {"cameras": _camera_store.list()}
-
-
-@app.get("/cameras/{name}/resolutions")
-def get_resolutions(name: str):
-    try:
-        return {"options": _camera_store.resolution_options(name)}
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"未知相机: {name}")
-
-
-class AddCameraBody(BaseModel):
-    name: str
-    native: list
-
-
-@app.post("/cameras", status_code=201)
-def add_camera(body: AddCameraBody):
-    try:
-        _camera_store.add(body.name, body.native)
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-    return {"ok": True}
-
-
 class StartBody(BaseModel):
     raw_folder: str
-    camera_name: str
     stabilize: dict
-    resolution: list
     fps: int
     social: dict
     workflow: Optional[list] = None
@@ -180,6 +147,14 @@ def preview_best_frame(folder: str):
     if not name:
         raise HTTPException(status_code=404, detail="无可分析的帧")
     return {"name": name}
+
+
+@app.get("/preview/meta")
+def preview_meta(folder: str):
+    """读首帧的相机/拍摄/分辨率元数据（只读展示，母版按此原始分辨率自动建）。"""
+    from pipeline import export
+    binary = export.ensure_export_binary()
+    return preview.read_metadata(folder, binary)
 
 
 if __name__ == "__main__":

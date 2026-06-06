@@ -54,3 +54,17 @@ def best_frame(folder, binary, sample=12, run=subprocess.run):
     r = run([binary, "--saturation", *paths], capture_output=True, text=True)
     out = (getattr(r, "stdout", "") or "").strip()
     return Path(out).name if out else sampled[0]
+
+
+def read_metadata(folder, binary, run=subprocess.run):
+    """读首帧的相机/拍摄/分辨率元数据（media_export --meta）。无帧或失败返回 {}。"""
+    import json
+    frames = list_frames(folder)
+    if not frames:
+        return {}
+    first = str(Path(folder) / frames[0])
+    r = run([binary, "--meta", first], capture_output=True, text=True)
+    try:
+        return json.loads((getattr(r, "stdout", "") or "").strip() or "{}")
+    except (ValueError, TypeError):
+        return {}

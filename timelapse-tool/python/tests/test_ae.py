@@ -38,7 +38,7 @@ def test_build_ae_script_contains_paths_and_fps():
     jsx = ae.build_ae_script(
         anchor_file="/seq/0001.jpg",
         fps=30,
-        resolution=[3840, 2160],
+
         project_save_path="/tmp/proj.aep",
         stabilize=DISABLED,
     )
@@ -51,7 +51,7 @@ def test_build_ae_script_contains_paths_and_fps():
 
 def test_build_ae_script_skips_stabilizer_when_disabled():
     jsx = ae.build_ae_script(
-        anchor_file="/seq/0001.jpg", fps=24, resolution=[3840, 2160],
+        anchor_file="/seq/0001.jpg", fps=24,
         project_save_path="/tmp/p.aep", stabilize={"enabled": False},
     )
     assert ae.effects.WARP_STABILIZER_MATCHNAME not in jsx
@@ -59,7 +59,7 @@ def test_build_ae_script_skips_stabilizer_when_disabled():
 
 def test_build_ae_script_adds_stabilizer_when_enabled():
     jsx = ae.build_ae_script(
-        anchor_file="/seq/0001.jpg", fps=24, resolution=[3840, 2160],
+        anchor_file="/seq/0001.jpg", fps=24,
         project_save_path="/tmp/p.aep",
         stabilize={"enabled": True, "result": "smooth", "smoothness": 70, "method": "subspace"},
     )
@@ -104,7 +104,7 @@ def test_render_sequence_builds_then_chunks(tmp_path):
         return R()
 
     chunks = ae.render_sequence(
-        seq_folder=str(seq), output_dir=str(out), fps=24, resolution=[3840, 2160],
+        seq_folder=str(seq), output_dir=str(out), fps=24,
         stabilize={"enabled": False}, emit=lambda m: None, run=fake_run,
         aerender="/x/aerender", ae_app_name="TestAE", chunk=100,
     )
@@ -138,7 +138,7 @@ def test_render_sequence_retries_failed_chunk(tmp_path):
         return R()
 
     chunks = ae.render_sequence(
-        seq_folder=str(seq), output_dir=str(out), fps=24, resolution=[3840, 2160],
+        seq_folder=str(seq), output_dir=str(out), fps=24,
         stabilize={"enabled": False}, emit=lambda m: None, run=fake_run,
         aerender="/x/aerender", ae_app_name="TestAE", chunk=100, retries=3,
     )
@@ -156,7 +156,7 @@ def test_render_sequence_chunk_fails_all_retries(tmp_path):
 
     with pytest.raises(RuntimeError, match="失败"):
         ae.render_sequence(
-            seq_folder=str(seq), output_dir=str(out), fps=24, resolution=[3840, 2160],
+            seq_folder=str(seq), output_dir=str(out), fps=24,
             stabilize={"enabled": False}, emit=lambda m: None, run=fake_run,
             aerender="/x/aerender", ae_app_name="TestAE", chunk=100, retries=3,
         )

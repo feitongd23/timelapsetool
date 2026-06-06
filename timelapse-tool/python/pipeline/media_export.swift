@@ -13,6 +13,7 @@ import AVFoundation
 import Foundation
 import Vision
 import CoreImage
+import ImageIO
 
 func fail(_ msg: String) -> Never {
     FileHandle.standardError.write((msg + "\n").data(using: .utf8)!)
@@ -84,6 +85,30 @@ if args.count >= 3 && args[1] == "--saturation" {
         if s > bestS { bestS = s; best = f }
     }
     print(best)
+    exit(0)
+}
+
+// --meta：读 RAW/图片的相机/拍摄/分辨率元数据，输出 JSON。
+if args.count == 3 && args[1] == "--meta" {
+    var out: [String: Any] = [:]
+    if let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: args[2]) as CFURL, nil),
+       let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] {
+        if let w = props[kCGImagePropertyPixelWidth] as? Int { out["width"] = w }
+        if let h = props[kCGImagePropertyPixelHeight] as? Int { out["height"] = h }
+        if let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+            if let m = tiff[kCGImagePropertyTIFFModel] as? String { out["camera"] = m }
+            if let mk = tiff[kCGImagePropertyTIFFMake] as? String { out["make"] = mk }
+        }
+        if let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] {
+            if let e = exif[kCGImagePropertyExifExposureTime] as? Double { out["exposure"] = e }
+            if let f = exif[kCGImagePropertyExifFNumber] as? Double { out["fnumber"] = f }
+            if let iso = exif[kCGImagePropertyExifISOSpeedRatings] as? [Int], let i = iso.first { out["iso"] = i }
+            if let fl = exif[kCGImagePropertyExifFocalLength] as? Double { out["focal"] = fl }
+            if let lens = exif[kCGImagePropertyExifLensModel] as? String { out["lens"] = lens }
+        }
+    }
+    if let data = try? JSONSerialization.data(withJSONObject: out),
+       let s = String(data: data, encoding: .utf8) { print(s) } else { print("{}") }
     exit(0)
 }
 

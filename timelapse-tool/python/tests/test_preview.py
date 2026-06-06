@@ -80,3 +80,19 @@ def test_best_frame_picks_saturation_winner(tmp_path):
 
 def test_best_frame_empty_folder_returns_none(tmp_path):
     assert preview.best_frame(str(tmp_path), "/bin", run=lambda c, **k: None) is None
+
+
+def test_read_metadata_parses_json(tmp_path):
+    (tmp_path / "0001.arw").write_text("x")
+
+    def fake_run(cmd, **kw):
+        assert cmd[1] == "--meta"
+        return type("R", (), {"returncode": 0, "stdout": '{"camera":"ILCE-7RM4A","width":9504,"height":6336}'})()
+
+    meta = preview.read_metadata(str(tmp_path), "/bin", run=fake_run)
+    assert meta["camera"] == "ILCE-7RM4A"
+    assert meta["width"] == 9504
+
+
+def test_read_metadata_empty_folder(tmp_path):
+    assert preview.read_metadata(str(tmp_path), "/bin", run=lambda c, **k: None) == {}

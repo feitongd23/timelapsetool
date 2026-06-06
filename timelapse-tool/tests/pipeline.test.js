@@ -1,4 +1,4 @@
-const { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages } = require("../electron/renderer/pipeline.js");
+const { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, formatMeta } = require("../electron/renderer/pipeline.js");
 
 test("guidanceText 停在 LRT 时含圣光提示", () => {
   const g = guidanceText({ state: "waiting_for_user", current_stage: "LRT" });
@@ -20,11 +20,9 @@ test("collectWorkflowStages 全不选返回空", () => {
   expect(collectWorkflowStages({ BR: false, LRT: false, AE: false, "导出": false })).toEqual([]);
 });
 
-test("buildStartPayload 转换类型", () => {
+test("buildStartPayload 转换类型（无相机/分辨率，母版自动原始分辨率）", () => {
   const payload = buildStartPayload({
     raw_folder: "/raw",
-    camera_name: "Sony A7R IV",
-    resolution: "3840x2160",
     fps: "24",
     output_path: "/out",
     stabilize_enabled: false,
@@ -33,9 +31,26 @@ test("buildStartPayload 转换类型", () => {
     stabilize_method: "subspace",
   });
   expect(payload.fps).toBe(24);
-  expect(payload.resolution).toEqual([3840, 2160]);
   expect(payload.raw_folder).toBe("/raw");
-  expect(payload).not.toHaveProperty("acr_preset_path");
+  expect(payload.stabilize.enabled).toBe(false);
+  expect(payload).not.toHaveProperty("resolution");
+  expect(payload).not.toHaveProperty("camera_name");
+});
+
+test("formatMeta 拼相机与拍摄信息", () => {
+  const f = formatMeta({ make: "SONY", camera: "ILCE-7RM4A", lens: "FE 24-70mm F2.8 GM",
+                         width: 9504, height: 6336, iso: 100, fnumber: 9, exposure: 0.2, focal: 28 });
+  expect(f.cam).toContain("ILCE-7RM4A");
+  expect(f.cam).toContain("24-70");
+  expect(f.shot).toContain("9504×6336");
+  expect(f.shot).toContain("ISO 100");
+  expect(f.shot).toContain("f/9");
+  expect(f.shot).toContain("1/5s");
+  expect(f.shot).toContain("28mm");
+});
+
+test("formatMeta 空数据返回 null", () => {
+  expect(formatMeta({})).toBeNull();
 });
 
 test("buildStartPayload 带 stabilize", () => {

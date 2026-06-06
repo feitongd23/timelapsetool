@@ -1,3 +1,6 @@
+/**
+ * @jest-environment jsdom
+ */
 const { switchTab, statusLabel, pollHealth } = require("../electron/renderer/app.js");
 
 test("switchTab 切换激活面板", () => {

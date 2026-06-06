@@ -3,29 +3,10 @@ import json
 from fastapi.testclient import TestClient
 
 import server
-from pipeline.cameras import CameraStore
 
 client = TestClient(server.app)
 
 SOCIAL = {"format": "H.265", "aspect": "9:16", "resolution": "1080p"}
-
-
-def test_get_cameras_lists_presets():
-    r = client.get("/cameras")
-    assert r.status_code == 200
-    names = [c["name"] for c in r.json()["cameras"]]
-    assert "Sony A7R IV" in names
-
-
-def test_get_resolutions_for_camera():
-    r = client.get("/cameras/Sony A7R IV/resolutions")
-    assert r.status_code == 200
-    assert r.json()["options"][0]["label"] == "原分辨率"
-
-
-def test_get_resolutions_unknown_camera_404():
-    r = client.get("/cameras/Nope/resolutions")
-    assert r.status_code == 404
 
 
 def test_pipeline_start_two_pauses_then_done(tmp_path, monkeypatch):
@@ -41,8 +22,8 @@ def test_pipeline_start_two_pauses_then_done(tmp_path, monkeypatch):
     lrt = tmp_path / "seq"; lrt.mkdir(); (lrt / "0001.tif").write_text("i")
     out = tmp_path / "out"; out.mkdir()
     body = dict(
-        raw_folder=str(raw), camera_name="Sony A7R IV",
-        stabilize={"enabled": False}, resolution=[3840, 2160],
+        raw_folder=str(raw),
+        stabilize={"enabled": False},
         fps=24, social=SOCIAL, output_path=str(out),
     )
     # start → 停在 BR（手动）
@@ -67,24 +48,12 @@ def test_pipeline_start_bad_fps_400(tmp_path):
     lrt = tmp_path / "seq"; lrt.mkdir()
     out = tmp_path / "out"; out.mkdir()
     body = dict(
-        raw_folder=str(raw), camera_name="Sony A7R IV",
-        stabilize={"enabled": False}, resolution=[3840, 2160],
+        raw_folder=str(raw),
+        stabilize={"enabled": False},
         fps=0, social=SOCIAL, output_path=str(out),
     )
     r = client.post("/pipeline/start", json=body)
     assert r.status_code == 400
-
-
-def test_add_camera_then_listed(tmp_path, monkeypatch):
-    # 用临时 cameras.json 隔离，避免污染仓库里的真实配置
-    cfg = tmp_path / "cameras.json"
-    cfg.write_text(json.dumps({"cameras": [{"name": "Sony A7R IV", "native": [9504, 6336]}]}))
-    monkeypatch.setattr(server, "_camera_store", CameraStore(cfg))
-
-    r = client.post("/cameras", json={"name": "Test Cam X", "native": [6000, 4000]})
-    assert r.status_code == 201
-    names = [c["name"] for c in client.get("/cameras").json()["cameras"]]
-    assert "Test Cam X" in names
 
 
 def test_get_workflows_lists_builtin():
@@ -107,8 +76,8 @@ def test_start_with_custom_workflow_runs_only_those_stages(tmp_path, monkeypatch
     lrt = tmp_path / "seq"; lrt.mkdir(); (lrt / "0001.tif").write_text("i")
     out = tmp_path / "out"; out.mkdir()
     body = dict(
-        raw_folder=str(raw), camera_name="Sony A7R IV",
-        stabilize={"enabled": False}, resolution=[3840, 2160],
+        raw_folder=str(raw),
+        stabilize={"enabled": False},
         fps=24, social=SOCIAL,
         output_path=str(out), workflow=["LRT", "AE"],
     )
@@ -162,8 +131,8 @@ def test_start_repairs_wrapped_sequence(tmp_path, monkeypatch):
     lrt = tmp_path / "seq"; lrt.mkdir(); (lrt / "0001.tif").write_text("i")
     out = tmp_path / "out"; out.mkdir()
     body = dict(
-        raw_folder=str(raw), camera_name="Sony A7R IV",
-        stabilize={"enabled": False}, resolution=[3840, 2160],
+        raw_folder=str(raw),
+        stabilize={"enabled": False},
         fps=24, social=SOCIAL,
         output_path=str(out),
     )
@@ -183,3 +152,12 @@ def test_preview_best_frame(tmp_path, monkeypatch):
     r = client.get("/preview/best_frame", params={"folder": str(tmp_path)})
     assert r.status_code == 200
     assert r.json()["name"] == "0002.jpg"
+
+
+def test_preview_meta(tmp_path, monkeypatch):
+    from pipeline import preview, export
+    monkeypatch.setattr(export, "ensure_export_binary", lambda *a, **k: "/bin")
+    monkeypatch.setattr(preview, "read_metadata", lambda folder, binary, **k: {"camera": "ILCE-7RM4A", "width": 9504})
+    r = client.get("/preview/meta", params={"folder": str(tmp_path)})
+    assert r.status_code == 200
+    assert r.json()["camera"] == "ILCE-7RM4A"

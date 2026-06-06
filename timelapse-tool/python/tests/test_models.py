@@ -9,9 +9,7 @@ def _valid_kwargs(tmp_path):
     out = tmp_path / "out"; out.mkdir()
     return dict(
         raw_folder=str(raw),
-        camera_name="Sony A7R IV",
         stabilize={"enabled": True, "result": "smooth", "smoothness": 50, "method": "subspace"},
-        resolution=[3840, 2160],
         fps=24,
         social={"format": "H.265", "aspect": "9:16", "resolution": "1080p"},
         output_path=str(out),

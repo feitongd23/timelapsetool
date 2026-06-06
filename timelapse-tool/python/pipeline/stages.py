@@ -54,7 +54,6 @@ class AEStage(Stage):
             seq_folder=config.raw_folder,
             output_dir=config.output_path,
             fps=config.fps,
-            resolution=config.resolution,
             stabilize=config.stabilize,
             emit=emit,
         )

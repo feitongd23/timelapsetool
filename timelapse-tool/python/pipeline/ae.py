@@ -53,13 +53,12 @@ try {{ ws.property("{effects.WS_PROP_SMOOTHNESS}").setValue({smoothness}); }} ca
 """
 
 
-def build_ae_script(anchor_file, fps, resolution, project_save_path, stabilize):
-    """生成构建 AE 工程的 ExtendScript：导入序列→按导出分辨率建合成（画面缩放铺满）→(增稳)→入渲染队列→保存。
+def build_ae_script(anchor_file, fps, project_save_path, stabilize):
+    """生成构建 AE 工程的 ExtendScript：导入序列→按 RAW 原始分辨率建合成（不缩放、不裁切）→(增稳)→入渲染队列→保存。
 
-    resolution: [宽, 高]。合成按此尺寸建，RAW 画面缩放铺满（cover，超出裁掉）。
-    渲染由后续 aerender 执行；这里只搭好工程并保存。
+    母版尺寸 = RAW 真实像素（自动识别，偶数化以编码友好）。不再依赖外部分辨率参数，
+    S35/全画幅等不同裁切模式都直接按素材真实尺寸出母版。渲染由后续 aerender 执行。
     """
-    width = int(resolution[0])
     return f"""
 var anchor = new File("{anchor_file}");
 var io = new ImportOptions(anchor);
@@ -70,10 +69,9 @@ io.sequence = true;
 var footage = app.project.importFile(io);
 footage.mainSource.conformFrameRate = {fps};
 
-// 不裁切：合成按 RAW 原始宽高比，宽取目标宽，高按比例算
-var compW = {width};
-var compH = Math.round(compW * footage.height / footage.width);
-if (compH % 2 != 0) {{ compH += 1; }}  // 保持偶数，编码友好
+// 母版 = RAW 原始分辨率（偶数化，编码友好），不缩放、不裁切
+var compW = footage.width - (footage.width % 2);
+var compH = footage.height - (footage.height % 2);
 var comp = app.project.items.addComp(
     "{COMP_NAME}",
     compW,
@@ -82,10 +80,7 @@ var comp = app.project.items.addComp(
     footage.duration,
     {fps}
 );
-var layer = comp.layers.add(footage);
-// 缩放铺满（不裁切，宽高同比，因合成已是原始比例）
-var s = (compW / footage.width) * 100;
-layer.property("ADBE Transform Group").property("ADBE Scale").setValue([s, s]);
+comp.layers.add(footage);
 {_stabilizer_jsx(stabilize)}
 app.project.renderQueue.items.add(comp);
 
@@ -200,7 +195,7 @@ def is_valid_mov(path):
     return False
 
 
-def render_sequence(seq_folder, output_dir, fps, resolution, stabilize, emit, run=subprocess.run,
+def render_sequence(seq_folder, output_dir, fps, stabilize, emit, run=subprocess.run,
                     aerender=AERENDER, ae_app_name=AE_APP_NAME, chunk=100, retries=3):
     """分块渲染（防崩+可重试），返回各段 ProRes 片段路径列表。
 
@@ -214,7 +209,7 @@ def render_sequence(seq_folder, output_dir, fps, resolution, stabilize, emit, ru
     cdir.mkdir(parents=True, exist_ok=True)
 
     emit("AE 阶段：打开 After Effects、新建工程并导入 RAW 序列…")
-    jsx = build_ae_script(str(anchor), fps, resolution, proj_path, stabilize)
+    jsx = build_ae_script(str(anchor), fps, proj_path, stabilize)
     with tempfile.NamedTemporaryFile("w", suffix=".jsx", delete=False) as f:
         f.write(jsx)
         jsx_path = f.name

@@ -12,9 +12,8 @@ def _cfg(tmp_path, with_seq_image=False):
     if with_seq_image:
         (lrt / "0001.tif").write_text("img")
     return PipelineConfig(
-        raw_folder=str(raw), camera_name="Cam",
+        raw_folder=str(raw),
         stabilize={"enabled": False},
-        resolution=[3840, 2160],
         fps=24, social={"format": "H.265", "aspect": "9:16", "resolution": "1080p"}, output_path=str(out),
     )
 

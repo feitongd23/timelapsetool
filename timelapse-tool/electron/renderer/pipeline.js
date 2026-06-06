@@ -3,12 +3,8 @@ const STAGES = ["BR", "LRT", "AE", "导出"];
 
 // 把表单原始值转成后端 /pipeline/start 需要的 payload
 function buildStartPayload(values) {
-  const [w, h] = String(values.resolution).split("x").map((n) => parseInt(n, 10));
   return {
     raw_folder: values.raw_folder,
-    camera_name: values.camera_name,
-    stabilize: Boolean(values.stabilize),
-    resolution: [w, h],
     fps: parseInt(values.fps, 10),
     output_path: values.output_path,
     stabilize: {
@@ -132,8 +128,6 @@ function readForm() {
   const id = (x) => document.getElementById(x);
   return {
     raw_folder: id("raw_folder").value,
-    camera_name: id("camera_name").value,
-    resolution: id("resolution").value,
     fps: id("fps").value,
     output_path: id("output_path").value,
     stabilize_enabled: id("stabilize_enabled").checked,
@@ -150,39 +144,23 @@ function readForm() {
   };
 }
 
+// 把元数据格式化成展示行（相机/镜头 + 分辨率/ISO/光圈/快门/焦距）
+function formatMeta(m) {
+  if (!m || (!m.camera && !m.width)) return null;
+  const exp = m.exposure ? (m.exposure >= 1 ? m.exposure + "s" : "1/" + Math.round(1 / m.exposure) + "s") : null;
+  const cam = [m.make, m.camera].filter(Boolean).join(" ") + (m.lens ? " · " + m.lens : "");
+  const shot = [];
+  if (m.width && m.height) shot.push(m.width + "×" + m.height);
+  if (m.iso) shot.push("ISO " + m.iso);
+  if (m.fnumber) shot.push("f/" + m.fnumber);
+  if (exp) shot.push(exp);
+  if (m.focal) shot.push(m.focal + "mm");
+  return { cam: cam, shot: shot.join(" · ") };
+}
+
 async function initPipeline(httpBase) {
   const id = (x) => document.getElementById(x);
   const errEl = id("pipeline-error");
-  const cameraSel = id("camera_name");
-  const resSel = id("resolution");
-
-  try {
-    const cams = await fetch(httpBase + "/cameras").then((r) => r.json());
-    cameraSel.innerHTML = "";
-    for (const cam of cams.cameras) {
-      const opt = document.createElement("option");
-      opt.value = cam.name;
-      opt.textContent = cam.name;
-      cameraSel.appendChild(opt);
-    }
-  } catch (_) {
-    errEl.textContent = "无法加载相机列表";
-    return;
-  }
-
-  async function loadResolutions() {
-    const name = cameraSel.value;
-    const data = await fetch(httpBase + "/cameras/" + encodeURIComponent(name) + "/resolutions").then((r) => r.json());
-    resSel.innerHTML = "";
-    for (const o of data.options) {
-      const opt = document.createElement("option");
-      opt.value = o.size[0] + "x" + o.size[1];
-      opt.textContent = o.label + " (" + o.size[0] + "×" + o.size[1] + ")";
-      resSel.appendChild(opt);
-    }
-  }
-  cameraSel.addEventListener("change", loadResolutions);
-  await loadResolutions();
 
   // 加载工作流模板（内置 + 自定义）
   let workflowMap = {};
@@ -298,6 +276,22 @@ async function initPipeline(httpBase) {
     } catch (_) { /* 保留首帧 */ }
   }
 
+  // 读首帧元数据 → 素材信息展示（相机/拍摄/分辨率，自动识别）
+  async function setMaterialInfo(folder) {
+    const box = id("material-info");
+    if (!folder) { box.classList.add("hidden"); return; }
+    try {
+      const m = await fetch(httpBase + "/preview/meta?folder=" + encodeURIComponent(folder)).then((r) => r.json());
+      const f = formatMeta(m);
+      if (!f) { box.classList.add("hidden"); return; }
+      id("material-rows").innerHTML = `<div>${f.cam}</div><div class="material-shot">${f.shot}</div>`;
+      box.classList.remove("hidden");
+    } catch (_) { box.classList.add("hidden"); }
+  }
+
+  // 选中 RAW 文件夹后：同时更新模糊背景 + 素材信息
+  function onRawFolder(folder) { setBlurBackground(folder); setMaterialInfo(folder); }
+
   // 文件夹选择按钮 → 调原生对话框，填回对应输入框
   document.querySelectorAll(".btn-browse[data-target]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -305,13 +299,13 @@ async function initPipeline(httpBase) {
       const dir = await window.api.chooseDirectory();
       if (dir) {
         id(btn.dataset.target).value = dir;
-        if (btn.dataset.target === "raw_folder") setBlurBackground(dir);
+        if (btn.dataset.target === "raw_folder") onRawFolder(dir);
       }
     });
   });
-  // 手动改 RAW 路径也更新背景
-  id("raw_folder").addEventListener("change", (e) => setBlurBackground(e.target.value.trim()));
-  if (id("raw_folder").value.trim()) setBlurBackground(id("raw_folder").value.trim());
+  // 手动改 RAW 路径也更新
+  id("raw_folder").addEventListener("change", (e) => onRawFolder(e.target.value.trim()));
+  if (id("raw_folder").value.trim()) onRawFolder(id("raw_folder").value.trim());
 
   // 预览：缩略图条 + 播放轮播
   let animFrames = [];
@@ -423,5 +417,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, STAGES };
+  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, formatMeta, STAGES };
 }

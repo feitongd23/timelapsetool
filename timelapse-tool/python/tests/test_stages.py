@@ -36,11 +36,10 @@ def test_ae_stage_renders_then_merges(monkeypatch, tmp_path):
     from pipeline import ae
     called = {}
 
-    def fake_render(seq_folder, output_dir, fps, resolution, stabilize, emit, **kwargs):
+    def fake_render(seq_folder, output_dir, fps, stabilize, emit, **kwargs):
         called["seq"] = seq_folder
         called["out"] = output_dir
         called["fps"] = fps
-        called["resolution"] = resolution
         called["stabilize"] = stabilize
         emit("AE done")
         return ["/c/chunk_000.mov", "/c/chunk_001.mov"]
@@ -58,7 +57,6 @@ def test_ae_stage_renders_then_merges(monkeypatch, tmp_path):
         raw_folder = str(tmp_path / "raw")
         output_path = str(tmp_path / "out")
         fps = 30
-        resolution = [3840, 2160]
         stabilize = {"enabled": False}
 
     msgs = []
