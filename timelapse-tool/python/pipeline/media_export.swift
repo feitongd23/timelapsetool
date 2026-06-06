@@ -1,15 +1,17 @@
-// media_export —— 把 ProRes 母版按裁框+目标尺寸转成 H.265/H.264（社媒版）。
+// media_export —— 把 ProRes 母版转成 H.265/H.264 社媒版，支持运镜（裁框随时间渐变）。
 //
 // 用法:
-//   media_export --probe <src>                          # 打印母版尺寸 "W H"
-//   media_export <src> <out> <hevc|h264> <cx> <cy> <cw> <ch> <ow> <oh>
+//   media_export --probe <src>        # 打印母版尺寸 "W H"
+//   media_export --saliency <src>     # 打印主体中心（Vision 显著性）归一化 "cx cy"
+//   media_export <src> <out> <hevc|h264> <sx sy sw sh> <ex ey ew eh> <ow oh>
 //
-// 裁框(cx,cy,cw,ch) 由 Python 中心裁算好；这里只把该区域映射到 ow×oh 输出。
-// 用 AVAssetExportSession + AVMutableVideoComposition：renderSize=输出尺寸，
-// layerInstruction transform = 平移(-裁原点) 再缩放(输出/裁框)。
+// 起止两个裁框由 Python 算好（运镜=起≠止；无运镜=起=止）。这里用
+// AVMutableVideoComposition.renderSize=输出尺寸 + layerInstruction 的 transform ramp
+// 从「起始框→输出」过渡到「结束框→输出」。
 
 import AVFoundation
 import Foundation
+import Vision
 
 func fail(_ msg: String) -> Never {
     FileHandle.standardError.write((msg + "\n").data(using: .utf8)!)
@@ -18,7 +20,7 @@ func fail(_ msg: String) -> Never {
 
 let args = CommandLine.arguments
 
-// --probe 模式
+// --probe：母版像素尺寸
 if args.count == 3 && args[1] == "--probe" {
     let asset = AVURLAsset(url: URL(fileURLWithPath: args[2]))
     let sem = DispatchSemaphore(value: 0)
@@ -32,18 +34,52 @@ if args.count == 3 && args[1] == "--probe" {
     exit(0)
 }
 
-guard args.count == 10 else {
-    fail("用法: media_export <src> <out> <hevc|h264> <cx> <cy> <cw> <ch> <ow> <oh>")
+// --saliency：抽中间帧跑 Vision 显著性，输出主体中心（归一化，左上原点口径）
+if args.count == 3 && args[1] == "--saliency" {
+    let asset = AVURLAsset(url: URL(fileURLWithPath: args[2]))
+    let sem = DispatchSemaphore(value: 0)
+    Task {
+        var cx = 0.5, cy = 0.5
+        let dur = (try? await asset.load(.duration)) ?? .zero
+        let gen = AVAssetImageGenerator(asset: asset)
+        gen.appliesPreferredTrackTransform = true
+        let mid = CMTime(seconds: max(0, CMTimeGetSeconds(dur) / 2), preferredTimescale: 600)
+        if let cg = try? gen.copyCGImage(at: mid, actualTime: nil) {
+            let req = VNGenerateAttentionBasedSaliencyImageRequest()
+            let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+            if (try? handler.perform([req])) != nil,
+               let obs = req.results?.first as? VNSaliencyImageObservation,
+               let salient = obs.salientObjects?.first {
+                cx = Double(salient.boundingBox.midX)
+                cy = 1.0 - Double(salient.boundingBox.midY)   // Vision 原点左下 → 翻成左上
+            }
+        }
+        print("\(cx) \(cy)")
+        sem.signal()
+    }
+    sem.wait()
+    exit(0)
+}
+
+guard args.count == 14 else {
+    fail("用法: media_export <src> <out> <hevc|h264> <sx sy sw sh> <ex ey ew eh> <ow oh>")
 }
 let src = args[1], outPath = args[2], fmt = args[3]
-let cx = Double(args[4])!, cy = Double(args[5])!, cw = Double(args[6])!, ch = Double(args[7])!
-let ow = Int(args[8])!, oh = Int(args[9])!
+let sx0 = Double(args[4])!, sy0 = Double(args[5])!, sw0 = Double(args[6])!, sh0 = Double(args[7])!
+let ex0 = Double(args[8])!, ey0 = Double(args[9])!, ew0 = Double(args[10])!, eh0 = Double(args[11])!
+let ow = Int(args[12])!, oh = Int(args[13])!
 
 let preset: String
 switch fmt {
 case "hevc": preset = AVAssetExportPresetHEVCHighestQuality
 case "h264": preset = AVAssetExportPresetHighestQuality
 default: fail("未知格式: \(fmt)")
+}
+
+// 把母版里的裁框 (x,y,w,h) 映射到 ow×oh 输出的 transform
+func cropTransform(_ x: Double, _ y: Double, _ w: Double, _ h: Double) -> CGAffineTransform {
+    CGAffineTransform(translationX: -x, y: -y)
+        .concatenating(CGAffineTransform(scaleX: Double(ow) / w, y: Double(oh) / h))
 }
 
 let asset = AVURLAsset(url: URL(fileURLWithPath: src))
@@ -63,10 +99,11 @@ Task {
     instruction.timeRange = CMTimeRange(start: .zero, duration: dur)
 
     let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
-    let sx = Double(ow) / cw, sy = Double(oh) / ch
-    let transform = CGAffineTransform(translationX: -cx, y: -cy)
-        .concatenating(CGAffineTransform(scaleX: sx, y: sy))
-    layer.setTransform(transform, at: .zero)
+    let startT = cropTransform(sx0, sy0, sw0, sh0)
+    let endT = cropTransform(ex0, ey0, ew0, eh0)
+    // 起=止时为静止（无运镜）；起≠止时匀速运镜
+    layer.setTransformRamp(fromStart: startT, toEnd: endT,
+                           timeRange: CMTimeRange(start: .zero, duration: dur))
     instruction.layerInstructions = [layer]
     vc.instructions = [instruction]
 
