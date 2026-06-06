@@ -19,6 +19,8 @@
   --radius: 18px;
   --radius-sm: 11px;
   --field-h: 42px;
+  /* 选中素材模糊背景上的可读性遮罩（亮色：提亮压淡） */
+  --bg-overlay: rgba(245, 246, 251, 0.62);
 }
 
 /* 跟随系统的暗色模式 */
@@ -37,6 +39,7 @@
     --err: #ff453a;
     --text: #f2f2f7;
     --text-dim: #a0a0aa;
+    --bg-overlay: rgba(18, 20, 32, 0.55);
   }
   /* 下拉箭头改用浅色，避免暗底看不见 */
   .field select {
@@ -47,6 +50,27 @@
 }
 
 html, body { height: 100%; }
+
+/* 选中素材的模糊背景（垫在所有内容下，让玻璃卡片透出片子） */
+#bg-blur {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  filter: blur(24px);
+  transform: scale(1.1);   /* 放大避免模糊边缘露出空白 */
+  opacity: 0;
+  transition: opacity 0.7s ease;
+  pointer-events: none;
+}
+#bg-blur.active { opacity: 1; }
+#bg-blur::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--bg-overlay);   /* 可读性遮罩 */
+}
 
 body {
   font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;

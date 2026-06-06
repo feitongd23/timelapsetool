@@ -65,3 +65,18 @@ def test_generate_thumbnail_uses_cache(tmp_path):
     thumb = preview.generate_thumbnail(str(src), 320, str(cache), run=fake_run)
     assert thumb.endswith("a.jpg.png")
     assert calls == []
+
+
+def test_best_frame_picks_saturation_winner(tmp_path):
+    for n in ["0001.jpg", "0002.jpg", "0003.jpg"]:
+        (tmp_path / n).write_text("x")
+
+    def fake_run(cmd, **kw):
+        # cmd = [bin, "--saturation", p1, p2, p3]；模拟挑了第二帧
+        return type("R", (), {"returncode": 0, "stdout": cmd[3] + "\n"})()
+
+    assert preview.best_frame(str(tmp_path), "/bin", run=fake_run) == "0002.jpg"
+
+
+def test_best_frame_empty_folder_returns_none(tmp_path):
+    assert preview.best_frame(str(tmp_path), "/bin", run=lambda c, **k: None) is None

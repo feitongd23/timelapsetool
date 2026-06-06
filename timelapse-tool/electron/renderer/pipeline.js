@@ -277,14 +277,41 @@ async function initPipeline(httpBase) {
   id("stabilize_enabled").addEventListener("change", () => syncToggle("stabilize_enabled", "stabilize-fields"));
   syncToggle("stabilize_enabled", "stabilize-fields");
 
+  // 选中的 RAW 素材首帧 → 模糊背景（透过玻璃卡片看到片子）
+  async function setBlurBackground(folder) {
+    const bg = id("bg-blur");
+    if (!folder) { bg.classList.remove("active"); return; }
+    const apply = (name) => {
+      bg.style.backgroundImage = `url("${window.preview.thumbUrl(httpBase, folder, name)}")`;
+      bg.classList.add("active");
+    };
+    // ① 首帧先垫上（快）
+    try {
+      const data = await fetch(httpBase + "/preview/frames?folder=" + encodeURIComponent(folder)).then((r) => r.json());
+      if (data.count > 0) apply(data.strip[0]);
+      else { bg.classList.remove("active"); return; }
+    } catch (_) { bg.classList.remove("active"); return; }
+    // ② 后台挑饱和度最高的一帧，算完平滑替换
+    try {
+      const best = await fetch(httpBase + "/preview/best_frame?folder=" + encodeURIComponent(folder)).then((r) => r.json());
+      if (best && best.name) apply(best.name);
+    } catch (_) { /* 保留首帧 */ }
+  }
+
   // 文件夹选择按钮 → 调原生对话框，填回对应输入框
   document.querySelectorAll(".btn-browse[data-target]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       if (!window.api || !window.api.chooseDirectory) return;
       const dir = await window.api.chooseDirectory();
-      if (dir) id(btn.dataset.target).value = dir;
+      if (dir) {
+        id(btn.dataset.target).value = dir;
+        if (btn.dataset.target === "raw_folder") setBlurBackground(dir);
+      }
     });
   });
+  // 手动改 RAW 路径也更新背景
+  id("raw_folder").addEventListener("change", (e) => setBlurBackground(e.target.value.trim()));
+  if (id("raw_folder").value.trim()) setBlurBackground(id("raw_folder").value.trim());
 
   // 预览：缩略图条 + 播放轮播
   let animFrames = [];

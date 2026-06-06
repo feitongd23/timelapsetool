@@ -174,3 +174,12 @@ def test_start_repairs_wrapped_sequence(tmp_path, monkeypatch):
     seq_dir = tmp_path / "raw_seq"
     assert seq_dir.is_dir()
     assert sorted(p.name for p in seq_dir.iterdir()) == ["TL_0001.ARW", "TL_0002.ARW"]
+
+
+def test_preview_best_frame(tmp_path, monkeypatch):
+    from pipeline import preview, export
+    monkeypatch.setattr(export, "ensure_export_binary", lambda *a, **k: "/bin")
+    monkeypatch.setattr(preview, "best_frame", lambda folder, binary, **k: "0002.jpg")
+    r = client.get("/preview/best_frame", params={"folder": str(tmp_path)})
+    assert r.status_code == 200
+    assert r.json()["name"] == "0002.jpg"

@@ -12,6 +12,7 @@
 import AVFoundation
 import Foundation
 import Vision
+import CoreImage
 
 func fail(_ msg: String) -> Never {
     FileHandle.standardError.write((msg + "\n").data(using: .utf8)!)
@@ -58,6 +59,31 @@ if args.count == 3 && args[1] == "--saliency" {
         sem.signal()
     }
     sem.wait()
+    exit(0)
+}
+
+// --saturation：从一批图里挑平均饱和度最高的（打印其路径）。支持 RAW/JPG/TIF。
+if args.count >= 3 && args[1] == "--saturation" {
+    let files = Array(args[2...])
+    let ctx = CIContext(options: nil)
+    var best = files.first ?? "", bestS = -1.0
+    for f in files {
+        guard let img = CIImage(contentsOf: URL(fileURLWithPath: f)) else { continue }
+        let extent = img.extent
+        guard extent.width > 0, extent.height > 0,
+              let avgF = CIFilter(name: "CIAreaAverage", parameters: [
+                  kCIInputImageKey: img, kCIInputExtentKey: CIVector(cgRect: extent)]),
+              let avg = avgF.outputImage else { continue }
+        var px = [UInt8](repeating: 0, count: 4)
+        ctx.render(avg, toBitmap: &px, rowBytes: 4,
+                   bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                   format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB())
+        let r = Double(px[0]), g = Double(px[1]), b = Double(px[2])
+        let mx = max(r, g, b), mn = min(r, g, b)
+        let s = mx == 0 ? 0 : (mx - mn) / mx
+        if s > bestS { bestS = s; best = f }
+    }
+    print(best)
     exit(0)
 }
 

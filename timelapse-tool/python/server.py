@@ -171,6 +171,17 @@ def preview_thumb(folder: str, name: str):
     return FileResponse(thumb, media_type="image/png")
 
 
+@app.get("/preview/best_frame")
+def preview_best_frame(folder: str):
+    """挑文件夹里平均饱和度最高的一帧（用作 UI 模糊背景）。"""
+    from pipeline import export
+    binary = export.ensure_export_binary()
+    name = preview.best_frame(folder, binary)
+    if not name:
+        raise HTTPException(status_code=404, detail="无可分析的帧")
+    return {"name": name}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8756)
