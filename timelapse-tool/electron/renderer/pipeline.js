@@ -89,6 +89,15 @@ function motionDirections(type) {
   return MOTION_DIRECTIONS[type] || [];
 }
 
+// 竖屏横扫只对竖屏画幅有意义；横/方画幅运镜只给 Ken Burns / Pan
+const PORTRAIT_ASPECTS = new Set(["9:16", "3:4"]);
+
+function motionTypesFor(aspect) {
+  const types = [["none", "无"], ["kenburns", "Ken Burns 推拉"], ["pan", "平移 Pan"]];
+  if (PORTRAIT_ASPECTS.has(aspect)) types.push(["sweep", "竖屏横扫"]);
+  return types;
+}
+
 function buildMotionConfig(values) {
   return { type: values.motion_type, direction: values.motion_direction, intensity: values.motion_intensity };
 }
@@ -243,7 +252,23 @@ async function initPipeline(httpBase) {
     id("motion_intensity").disabled = off || type === "sweep";  // 横扫无强度
   }
   id("motion_type").addEventListener("change", syncMotion);
-  syncMotion();
+
+  // 画幅变 → 重填可用运镜类型（横/方画幅去掉竖屏横扫），保留仍可用的当前选择
+  function syncMotionTypes() {
+    const cur = id("motion_type").value;
+    const types = motionTypesFor(id("social_aspect").value);
+    const sel = id("motion_type");
+    sel.innerHTML = "";
+    for (const [val, label] of types) {
+      const opt = document.createElement("option");
+      opt.value = val; opt.textContent = label;
+      sel.appendChild(opt);
+    }
+    sel.value = types.some((t) => t[0] === cur) ? cur : "none";
+    syncMotion();
+  }
+  id("social_aspect").addEventListener("change", syncMotionTypes);
+  syncMotionTypes();
 
   // AE 去闪 / 增稳 开关的细项显隐联动
   function syncToggle(cbId, fieldsId) {
@@ -371,5 +396,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, socialPixels, collectWorkflowStages, STAGES };
+  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, STAGES };
 }

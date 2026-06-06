@@ -1,4 +1,4 @@
-const { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, socialPixels, collectWorkflowStages } = require("../electron/renderer/pipeline.js");
+const { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages } = require("../electron/renderer/pipeline.js");
 
 test("guidanceText 停在 LRT 时含圣光提示", () => {
   const g = guidanceText({ state: "waiting_for_user", current_stage: "LRT" });
@@ -87,6 +87,14 @@ test("buildSocialConfig 含格式/画幅/分辨率/运镜/主体", () => {
     motion: { type: "kenburns", direction: "in", intensity: "medium" },
     subject: true,
   });
+});
+
+test("motionTypesFor 横/方画幅无竖屏横扫，竖版有", () => {
+  expect(motionTypesFor("9:16").map((t) => t[0])).toContain("sweep");
+  expect(motionTypesFor("3:4").map((t) => t[0])).toContain("sweep");
+  expect(motionTypesFor("16:9").map((t) => t[0])).toEqual(["none", "kenburns", "pan"]);
+  expect(motionTypesFor("3:2").map((t) => t[0])).not.toContain("sweep");
+  expect(motionTypesFor("1:1").map((t) => t[0])).not.toContain("sweep");
 });
 
 test("motionDirections 按类型联动", () => {
