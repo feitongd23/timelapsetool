@@ -9,9 +9,15 @@ client = TestClient(server.app)
 SOCIAL = {"format": "H.265", "aspect": "9:16", "resolution": "1080p"}
 
 
+def _join_worker():
+    if server._worker is not None:
+        server._worker.join(5)
+
+
 def test_pipeline_start_two_pauses_then_done(tmp_path, monkeypatch):
-    # AE 阶段会真的启动 After Effects，测试里 mock 掉，只验流程
-    from pipeline import ae, export
+    # AE/导出真跑会启动 AE，测试里 mock；launcher 也 mock 避免真开 Bridge/LRT
+    from pipeline import ae, export, launcher
+    monkeypatch.setattr(launcher, "open_in_app", lambda *a, **k: None)
     monkeypatch.setattr(ae, "render_sequence",
                         lambda seq_folder, output_dir, fps, emit, **kw: emit("AE mock"))
     monkeypatch.setattr(ae, "merge_chunks",
@@ -26,21 +32,21 @@ def test_pipeline_start_two_pauses_then_done(tmp_path, monkeypatch):
         stabilize={"enabled": False},
         fps=24, social=SOCIAL, output_path=str(out),
     )
-    # start → 停在 BR（手动）
-    r = client.post("/pipeline/start", json=body)
+    # start → 停在 BR（手动），异步执行先等线程到稳定态
+    r = client.post("/pipeline/start", json=body); _join_worker()
     assert r.status_code == 200
-    assert r.json()["state"] == "waiting_for_user"
-    assert r.json()["current_stage"] == "BR"
+    s = client.get("/pipeline/status").json()
+    assert s["state"] == "waiting_for_user" and s["current_stage"] == "BR"
 
     # continue → 停在 LRT（手动）
-    r2 = client.post("/pipeline/continue")
-    assert r2.json()["state"] == "waiting_for_user"
-    assert r2.json()["current_stage"] == "LRT"
+    client.post("/pipeline/continue"); _join_worker()
+    s = client.get("/pipeline/status").json()
+    assert s["state"] == "waiting_for_user" and s["current_stage"] == "LRT"
 
     # continue → 跑完 AE/导出
-    r3 = client.post("/pipeline/continue")
-    assert r3.status_code == 200
-    assert r3.json()["state"] == "done"
+    client.post("/pipeline/continue"); _join_worker()
+    s = client.get("/pipeline/status").json()
+    assert s["state"] == "done"
 
 
 def test_pipeline_start_bad_fps_400(tmp_path):
@@ -65,7 +71,8 @@ def test_get_workflows_lists_builtin():
 
 
 def test_start_with_custom_workflow_runs_only_those_stages(tmp_path, monkeypatch):
-    from pipeline import ae, export
+    from pipeline import ae, export, launcher
+    monkeypatch.setattr(launcher, "open_in_app", lambda *a, **k: None)
     monkeypatch.setattr(ae, "render_sequence",
                         lambda seq_folder, output_dir, fps, emit, **kw: emit("AE"))
     monkeypatch.setattr(ae, "merge_chunks",
@@ -81,11 +88,13 @@ def test_start_with_custom_workflow_runs_only_those_stages(tmp_path, monkeypatch
         fps=24, social=SOCIAL,
         output_path=str(out), workflow=["LRT", "AE"],
     )
-    r = client.post("/pipeline/start", json=body)
+    r = client.post("/pipeline/start", json=body); _join_worker()
     assert r.status_code == 200
-    assert r.json()["current_stage"] == "LRT"
-    r2 = client.post("/pipeline/continue")
-    assert r2.json()["state"] == "done"
+    s = client.get("/pipeline/status").json()
+    assert s["current_stage"] == "LRT"
+    client.post("/pipeline/continue"); _join_worker()
+    s = client.get("/pipeline/status").json()
+    assert s["state"] == "done"
 
 
 def test_save_custom_workflow(tmp_path, monkeypatch):
@@ -160,3 +169,13 @@ def test_export_social_from_ok(tmp_path, monkeypatch):
     r = client.post("/export/social_from", json={"src": str(src), "social": SOCIAL})
     assert r.status_code == 200
     assert r.json()["output"].endswith("clip_social_1080x1920_h265.mp4")
+
+
+def test_continue_rejects_when_busy(monkeypatch):
+    import threading, time
+    t = threading.Thread(target=lambda: time.sleep(1), daemon=True); t.start()
+    monkeypatch.setattr(server, "_worker", t)
+    try:
+        assert client.post("/pipeline/continue").status_code == 409
+    finally:
+        t.join()

@@ -89,36 +89,74 @@ def _mk_seq(tmp_path, n):
     return seq
 
 
+_MOOV_BYTES = b"\x00\x00\x00\x08moov" + b"\x00" * 1100
+
+
+def test_parse_aerender_frame():
+    assert ae.parse_aerender_frame("PROGRESS:  0:00:00:05 (6): 4 秒") == 6
+    assert ae.parse_aerender_frame("PROGRESS: (100): 0 秒") == 100
+    assert ae.parse_aerender_frame("aerender version 26.2.1x2") is None
+
+
 def test_render_sequence_builds_then_chunks(tmp_path):
     seq = _mk_seq(tmp_path, 250)  # 250 帧, chunk=100 → 3 段
     out = tmp_path / "out"; out.mkdir()
     calls = []
 
     def fake_run(cmd, **kwargs):
-        calls.append(cmd)
-        if cmd[0].endswith("aerender"):
-            # 模拟 aerender 生成该段输出文件（-output 的下一个参数）
-            outp = cmd[cmd.index("-output") + 1]
-            __import__("pathlib").Path(outp).write_bytes(b"\x00\x00\x00\x08moov" + b"\x00" * 1100)
+        calls.append(cmd)  # AE 建工程（osascript）
+        class R: returncode = 0
+        return R()
+
+    aer = []
+
+    def fake_stream(cmd, on_line):
+        aer.append(cmd)
+        on_line("PROGRESS:  0:00:00:00 (1): 0 秒")
+        Path(cmd[cmd.index("-output") + 1]).write_bytes(_MOOV_BYTES)
         class R: returncode = 0
         return R()
 
     chunks = ae.render_sequence(
         seq_folder=str(seq), output_dir=str(out), fps=24,
-        stabilize={"enabled": False}, emit=lambda m: None, run=fake_run,
-        aerender="/x/aerender", ae_app_name="TestAE", chunk=100,
+        stabilize={"enabled": False}, emit=lambda m, f=None: None,
+        run=fake_run, stream=fake_stream, aerender="/x/aerender", ae_app_name="TestAE", chunk=100,
     )
-    # 先 AE 建工程，再 3 段 aerender
     assert calls[0][0] == "osascript" and "DoScriptFile" in calls[0][2]
-    aer = [c for c in calls if c[0] == "/x/aerender"]
     assert len(aer) == 3
-    # 帧范围正确
     assert "-s" in aer[0] and aer[0][aer[0].index("-s") + 1] == "0"
     assert aer[0][aer[0].index("-e") + 1] == "99"
     assert aer[2][aer[2].index("-s") + 1] == "200"
     assert aer[2][aer[2].index("-e") + 1] == "249"
     assert len(chunks) == 3
-    assert all(__import__("pathlib").Path(c).exists() for c in chunks)
+    assert all(Path(c).exists() for c in chunks)
+
+
+def test_render_sequence_reports_global_frame_progress(tmp_path):
+    seq = _mk_seq(tmp_path, 200)  # chunk 100 → 2 段
+    out = tmp_path / "out"; out.mkdir()
+    fracs = []
+
+    def fake_run(cmd, **kw):
+        class R: returncode = 0
+        return R()
+
+    def fake_stream(cmd, on_line):
+        on_line("PROGRESS: (6): 0 秒")   # 段内第 6 帧
+        Path(cmd[cmd.index("-output") + 1]).write_bytes(_MOOV_BYTES)
+        class R: returncode = 0
+        return R()
+
+    def emit(msg, fraction=None):
+        if fraction is not None:
+            fracs.append(fraction)
+
+    ae.render_sequence(seq_folder=str(seq), output_dir=str(out), fps=24,
+                       stabilize={"enabled": False}, emit=emit, run=fake_run, stream=fake_stream,
+                       aerender="/x/aerender", ae_app_name="TestAE", chunk=100)
+    # 段1第6帧→6/200=0.03；段2第6帧→全局106/200=0.53（跨段连续）
+    assert any(abs(f - 0.03) < 0.01 for f in fracs)
+    assert any(abs(f - 0.53) < 0.01 for f in fracs)
 
 
 def test_render_sequence_retries_failed_chunk(tmp_path):
@@ -127,20 +165,20 @@ def test_render_sequence_retries_failed_chunk(tmp_path):
     attempts = {"n": 0}
 
     def fake_run(cmd, **kwargs):
-        if cmd[0].endswith("aerender"):
-            attempts["n"] += 1
-            if attempts["n"] < 2:
-                class F: returncode = 1  # 第一次失败
-                return F()
-            outp = cmd[cmd.index("-output") + 1]
-            __import__("pathlib").Path(outp).write_bytes(b"\x00\x00\x00\x08moov" + b"\x00" * 1100)
+        class R: returncode = 0
+        return R()
+
+    def fake_stream(cmd, on_line):
+        attempts["n"] += 1
+        if attempts["n"] >= 2:  # 第一次不出文件（失败），第二次成功
+            Path(cmd[cmd.index("-output") + 1]).write_bytes(_MOOV_BYTES)
         class R: returncode = 0
         return R()
 
     chunks = ae.render_sequence(
         seq_folder=str(seq), output_dir=str(out), fps=24,
-        stabilize={"enabled": False}, emit=lambda m: None, run=fake_run,
-        aerender="/x/aerender", ae_app_name="TestAE", chunk=100, retries=3,
+        stabilize={"enabled": False}, emit=lambda m, f=None: None,
+        run=fake_run, stream=fake_stream, aerender="/x/aerender", ae_app_name="TestAE", chunk=100, retries=3,
     )
     assert len(chunks) == 1
     assert attempts["n"] == 2  # 重试后第二次成功
@@ -151,14 +189,18 @@ def test_render_sequence_chunk_fails_all_retries(tmp_path):
     out = tmp_path / "out"; out.mkdir()
 
     def fake_run(cmd, **kwargs):
-        class R: returncode = 0 if not cmd[0].endswith("aerender") else 1
+        class R: returncode = 0
         return R()
+
+    def fake_stream(cmd, on_line):
+        class R: returncode = 1
+        return R()  # 不生成 mov → 段失败
 
     with pytest.raises(RuntimeError, match="失败"):
         ae.render_sequence(
             seq_folder=str(seq), output_dir=str(out), fps=24,
-            stabilize={"enabled": False}, emit=lambda m: None, run=fake_run,
-            aerender="/x/aerender", ae_app_name="TestAE", chunk=100, retries=3,
+            stabilize={"enabled": False}, emit=lambda m, f=None: None,
+            run=fake_run, stream=fake_stream, aerender="/x/aerender", ae_app_name="TestAE", chunk=100, retries=3,
         )
 
 

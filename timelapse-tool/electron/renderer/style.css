@@ -349,3 +349,21 @@ h1 { font-size: 22px; font-weight: 600; margin-bottom: 20px; letter-spacing: -0.
 .crop-stage img { display: block; max-width: 72vw; max-height: 66vh; user-select: none; -webkit-user-drag: none; }
 .crop-box { position: absolute; border: 2px solid var(--accent); background: rgba(0,122,255,0.15); cursor: move; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+/* AE 渲染进度条 */
+.progress-wrap { margin-top: 16px; }
+.progress-track {
+  height: 8px;
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+#progress-text { margin-top: 6px; }

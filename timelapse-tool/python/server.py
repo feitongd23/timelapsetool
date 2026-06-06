@@ -24,6 +24,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 import tempfile
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -31,7 +32,7 @@ from fastapi import HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from pipeline.models import PipelineConfig
+from pipeline.models import PipelineConfig, PipelineState
 from pipeline.runner import PipelineRunner
 from pipeline.stages import default_stages
 from pipeline import workflows
@@ -44,6 +45,15 @@ _workflow_store = workflows.WorkflowStore(_WORKFLOWS_PATH)
 
 _progress_log = []
 _runner = PipelineRunner(stages=default_stages(), emit=_progress_log.append)
+_worker = None  # 后台渲染线程；非 None 且 alive 表示正在运行
+
+# 返回前给后台线程的短暂等待：尽量让状态先推进到稳定态（手动暂停/done）。
+# 真实长渲染会在此后继续后台跑，HTTP 已返回 running。
+_STARTUP_WAIT = 0.3
+
+
+def _busy():
+    return _worker is not None and _worker.is_alive()
 
 
 class StartBody(BaseModel):
@@ -62,28 +72,44 @@ class SocialFromBody(BaseModel):
 
 @app.post("/pipeline/start")
 def pipeline_start(body: StartBody):
-    global _runner
+    global _runner, _worker
+    if _busy():
+        raise HTTPException(status_code=409, detail="正在运行，请稍候")
     data = body.dict()
     workflow_names = data.pop("workflow", None)
     config = PipelineConfig(**data)
     try:
-        stages = workflows.build_stages(workflow_names) if workflow_names else default_stages()
-        _runner = PipelineRunner(stages=stages, emit=_progress_log.append)
-        _runner.start(config)
+        config.validate()  # 同步校验，配置错误立即 400
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    stages = workflows.build_stages(workflow_names) if workflow_names else default_stages()
+    _runner = PipelineRunner(stages=stages, emit=_progress_log.append)
     _runner._notice = None
+    # 后台线程跑流水线（遇手动阶段暂停 / 渲染长任务），HTTP 立即返回
+    _worker = threading.Thread(target=_runner.start, args=(config,), daemon=True)
+    _worker.start()
+    _worker.join(_STARTUP_WAIT)
     return _runner.status()
+
+
+def _run_continue():
+    try:
+        _runner.continue_()
+    except (ValueError, RuntimeError) as exc:
+        _runner._state = PipelineState.FAILED
+        _runner._error = str(exc)
 
 
 @app.post("/pipeline/continue")
 def pipeline_continue():
-    try:
-        _runner.continue_()
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+    global _worker
+    if _busy():
+        raise HTTPException(status_code=409, detail="正在运行，请稍候")
+    if _runner.status()["state"] != PipelineState.WAITING_FOR_USER:
+        raise HTTPException(status_code=409, detail="当前不处于等待用户状态")
+    _worker = threading.Thread(target=_run_continue, daemon=True)
+    _worker.start()
+    _worker.join(_STARTUP_WAIT)
     return _runner.status()
 
 

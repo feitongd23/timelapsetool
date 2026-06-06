@@ -1,3 +1,4 @@
+import re
 import shutil
 import subprocess
 import tempfile
@@ -115,6 +116,28 @@ def build_aerender_cmd(aerender, project_path, output_path, start=None, end=None
     return cmd
 
 
+_AERENDER_FRAME = re.compile(r"\((\d+)\)")
+
+
+def parse_aerender_frame(line):
+    """从 aerender 进度行解析段内帧号，如 'PROGRESS: 0:00:00:05 (6): 4 秒' → 6；无则 None。"""
+    m = _AERENDER_FRAME.search(line)
+    return int(m.group(1)) if m else None
+
+
+def stream_run(cmd, on_line):
+    """流式执行命令：逐行回调 on_line(line)，返回有 returncode 的进程对象。
+
+    合并 stderr 到 stdout（aerender 的 PROGRESS 走 stdout）。
+    """
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1)
+    for line in proc.stdout:
+        on_line(line.rstrip("\n"))
+    proc.wait()
+    return proc
+
+
 CHUNKS_DIRNAME = "_ae_chunks"
 
 # 无损拼接工具：用 AVFoundation passthrough 把分块 ProRes 拼成一条（见 mov_concat.swift）
@@ -202,7 +225,8 @@ def is_valid_mov(path):
 
 
 def render_sequence(seq_folder, output_dir, fps, stabilize, emit, run=subprocess.run,
-                    aerender=AERENDER, ae_app_name=AE_APP_NAME, chunk=100, retries=3):
+                    stream=stream_run, aerender=AERENDER, ae_app_name=AE_APP_NAME,
+                    chunk=100, retries=3):
     """分块渲染（防崩+可重试），返回各段 ProRes 片段路径列表。
 
     每段单独跑一个 aerender 进程（内存清零、抗累积崩溃）；某段失败自动重试。
@@ -234,11 +258,20 @@ def render_sequence(seq_folder, output_dir, fps, stabilize, emit, run=subprocess
             chunk_files.append(str(out))
             continue
         ok = False
+        seg_frac = (start / total) if total else None
         for attempt in range(retries):
-            emit(f"AE 阶段：渲染第 {i+1}/{len(starts)} 段（帧 {start}-{end}，第 {attempt+1} 次）…")
+            emit(f"AE 阶段：渲染第 {i+1}/{len(starts)} 段（帧 {start}-{end}，第 {attempt+1} 次）…", seg_frac)
             if out.exists():
                 out.unlink()  # 清掉上次的残档再渲
-            run(build_aerender_cmd(aerender, proj_path, str(out), start, end))
+
+            def on_line(line, _i=i, _start=start):
+                f = parse_aerender_frame(line)
+                if f is not None and total:
+                    g = _start + f
+                    emit(f"AE 阶段：渲染第 {_i+1}/{len(starts)} 段 · 第 {g}/{total} 帧",
+                         min(g / total, 0.99))
+
+            stream(build_aerender_cmd(aerender, proj_path, str(out), start, end), on_line)
             # 只认真正封口（有 moov）的输出，规避 aerender 崩溃后假成功
             if is_valid_mov(out):
                 ok = True

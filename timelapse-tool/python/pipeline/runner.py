@@ -10,7 +10,8 @@ class PipelineRunner:
 
     def __init__(self, stages, emit):
         self._stages = stages
-        self._emit = emit
+        self._log = emit  # 原始日志回调（收字符串）
+        self._progress = {"stage": None, "message": None, "fraction": None}
         self._state = PipelineState.IDLE
         self._index = 0
         self._current = None
@@ -19,6 +20,11 @@ class PipelineRunner:
         self._config = None
         self._notice = None  # 流程相关的提示（如序列回绕已整理）
 
+    def _emit(self, message, fraction=None):
+        """阶段进度回调：记录最新进度（含可选 0–1 fraction），并写日志。"""
+        self._progress = {"stage": self._current, "message": message, "fraction": fraction}
+        self._log(message)
+
     def status(self):
         return {
             "state": self._state,
@@ -26,6 +32,7 @@ class PipelineRunner:
             "completed": list(self._completed),
             "error": self._error,
             "notice": self._notice,
+            "progress": dict(self._progress),
         }
 
     def start(self, config):

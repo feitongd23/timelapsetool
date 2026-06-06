@@ -99,6 +99,19 @@ function boxToNormalized(rect, dispW, dispH) {
   return [clamp(rect.x / dispW), clamp(rect.y / dispH), clamp(rect.w / dispW), clamp(rect.h / dispH)];
 }
 
+// status → 进度百分比（0–100）。done=100；running 用 progress.fraction；
+// 无 fraction（如导出阶段）保持上次 last，避免进度条回跳。
+function progressPercent(status, last) {
+  last = last || 0;
+  if (!status) return last;
+  if (status.state === "done") return 100;
+  if (status.state === "running" || status.state === "waiting_for_user") {
+    const f = status.progress && status.progress.fraction;
+    if (typeof f === "number") return Math.round(f * 100);
+  }
+  return last;
+}
+
 function buildMotionConfig(values) {
   const m = { type: values.motion_type, direction: values.motion_direction, intensity: values.motion_intensity };
   if (values.motion_box) m.box = values.motion_box;
@@ -388,6 +401,9 @@ async function initPipeline(httpBase) {
     return payload;
   }
 
+  let pollTimer = null;
+  let lastPercent = 0;
+
   async function refreshStatus() {
     const status = await fetch(httpBase + "/pipeline/status").then((r) => r.json());
     renderBoard(status);
@@ -402,11 +418,24 @@ async function initPipeline(httpBase) {
     noticeEl.textContent = status.notice || "";
     noticeEl.classList.toggle("hidden", !status.notice);
     if (status.state === "failed") errEl.textContent = "失败：" + (status.error || "");
+
+    // 进度条：running/done 时显示；running 用 fraction 平滑推进
+    const running = status.state === "running";
+    const pct = progressPercent(status, lastPercent);
+    lastPercent = pct;
+    id("progress-wrap").classList.toggle("hidden", !(running || status.state === "done"));
+    id("progress-bar").style.width = pct + "%";
+    id("progress-text").textContent = (status.progress && status.progress.message) || "";
+
+    // 渲染中每秒轮询；停止态清掉定时器
+    if (running && !pollTimer) pollTimer = setInterval(refreshStatus, 1000);
+    if (!running && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     return status;
   }
 
   id("btn-start").addEventListener("click", async () => {
     errEl.textContent = "";
+    lastPercent = 0;  // 新流程重置进度
     const res = await fetch(httpBase + "/pipeline/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -464,5 +493,5 @@ function setupCropModal() {
 if (typeof window !== "undefined") window.addEventListener("DOMContentLoaded", () => { window.cropModal = setupCropModal(); });
 
 if (typeof module !== "undefined") {
-  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, formatMeta, boxToNormalized, STAGES };
+  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, formatMeta, boxToNormalized, progressPercent, STAGES };
 }

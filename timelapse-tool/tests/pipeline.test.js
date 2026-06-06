@@ -1,4 +1,4 @@
-const { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, formatMeta, boxToNormalized } = require("../electron/renderer/pipeline.js");
+const { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, formatMeta, boxToNormalized, progressPercent } = require("../electron/renderer/pipeline.js");
 
 test("guidanceText 停在 LRT 时含圣光提示", () => {
   const g = guidanceText({ state: "waiting_for_user", current_stage: "LRT" });
@@ -149,4 +149,12 @@ test("buildSocialConfig 无 box 时 motion 不含 box", () => {
     motion_subject: false, motion_box: null,
   });
   expect(s.motion).not.toHaveProperty("box");
+});
+
+test("progressPercent: done=100 / running 用 fraction / 无 fraction 保持", () => {
+  expect(progressPercent({ state: "done" }, 50)).toBe(100);
+  expect(progressPercent({ state: "running", progress: { fraction: 0.43 } }, 0)).toBe(43);
+  expect(progressPercent({ state: "running", progress: { fraction: null } }, 60)).toBe(60);
+  expect(progressPercent({ state: "failed" }, 30)).toBe(30);
+  expect(progressPercent({ state: "idle" }, 0)).toBe(0);
 });

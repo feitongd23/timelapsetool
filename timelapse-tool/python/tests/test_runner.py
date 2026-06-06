@@ -96,3 +96,11 @@ def test_invalid_config_fails_fast(tmp_path):
     runner = PipelineRunner(stages=[RecordingStage("BR", manual=True)], emit=lambda m: None)
     with pytest.raises(ValueError, match="帧率"):
         runner.start(cfg)
+
+
+def test_emit_records_progress():
+    from pipeline.runner import PipelineRunner
+    r = PipelineRunner(stages=[], emit=lambda m: None)
+    r._current = "AE"
+    r._emit("渲染中", 0.43)
+    assert r.status()["progress"] == {"stage": "AE", "message": "渲染中", "fraction": 0.43}
