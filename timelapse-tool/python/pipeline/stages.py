@@ -66,13 +66,17 @@ class ExportStage(Stage):
     manual = False
 
     def run(self, config, emit):
+        from pathlib import Path
         from pipeline import ae, export
         intermediate = ae.intermediate_path(config.output_path)
+        # 母版/社媒文件名用 RAW 素材文件夹名作前缀
+        prefix = Path(config.raw_folder).name or "timelapse"
         export.render_exports(
             intermediate_video=str(intermediate),
             output_dir=config.output_path,
             social=config.social,
             emit=emit,
+            prefix=prefix,
         )
 
 

@@ -190,3 +190,7 @@ def test_render_exports_still_keeps_master(tmp_path):
     assert master == export.master_path(str(out)) and master.exists()
     assert not inter.exists()
     assert social_out.name == "timelapse_social_1080x1920_h265.mp4" and social_out.exists()
+
+
+def test_master_path_custom_prefix():
+    assert export.master_path("/out", prefix="myclip").name == "myclip_master.mov"

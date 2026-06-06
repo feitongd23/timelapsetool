@@ -13,11 +13,8 @@ from pipeline import export_formats as ef
 EXPORT_SWIFT = Path(__file__).parent / "media_export.swift"
 EXPORT_BIN = str(Path(tempfile.gettempdir()) / "timelapse_media_export")
 
-MASTER_NAME = "timelapse_master.mov"
-
-
-def master_path(output_dir):
-    return Path(output_dir) / MASTER_NAME
+def master_path(output_dir, prefix="timelapse"):
+    return Path(output_dir) / f"{prefix}_master.mov"
 
 
 def social_output_path(output_dir, fmt, w, h, prefix="timelapse"):
@@ -101,16 +98,17 @@ def transcode_social(src_mov, output_dir, social, emit,
 
 
 def render_exports(intermediate_video, output_dir, social, emit,
-                   run=subprocess.run, binary=EXPORT_BIN):
-    """保留母版 + 出社媒版。返回 (母版路径, 社媒版路径)。"""
+                   run=subprocess.run, binary=EXPORT_BIN, prefix="timelapse"):
+    """保留母版 + 出社媒版。返回 (母版路径, 社媒版路径)。prefix 作母版/社媒文件名前缀。"""
     inter = Path(intermediate_video)
     if not inter.exists():
         raise RuntimeError(f"AE 中间视频不存在: {inter}")
-    master = master_path(output_dir)
+    master = master_path(output_dir, prefix)
     emit("导出阶段：保留 ProRes 母版…")
     if master.exists():
         master.unlink()
     shutil.move(str(inter), str(master))
-    social_out = transcode_social(str(master), output_dir, social, emit, run=run, binary=binary)
+    social_out = transcode_social(str(master), output_dir, social, emit,
+                                  run=run, binary=binary, prefix=prefix)
     emit("导出阶段：完成（母版 + 社媒版）")
     return master, social_out

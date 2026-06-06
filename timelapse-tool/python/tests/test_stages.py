@@ -78,12 +78,14 @@ def test_export_stage_delegates(monkeypatch, tmp_path):
         called["inter"] = intermediate_video
         called["out"] = output_dir
         called["social"] = social
+        called["prefix"] = kwargs.get("prefix")
         emit("导出 done")
         return (export.master_path(output_dir), tmp_path / "s.mp4")
 
     monkeypatch.setattr(export, "render_exports", fake_render)
 
     class Cfg:
+        raw_folder = str(tmp_path / "我的素材")
         output_path = str(tmp_path / "out")
         social = {"format": "H.265", "aspect": "9:16", "resolution": "1080p"}
 
@@ -91,4 +93,5 @@ def test_export_stage_delegates(monkeypatch, tmp_path):
     ExportStage().run(Cfg(), msgs.append)
     assert called["inter"] == str(ae.intermediate_path(str(tmp_path / "out")))
     assert called["social"]["aspect"] == "9:16"
+    assert called["prefix"] == "我的素材"   # 前缀=RAW 文件夹名
     assert any("导出" in m for m in msgs)
