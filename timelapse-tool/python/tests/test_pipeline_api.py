@@ -161,3 +161,34 @@ def test_preview_meta(tmp_path, monkeypatch):
     r = client.get("/preview/meta", params={"folder": str(tmp_path)})
     assert r.status_code == 200
     assert r.json()["camera"] == "ILCE-7RM4A"
+
+
+def test_preview_file_thumb_missing_404():
+    r = client.get("/preview/file_thumb", params={"src": "/no/such/file.mov"})
+    assert r.status_code == 404
+
+
+def test_preview_file_thumb_ok(tmp_path, monkeypatch):
+    src = tmp_path / "clip.mov"; src.write_text("x")
+    thumb = tmp_path / "t.png"; thumb.write_bytes(b"\x89PNG\r\n")
+    from pipeline import preview
+    monkeypatch.setattr(preview, "generate_thumbnail", lambda s, size, cache, **k: str(thumb))
+    r = client.get("/preview/file_thumb", params={"src": str(src)})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+
+
+def test_export_social_from_missing_src_404():
+    r = client.post("/export/social_from", json={"src": "/no/file.mov", "social": SOCIAL})
+    assert r.status_code == 404
+
+
+def test_export_social_from_ok(tmp_path, monkeypatch):
+    src = tmp_path / "clip.mov"; src.write_text("x")
+    from pipeline import export
+    monkeypatch.setattr(export, "ensure_export_binary", lambda *a, **k: "/bin")
+    monkeypatch.setattr(export, "transcode_social",
+                        lambda s, out_dir, social, emit, **k: __import__("pathlib").Path(out_dir) / "clip_social_1080x1920_h265.mp4")
+    r = client.post("/export/social_from", json={"src": str(src), "social": SOCIAL})
+    assert r.status_code == 200
+    assert r.json()["output"].endswith("clip_social_1080x1920_h265.mp4")

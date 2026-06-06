@@ -56,6 +56,11 @@ class StartBody(BaseModel):
     output_path: str
 
 
+class SocialFromBody(BaseModel):
+    src: str
+    social: dict
+
+
 @app.post("/pipeline/start")
 def pipeline_start(body: StartBody):
     global _runner
@@ -155,6 +160,33 @@ def preview_meta(folder: str):
     from pipeline import export
     binary = export.ensure_export_binary()
     return preview.read_metadata(folder, binary)
+
+
+@app.get("/preview/file_thumb")
+def preview_file_thumb(src: str):
+    """任意单个图片/视频文件的缩略图（选区窗口底图）。"""
+    if not Path(src).is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    thumb = preview.generate_thumbnail(src, 640, _THUMB_CACHE)
+    if not Path(thumb).exists():
+        raise HTTPException(status_code=500, detail="缩略图生成失败")
+    return FileResponse(thumb, media_type="image/png")
+
+
+@app.post("/export/social_from")
+def export_social_from(body: SocialFromBody):
+    """把已有成片（mov）直接转社媒版，输出到源同目录。"""
+    from pipeline import export
+    src = Path(body.src)
+    if not src.is_file():
+        raise HTTPException(status_code=404, detail="成片不存在")
+    binary = export.ensure_export_binary()
+    try:
+        out = export.transcode_social(str(src), str(src.parent), body.social,
+                                      emit=_progress_log.append, binary=binary, prefix=src.stem)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"output": str(out)}
 
 
 if __name__ == "__main__":
