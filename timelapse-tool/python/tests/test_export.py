@@ -18,13 +18,29 @@ def test_social_output_path_named_by_pixels_and_fmt():
 
 def test_build_export_cmd_order():
     cmd = export.build_export_cmd(
-        "/x/bin", "/m.mov", "/s.mp4", "hevc", (1200, 0, 1440, 2560), (1080, 1920))
+        "/x/bin", "/m.mov", "/s.mp4", "hevc",
+        (1200, 0, 1440, 2560), (1100, 0, 1320, 2348), (1080, 1920))
     assert cmd == ["/x/bin", "/m.mov", "/s.mp4", "hevc",
-                   "1200", "0", "1440", "2560", "1080", "1920"]
+                   "1200", "0", "1440", "2560",        # 起始框
+                   "1100", "0", "1320", "2348",        # 结束框
+                   "1080", "1920"]                     # 输出尺寸
 
 
 def test_build_probe_cmd():
     assert export.build_probe_cmd("/x/bin", "/m.mov") == ["/x/bin", "--probe", "/m.mov"]
+
+
+def test_build_saliency_cmd():
+    assert export.build_saliency_cmd("/x/bin", "/m.mov") == ["/x/bin", "--saliency", "/m.mov"]
+
+
+def _r(returncode, stdout=""):
+    return type("R", (), {"returncode": returncode, "stdout": stdout})()
+
+
+def test_saliency_center_parses_or_falls_back():
+    assert export.saliency_center("/b", "/m", run=lambda c, **k: _r(0, "0.3 0.6\n")) == (0.3, 0.6)
+    assert export.saliency_center("/b", "/m", run=lambda c, **k: _r(1, "")) == (0.5, 0.5)
 
 
 def test_render_exports_keeps_master_then_transcodes(tmp_path):
@@ -53,8 +69,57 @@ def test_render_exports_keeps_master_then_transcodes(tmp_path):
     assert calls[0][1] == "--probe"
     tc = calls[-1]
     assert tc[3] == "hevc"
-    assert tc[4:8] == ["1200", "0", "1440", "2560"]
-    assert tc[8:10] == ["1080", "1920"]
+    # 无运镜：起=止=中心裁框，输出 1080x1920
+    assert tc[4:8] == ["1200", "0", "1440", "2560"]    # 起始框
+    assert tc[8:12] == ["1200", "0", "1440", "2560"]   # 结束框（=起始）
+    assert tc[12:14] == ["1080", "1920"]               # 输出尺寸
+
+
+def test_render_exports_subject_uses_saliency_anchor(tmp_path):
+    out = tmp_path / "out"; out.mkdir()
+    inter = out / "_ae_intermediate.mov"; inter.write_bytes(_MOOV)
+    fake_bin = tmp_path / "bin"; fake_bin.write_text("b")
+    social = {"format": "H.265", "aspect": "9:16", "resolution": "1080p", "subject": True}
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        sub = len(cmd) > 1 and cmd[1] == "--saliency"
+        out_stdout = "0.2 0.5\n" if sub else "3840 2560\n"
+        if cmd[1] not in ("--probe", "--saliency"):
+            Path(cmd[2]).write_bytes(_MOOV)
+        return type("R", (), {"returncode": 0, "stdout": out_stdout})()
+
+    export.render_exports(str(inter), str(out), social, emit=lambda m: None,
+                          run=fake_run, binary=str(fake_bin))
+    assert any(len(c) > 1 and c[1] == "--saliency" for c in calls)  # 调了显著性检测
+    tc = calls[-1]
+    # 锚点 cx=0.2 → 9:16 裁框 x=48（不再是中心 1200）
+    assert tc[4] == "48"
+
+
+def test_render_exports_kenburns_start_differs_from_end(tmp_path):
+    out = tmp_path / "out"; out.mkdir()
+    inter = out / "_ae_intermediate.mov"; inter.write_bytes(_MOOV)
+    fake_bin = tmp_path / "bin"; fake_bin.write_text("b")
+    social = {"format": "H.265", "aspect": "9:16", "resolution": "1080p",
+              "motion": {"type": "kenburns", "direction": "in", "intensity": "medium"}}
+
+    def fake_run(cmd, **kw):
+        if cmd[1] not in ("--probe", "--saliency"):
+            Path(cmd[2]).write_bytes(_MOOV)
+        return type("R", (), {"returncode": 0, "stdout": "3840 2560\n"})()
+
+    calls = []
+    orig = fake_run
+    def rec(cmd, **kw):
+        calls.append(cmd); return orig(cmd, **kw)
+
+    export.render_exports(str(inter), str(out), social, emit=lambda m: None,
+                          run=rec, binary=str(fake_bin))
+    tc = calls[-1]
+    # Ken Burns 推近：起始框 ≠ 结束框
+    assert tc[4:8] != tc[8:12]
 
 
 def test_render_exports_missing_intermediate_raises(tmp_path):

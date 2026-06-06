@@ -29,11 +29,14 @@ def build_probe_cmd(binary, src):
     return [binary, "--probe", src]
 
 
-def build_export_cmd(binary, src, out, fmt_swift, crop, outsize):
-    cx, cy, cw, ch = crop
-    ow, oh = outsize
+def build_saliency_cmd(binary, src):
+    return [binary, "--saliency", src]
+
+
+def build_export_cmd(binary, src, out, fmt_swift, start_crop, end_crop, outsize):
+    """转码命令：起止两个裁框（运镜 ramp）+ 输出尺寸。无运镜时起=止。"""
     return [binary, src, out, fmt_swift,
-            str(cx), str(cy), str(cw), str(ch), str(ow), str(oh)]
+            *map(str, start_crop), *map(str, end_crop), *map(str, outsize)]
 
 
 def ensure_export_binary(run=subprocess.run, binary=EXPORT_BIN, source=EXPORT_SWIFT):
@@ -53,6 +56,18 @@ def probe_master_size(binary, master, run=subprocess.run):
     return int(w), int(h)
 
 
+def saliency_center(binary, master, run=subprocess.run):
+    """Vision 显著性主体中心（归一化 0–1）。失败/检测不到回退画面正中。"""
+    r = run(build_saliency_cmd(binary, str(master)), capture_output=True, text=True)
+    if getattr(r, "returncode", 0) != 0:
+        return (0.5, 0.5)
+    try:
+        cx, cy = r.stdout.split()
+        return (float(cx), float(cy))
+    except (ValueError, AttributeError):
+        return (0.5, 0.5)
+
+
 def render_exports(intermediate_video, output_dir, social, emit,
                    run=subprocess.run, binary=EXPORT_BIN):
     """保留母版 + 出社媒版。返回 (母版路径, 社媒版路径)。"""
@@ -68,18 +83,21 @@ def render_exports(intermediate_video, output_dir, social, emit,
         master.unlink()
     shutil.move(str(inter), str(master))
 
-    # ② 社媒版：探母版尺寸 → 中心裁框 → 目标像素 → 转码
+    # ② 社媒版：探母版尺寸 → 锚点(主体/中心) → 运镜起止框 → 目标像素 → 转码
     bin_path = ensure_export_binary(run=run, binary=binary)
     src_w, src_h = probe_master_size(bin_path, master, run=run)
-    crop = ef.crop_rect(src_w, src_h, social["aspect"])
+    anchor = saliency_center(bin_path, master, run=run) if social.get("subject") else (0.5, 0.5)
+    motion = social.get("motion") or {"type": "none"}
+    start_crop, end_crop = ef.motion_frames(src_w, src_h, social["aspect"], motion, anchor)
     ow, oh = ef.social_pixels(social["aspect"], social["resolution"])
     fmt_swift = ef.FORMAT_SWIFT[social["format"]]
     social_out = social_output_path(output_dir, social["format"], ow, oh)
     if social_out.exists():
         social_out.unlink()
 
-    emit(f"导出阶段：转社媒版 {ow}x{oh} · {social['format']}…")
-    run(build_export_cmd(bin_path, str(master), str(social_out), fmt_swift, crop, (ow, oh)))
+    emit(f"导出阶段：转社媒版 {ow}x{oh} · {social['format']} · 运镜 {motion['type']}…")
+    run(build_export_cmd(bin_path, str(master), str(social_out), fmt_swift,
+                         start_crop, end_crop, (ow, oh)))
     if not social_out.exists():
         raise RuntimeError(f"未生成社媒版: {social_out}")
     emit("导出阶段：完成（母版 + 社媒版）")
