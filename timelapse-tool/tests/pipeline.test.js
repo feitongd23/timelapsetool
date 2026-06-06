@@ -1,4 +1,4 @@
-const { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, formatMeta } = require("../electron/renderer/pipeline.js");
+const { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, formatMeta, boxToNormalized } = require("../electron/renderer/pipeline.js");
 
 test("guidanceText 停在 LRT 时含圣光提示", () => {
   const g = guidanceText({ state: "waiting_for_user", current_stage: "LRT" });
@@ -123,4 +123,30 @@ test("socialPixels 与后端同口径", () => {
   expect(socialPixels("9:16", "1080p")).toEqual([1080, 1920]);
   expect(socialPixels("3:4", "720p")).toEqual([720, 960]);
   expect(socialPixels("3:2", "1080p")).toEqual([1620, 1080]);
+});
+
+test("boxToNormalized 像素框转归一化并夹紧", () => {
+  expect(boxToNormalized({ x: 100, y: 50, w: 200, h: 400 }, 1000, 1000))
+    .toEqual([0.1, 0.05, 0.2, 0.4]);
+  const n = boxToNormalized({ x: -10, y: 0, w: 2000, h: 100 }, 1000, 1000);
+  expect(n[0]).toBe(0);
+  expect(n[2]).toBe(1);
+});
+
+test("buildSocialConfig 带 box（有框时写入 motion.box）", () => {
+  const s = buildSocialConfig({
+    social_format: "H.265", social_aspect: "9:16", social_resolution: "1080p",
+    motion_type: "kenburns", motion_direction: "in", motion_intensity: "medium",
+    motion_subject: false, motion_box: [0.3, 0.3, 0.2, 0.2],
+  });
+  expect(s.motion.box).toEqual([0.3, 0.3, 0.2, 0.2]);
+});
+
+test("buildSocialConfig 无 box 时 motion 不含 box", () => {
+  const s = buildSocialConfig({
+    social_format: "H.265", social_aspect: "9:16", social_resolution: "1080p",
+    motion_type: "kenburns", motion_direction: "in", motion_intensity: "medium",
+    motion_subject: false, motion_box: null,
+  });
+  expect(s.motion).not.toHaveProperty("box");
 });

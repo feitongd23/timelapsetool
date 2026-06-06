@@ -94,8 +94,15 @@ function motionTypesFor(aspect) {
   return types;
 }
 
+function boxToNormalized(rect, dispW, dispH) {
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  return [clamp(rect.x / dispW), clamp(rect.y / dispH), clamp(rect.w / dispW), clamp(rect.h / dispH)];
+}
+
 function buildMotionConfig(values) {
-  return { type: values.motion_type, direction: values.motion_direction, intensity: values.motion_intensity };
+  const m = { type: values.motion_type, direction: values.motion_direction, intensity: values.motion_intensity };
+  if (values.motion_box) m.box = values.motion_box;
+  return m;
 }
 
 function buildSocialConfig(values) {
@@ -417,5 +424,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, formatMeta, STAGES };
+  module.exports = { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, formatMeta, boxToNormalized, STAGES };
 }
