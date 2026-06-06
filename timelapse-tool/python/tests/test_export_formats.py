@@ -179,3 +179,34 @@ def test_validate_social_rejects_bad_motion():
     with pytest.raises(ValueError, match="运镜方向"):
         ef.validate_social({"format": "H.265", "aspect": "9:16", "resolution": "1080p",
                             "motion": {"type": "pan", "direction": "diagonal", "intensity": "medium"}})
+
+
+def test_box_to_aspect_frame_contains_box_and_aspect():
+    fr = ef._box_to_aspect_frame([0.3, 0.3, 0.2, 0.2], 3840, 2560, "9:16")
+    x, y, w, h = fr
+    assert abs((w / h) - (9 / 16)) < 0.02
+    assert w % 2 == 0 and h % 2 == 0
+    assert 0 <= x and x + w <= 3840 and 0 <= y and y + h <= 2560
+
+
+def test_motion_frames_kenburns_box_in_pushes_to_box():
+    motion = {"type": "kenburns", "direction": "in", "intensity": "medium",
+              "box": [0.3, 0.3, 0.2, 0.2]}
+    start, end = ef.motion_frames(3840, 2560, "9:16", motion, (0.4, 0.4))
+    assert end[2] < start[2] and end[3] < start[3]
+    ecx = (end[0] + end[2] / 2) / 3840
+    assert abs(ecx - 0.4) < 0.03
+
+
+def test_motion_frames_kenburns_box_out_reverses():
+    motion = {"type": "kenburns", "direction": "out", "intensity": "medium",
+              "box": [0.3, 0.3, 0.2, 0.2]}
+    start, end = ef.motion_frames(3840, 2560, "9:16", motion, (0.4, 0.4))
+    assert start[2] < end[2]
+
+
+def test_motion_frames_box_ignored_for_pan():
+    motion = {"type": "pan", "direction": "right", "intensity": "medium",
+              "box": [0.3, 0.3, 0.2, 0.2]}
+    s, e = ef.motion_frames(3840, 2560, "9:16", motion, (0.4, 0.4))
+    assert s[0] == 0 and e[0] > 0

@@ -129,6 +129,20 @@ def _scale_box(box, factor, src_w, src_h):
     return (nx, ny, nw, nh)
 
 
+def _box_to_aspect_frame(box, src_w, src_h, aspect):
+    """归一化 box → 包含它的最小 aspect 比例框（源像素，偶数、clamp）。"""
+    bx, by, bw, bh = box
+    pw, ph = bw * src_w, bh * src_h
+    cx, cy = (bx + bw / 2) * src_w, (by + bh / 2) * src_h
+    a, b = ASPECT_RATIO[aspect]
+    r = a / b
+    ew = max(pw, ph * r)
+    ew, eh = _even(ew), _even(ew / r)
+    x = _clamp(_even(cx - ew / 2), 0, _even(src_w - ew))
+    y = _clamp(_even(cy - eh / 2), 0, _even(src_h - eh))
+    return (x, y, ew, eh)
+
+
 def motion_frames(src_w, src_h, aspect, motion, anchor=(0.5, 0.5)):
     """返回 (start_crop, end_crop) 两个裁框，均为 aspect 比例、在母版内。
 
@@ -139,6 +153,9 @@ def motion_frames(src_w, src_h, aspect, motion, anchor=(0.5, 0.5)):
     if mtype == "none":
         return base, base
     if mtype == "kenburns":
+        if motion.get("box"):
+            end = _box_to_aspect_frame(motion["box"], src_w, src_h, aspect)
+            return (base, end) if motion["direction"] == "in" else (end, base)
         z = INTENSITY_ZOOM[motion["intensity"]]
         small = _scale_box(base, 1.0 / z, src_w, src_h)
         return (base, small) if motion["direction"] == "in" else (small, base)
