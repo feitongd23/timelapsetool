@@ -20,9 +20,9 @@ def master_path(output_dir):
     return Path(output_dir) / MASTER_NAME
 
 
-def social_output_path(output_dir, fmt, w, h):
+def social_output_path(output_dir, fmt, w, h, prefix="timelapse"):
     tag = ef.FORMAT_TAG[fmt]
-    return Path(output_dir) / f"timelapse_social_{w}x{h}_{tag}.mp4"
+    return Path(output_dir) / f"{prefix}_social_{w}x{h}_{tag}.mp4"
 
 
 def build_probe_cmd(binary, src):
@@ -68,37 +68,49 @@ def saliency_center(binary, master, run=subprocess.run):
         return (0.5, 0.5)
 
 
+def transcode_social(src_mov, output_dir, social, emit,
+                     run=subprocess.run, binary=EXPORT_BIN, prefix="timelapse"):
+    """把任意视频按 social 配置转社媒版，返回社媒版路径。流水线与成片转社媒共用。"""
+    src = Path(src_mov)
+    if not src.exists():
+        raise RuntimeError(f"源视频不存在: {src}")
+    ef.validate_social(social)
+    bin_path = ensure_export_binary(run=run, binary=binary)
+    src_w, src_h = probe_master_size(bin_path, src, run=run)
+
+    motion = social.get("motion") or {"type": "none"}
+    if motion.get("box"):
+        bx, by, bw, bh = motion["box"]
+        anchor = (bx + bw / 2, by + bh / 2)
+    elif social.get("subject"):
+        anchor = saliency_center(bin_path, src, run=run)
+    else:
+        anchor = (0.5, 0.5)
+
+    start_crop, end_crop = ef.motion_frames(src_w, src_h, social["aspect"], motion, anchor)
+    ow, oh = ef.social_pixels(social["aspect"], social["resolution"])
+    fmt_swift = ef.FORMAT_SWIFT[social["format"]]
+    out = social_output_path(output_dir, social["format"], ow, oh, prefix)
+    if out.exists():
+        out.unlink()
+    emit(f"转社媒版 {ow}x{oh} · {social['format']} · 运镜 {motion['type']}…")
+    run(build_export_cmd(bin_path, str(src), str(out), fmt_swift, start_crop, end_crop, (ow, oh)))
+    if not out.exists():
+        raise RuntimeError(f"未生成社媒版: {out}")
+    return out
+
+
 def render_exports(intermediate_video, output_dir, social, emit,
                    run=subprocess.run, binary=EXPORT_BIN):
     """保留母版 + 出社媒版。返回 (母版路径, 社媒版路径)。"""
     inter = Path(intermediate_video)
     if not inter.exists():
         raise RuntimeError(f"AE 中间视频不存在: {inter}")
-    ef.validate_social(social)
-
-    # ① 保留母版（移动，省空间；母版本身就是 ProRes 4444）
     master = master_path(output_dir)
     emit("导出阶段：保留 ProRes 母版…")
     if master.exists():
         master.unlink()
     shutil.move(str(inter), str(master))
-
-    # ② 社媒版：探母版尺寸 → 锚点(主体/中心) → 运镜起止框 → 目标像素 → 转码
-    bin_path = ensure_export_binary(run=run, binary=binary)
-    src_w, src_h = probe_master_size(bin_path, master, run=run)
-    anchor = saliency_center(bin_path, master, run=run) if social.get("subject") else (0.5, 0.5)
-    motion = social.get("motion") or {"type": "none"}
-    start_crop, end_crop = ef.motion_frames(src_w, src_h, social["aspect"], motion, anchor)
-    ow, oh = ef.social_pixels(social["aspect"], social["resolution"])
-    fmt_swift = ef.FORMAT_SWIFT[social["format"]]
-    social_out = social_output_path(output_dir, social["format"], ow, oh)
-    if social_out.exists():
-        social_out.unlink()
-
-    emit(f"导出阶段：转社媒版 {ow}x{oh} · {social['format']} · 运镜 {motion['type']}…")
-    run(build_export_cmd(bin_path, str(master), str(social_out), fmt_swift,
-                         start_crop, end_crop, (ow, oh)))
-    if not social_out.exists():
-        raise RuntimeError(f"未生成社媒版: {social_out}")
+    social_out = transcode_social(str(master), output_dir, social, emit, run=run, binary=binary)
     emit("导出阶段：完成（母版 + 社媒版）")
     return master, social_out

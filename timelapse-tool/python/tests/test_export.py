@@ -144,3 +144,49 @@ def test_render_exports_missing_social_output_raises(tmp_path):
     with pytest.raises(RuntimeError, match="社媒"):
         export.render_exports(str(inter), str(out), social,
                               emit=lambda m: None, run=fake_run, binary=str(fake_bin))
+
+
+def test_social_output_path_custom_prefix():
+    p = export.social_output_path("/out", "H.265", 1080, 1920, prefix="myclip")
+    assert p.name == "myclip_social_1080x1920_h265.mp4"
+
+
+def test_transcode_social_box_anchor(tmp_path):
+    out = tmp_path / "out"; out.mkdir()
+    src = tmp_path / "clip.mov"; src.write_bytes(_MOOV)
+    fake_bin = tmp_path / "bin"; fake_bin.write_text("b")
+    social = {"format": "H.265", "aspect": "9:16", "resolution": "1080p",
+              "motion": {"type": "kenburns", "direction": "in", "intensity": "medium",
+                         "box": [0.3, 0.3, 0.2, 0.2]}}
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        if cmd[1] not in ("--probe", "--saliency"):
+            Path(cmd[2]).write_bytes(_MOOV)
+        return type("R", (), {"returncode": 0, "stdout": "3840 2560\n"})()
+
+    res = export.transcode_social(str(src), str(out), social, emit=lambda m: None,
+                                  run=fake_run, binary=str(fake_bin), prefix="clip")
+    assert res.name == "clip_social_1080x1920_h265.mp4" and res.exists()
+    assert not any(len(c) > 1 and c[1] == "--saliency" for c in calls)
+    tc = calls[-1]
+    assert tc[4:8] != tc[8:12]
+
+
+def test_render_exports_still_keeps_master(tmp_path):
+    out = tmp_path / "out"; out.mkdir()
+    inter = out / "_ae_intermediate.mov"; inter.write_bytes(_MOOV)
+    fake_bin = tmp_path / "bin"; fake_bin.write_text("b")
+    social = {"format": "H.265", "aspect": "9:16", "resolution": "1080p"}
+
+    def fake_run(cmd, **kw):
+        if cmd[1] not in ("--probe", "--saliency"):
+            Path(cmd[2]).write_bytes(_MOOV)
+        return type("R", (), {"returncode": 0, "stdout": "3840 2560\n"})()
+
+    master, social_out = export.render_exports(str(inter), str(out), social,
+                                               emit=lambda m: None, run=fake_run, binary=str(fake_bin))
+    assert master == export.master_path(str(out)) and master.exists()
+    assert not inter.exists()
+    assert social_out.name == "timelapse_social_1080x1920_h265.mp4" and social_out.exists()
