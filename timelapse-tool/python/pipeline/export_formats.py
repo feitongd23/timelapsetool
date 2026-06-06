@@ -80,8 +80,15 @@ def social_pixels(aspect, resolution):
     return (_even(short), _even(short))  # 方形
 
 
-def crop_rect(src_w, src_h, aspect):
-    """母版中心裁出 aspect 比例的最大矩形 → (x, y, w, h) 偶数。"""
+def _clamp(v, lo, hi):
+    return max(lo, min(v, hi))
+
+
+def crop_rect(src_w, src_h, aspect, anchor=(0.5, 0.5)):
+    """裁出 aspect 比例的最大矩形，以 anchor（归一化中心）为中心、clamp 到母版内。
+
+    anchor 默认 (0.5, 0.5) = 画面正中（等于原中心裁切）。
+    """
     a, b = ASPECT_RATIO[aspect]
     r = a / b               # 目标横向比
     sr = src_w / src_h
@@ -92,9 +99,66 @@ def crop_rect(src_w, src_h, aspect):
     else:                   # 目标更高/窄 → 按高定，裁左右
         cw, ch = src_h * r, src_h
     cw, ch = _even(cw), _even(ch)
-    x = _even((src_w - cw) / 2)
-    y = _even((src_h - ch) / 2)
+    ax, ay = anchor
+    x = _clamp(_even(ax * src_w - cw / 2), 0, _even(src_w - cw))
+    y = _clamp(_even(ay * src_h - ch / 2), 0, _even(src_h - ch))
     return (x, y, cw, ch)
+
+
+# ---- 运镜（裁框随时间从起始框 ramp 到结束框）----
+
+MOTION_TYPES = {"none", "kenburns", "pan", "sweep"}
+DIRECTIONS = {
+    "none": set(),
+    "kenburns": {"in", "out"},
+    "pan": {"left", "right", "up", "down"},
+    "sweep": {"lr", "rl"},
+}
+# Ken Burns 起止缩放差；Pan 裁框相对中心框的缩小（留移动余量）
+INTENSITY_ZOOM = {"light": 1.06, "medium": 1.12, "strong": 1.20}
+INTENSITY_PAN = {"light": 0.92, "medium": 0.85, "strong": 0.78}
+
+
+def _scale_box(box, factor, src_w, src_h):
+    """以 box 中心缩放 factor 倍（<1 缩小），clamp 到母版。"""
+    x, y, w, h = box
+    cx, cy = x + w / 2, y + h / 2
+    nw, nh = _even(w * factor), _even(h * factor)
+    nx = _clamp(_even(cx - nw / 2), 0, _even(src_w - nw))
+    ny = _clamp(_even(cy - nh / 2), 0, _even(src_h - nh))
+    return (nx, ny, nw, nh)
+
+
+def motion_frames(src_w, src_h, aspect, motion, anchor=(0.5, 0.5)):
+    """返回 (start_crop, end_crop) 两个裁框，均为 aspect 比例、在母版内。
+
+    无运镜时起=止（退化回固定裁切）。
+    """
+    base = crop_rect(src_w, src_h, aspect, anchor)
+    mtype = (motion or {}).get("type", "none")
+    if mtype == "none":
+        return base, base
+    if mtype == "kenburns":
+        z = INTENSITY_ZOOM[motion["intensity"]]
+        small = _scale_box(base, 1.0 / z, src_w, src_h)
+        return (base, small) if motion["direction"] == "in" else (small, base)
+    if mtype == "pan":
+        box = _scale_box(base, INTENSITY_PAN[motion["intensity"]], src_w, src_h)
+        x, y, w, h = box
+        max_x, max_y = _even(src_w - w), _even(src_h - h)
+        d = motion["direction"]
+        if d in ("left", "right"):           # 以镜头移动方向命名
+            sx, ex = (max_x, 0) if d == "left" else (0, max_x)
+            return (sx, y, w, h), (ex, y, w, h)
+        sy, ey = (max_y, 0) if d == "up" else (0, max_y)
+        return (x, sy, w, h), (x, ey, w, h)
+    if mtype == "sweep":                      # 满高，左右扫全幅
+        a, b = ASPECT_RATIO[aspect]
+        bw = min(_even(src_h * a / b), _even(src_w))
+        max_x = _even(src_w - bw)
+        left, right = (0, 0, bw, src_h), (max_x, 0, bw, src_h)
+        return (right, left) if motion["direction"] == "rl" else (left, right)
+    return base, base
 
 
 def validate_social(social):
@@ -104,3 +168,13 @@ def validate_social(social):
         raise ValueError(f"画幅不支持: {social.get('aspect')}")
     if social.get("resolution") not in SOCIAL_RESOLUTIONS:
         raise ValueError(f"分辨率不支持: {social.get('resolution')}")
+    motion = social.get("motion")
+    if motion:
+        t = motion.get("type", "none")
+        if t not in MOTION_TYPES:
+            raise ValueError(f"运镜类型不支持: {t}")
+        if t != "none":
+            if motion.get("direction") not in DIRECTIONS[t]:
+                raise ValueError(f"运镜方向不支持: {motion.get('direction')}")
+            if t in ("kenburns", "pan") and motion.get("intensity") not in INTENSITY_ZOOM:
+                raise ValueError(f"运镜强度不支持: {motion.get('intensity')}")

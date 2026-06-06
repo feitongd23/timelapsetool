@@ -112,3 +112,70 @@ def test_validate_social_ok_and_rejects():
         ef.validate_social({"format": "H.265", "aspect": "21:9", "resolution": "1080p"})
     with pytest.raises(ValueError, match="分辨率"):
         ef.validate_social({"format": "H.265", "aspect": "9:16", "resolution": "8K"})
+
+
+# ---- 运镜 + 主体锚点 ----
+
+def test_crop_rect_default_anchor_is_center():
+    assert ef.crop_rect(3840, 2560, "9:16") == (1200, 0, 1440, 2560)
+
+
+def test_crop_rect_anchor_offsets():
+    x, y, w, h = ef.crop_rect(3840, 2560, "9:16", anchor=(0.2, 0.5))
+    assert (w, h) == (1440, 2560)
+    assert x == 48  # 0.2*3840 - 720
+
+
+def test_crop_rect_anchor_clamps_to_bounds():
+    assert ef.crop_rect(3840, 2560, "9:16", anchor=(0.0, 0.5))[0] == 0
+    assert ef.crop_rect(3840, 2560, "9:16", anchor=(1.0, 0.5))[0] == 2400  # 3840-1440
+
+
+def test_motion_frames_none_start_equals_end():
+    s, e = ef.motion_frames(3840, 2560, "9:16", {"type": "none"})
+    assert s == e == ef.crop_rect(3840, 2560, "9:16")
+
+
+def test_motion_frames_kenburns_in_zooms_in():
+    base = ef.crop_rect(3840, 2560, "16:9")
+    s, e = ef.motion_frames(3840, 2560, "16:9", {"type": "kenburns", "direction": "in", "intensity": "medium"})
+    assert s == base
+    assert e[2] < s[2] and e[3] < s[3]          # 结束框更小 = 推近放大
+    assert abs(e[2] - ef._even(base[2] / 1.12)) <= 2
+
+
+def test_motion_frames_kenburns_out_reverses():
+    s, e = ef.motion_frames(3840, 2560, "16:9", {"type": "kenburns", "direction": "out", "intensity": "medium"})
+    assert s[2] < e[2]                            # out: 小→大
+
+
+def test_motion_frames_pan_right_moves_x():
+    s, e = ef.motion_frames(3840, 2560, "9:16", {"type": "pan", "direction": "right", "intensity": "medium"})
+    assert s[0] == 0 and e[0] > 0
+    assert s[1:] == e[1:]                         # 只 x 变
+
+
+def test_motion_frames_sweep_full_width():
+    s, e = ef.motion_frames(3840, 2560, "9:16", {"type": "sweep", "direction": "lr"})
+    assert s[0] == 0
+    assert s[3] == 2560                           # 满高
+    assert e[0] == ef._even(3840 - s[2])          # 扫到最右
+
+
+def test_validate_social_motion_and_subject_ok():
+    ef.validate_social({"format": "H.265", "aspect": "9:16", "resolution": "1080p",
+                        "motion": {"type": "kenburns", "direction": "in", "intensity": "medium"},
+                        "subject": True})
+
+
+def test_validate_social_no_motion_backward_compatible():
+    ef.validate_social({"format": "H.265", "aspect": "9:16", "resolution": "1080p"})
+
+
+def test_validate_social_rejects_bad_motion():
+    with pytest.raises(ValueError, match="运镜类型"):
+        ef.validate_social({"format": "H.265", "aspect": "9:16", "resolution": "1080p",
+                            "motion": {"type": "spin"}})
+    with pytest.raises(ValueError, match="运镜方向"):
+        ef.validate_social({"format": "H.265", "aspect": "9:16", "resolution": "1080p",
+                            "motion": {"type": "pan", "direction": "diagonal", "intensity": "medium"}})
