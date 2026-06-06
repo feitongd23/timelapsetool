@@ -36,7 +36,6 @@ from pipeline.runner import PipelineRunner
 from pipeline.stages import default_stages
 from pipeline import workflows
 from pipeline import preview
-from pipeline import sequence
 
 _THUMB_CACHE = str(Path(tempfile.gettempdir()) / "timelapse_thumbs")
 
@@ -67,23 +66,13 @@ def pipeline_start(body: StartBody):
     data = body.dict()
     workflow_names = data.pop("workflow", None)
     config = PipelineConfig(**data)
-    notice = None
-    try:
-        original = config.raw_folder
-        repaired = sequence.repair(original)
-        if repaired != original:
-            n = len(sequence._frames(repaired))
-            config.raw_folder = repaired
-            notice = f"检测到序列回绕，已按拍摄时间整理 {n} 帧到「{repaired}」，请在该文件夹操作。"
-    except Exception:
-        pass
     try:
         stages = workflows.build_stages(workflow_names) if workflow_names else default_stages()
         _runner = PipelineRunner(stages=stages, emit=_progress_log.append)
         _runner.start(config)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    _runner._notice = notice
+    _runner._notice = None
     return _runner.status()
 
 
