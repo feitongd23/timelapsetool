@@ -179,3 +179,20 @@ def test_continue_rejects_when_busy(monkeypatch):
         assert client.post("/pipeline/continue").status_code == 409
     finally:
         t.join()
+
+
+def test_pipeline_reset_returns_idle():
+    r = client.post("/pipeline/reset")
+    assert r.status_code == 200
+    assert r.json()["state"] == "idle"
+    assert r.json()["current_stage"] is None
+
+
+def test_reset_rejects_when_busy(monkeypatch):
+    import threading, time
+    t = threading.Thread(target=lambda: time.sleep(1), daemon=True); t.start()
+    monkeypatch.setattr(server, "_worker", t)
+    try:
+        assert client.post("/pipeline/reset").status_code == 409
+    finally:
+        t.join()

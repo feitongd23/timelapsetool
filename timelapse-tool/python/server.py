@@ -118,6 +118,16 @@ def pipeline_status():
     return _runner.status()
 
 
+@app.post("/pipeline/reset")
+def pipeline_reset():
+    """重置流水线到初始（idle），用于完成后重新选素材重跑。运行中不可重置。"""
+    global _runner
+    if _busy():
+        raise HTTPException(status_code=409, detail="正在运行，无法重置")
+    _runner = PipelineRunner(stages=default_stages(), emit=_progress_log.append)
+    return _runner.status()
+
+
 @app.get("/workflows")
 def get_workflows():
     return {"workflows": _workflow_store.all()}

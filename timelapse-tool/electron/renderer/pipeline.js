@@ -410,6 +410,8 @@ async function initPipeline(httpBase) {
     const contBtn = id("btn-continue");
     contBtn.classList.toggle("hidden", !canContinue(status));
     contBtn.textContent = continueLabel(status);
+    // 完成/失败后显示「重新开始」入口
+    id("btn-reset").classList.toggle("hidden", !(status.state === "done" || status.state === "failed"));
     const guide = guidanceText(status);
     const guideEl = id("stage-guide");
     guideEl.textContent = guide;
@@ -457,6 +459,17 @@ async function initPipeline(httpBase) {
       errEl.textContent = "继续失败：" + (e.detail || res.status);
       return;
     }
+    await refreshStatus();
+  });
+
+  // 重新开始：重置后端到 idle，清掉已选素材/背景/进度，准备换素材重跑
+  id("btn-reset").addEventListener("click", async () => {
+    errEl.textContent = "";
+    await fetch(httpBase + "/pipeline/reset", { method: "POST" }).catch(() => {});
+    id("raw_folder").value = "";
+    id("material-info").classList.add("hidden");
+    id("bg-blur").classList.remove("active");
+    lastPercent = 0;
     await refreshStatus();
   });
 
