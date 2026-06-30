@@ -1,3 +1,7 @@
+# Copyright (c) 2026 杜非同. All rights reserved.
+# Part of Timelapse Tool — proprietary software.
+# Unauthorized copying, modification, or distribution is prohibited.
+
 class Stage:
     """流水线阶段基类。子类设置 name / manual，并实现 run()。"""
 

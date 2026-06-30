@@ -1,3 +1,8 @@
+# Copyright (c) 2026 杜非同. All rights reserved.
+# Part of Timelapse Tool — proprietary software.
+# Unauthorized copying, modification, or distribution is prohibited.
+
+import os
 import re
 import shutil
 import subprocess
@@ -156,6 +161,12 @@ def build_concat_cmd(binary, output_path, chunk_files):
 
 def ensure_concat_binary(run=subprocess.run, binary=CONCAT_BIN, source=CONCAT_SWIFT):
     """首次用时把 Swift 拼接工具编译到缓存二进制；已存在则跳过。返回二进制路径。"""
+    # 打包态：用随包预编译的 Swift 二进制，跳过 swiftc 现编
+    res = os.environ.get("TLT_RESOURCES")
+    if res:
+        packaged = Path(res) / "mov_concat"
+        if packaged.exists():
+            return str(packaged)
     if Path(binary).exists():
         return binary
     r = run(["swiftc", "-O", str(source), "-o", binary])

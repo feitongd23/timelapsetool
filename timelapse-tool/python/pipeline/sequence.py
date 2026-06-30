@@ -1,3 +1,7 @@
+# Copyright (c) 2026 杜非同. All rights reserved.
+# Part of Timelapse Tool — proprietary software.
+# Unauthorized copying, modification, or distribution is prohibited.
+
 """序列整理：处理相机计数器回绕（如 9999→0001）导致的不连续序列。
 
 按拍摄时间（EXIF，经 mdls）排序，硬链接到新文件夹 <folder>_seq 并连续重命名，

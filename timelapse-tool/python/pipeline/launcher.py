@@ -1,3 +1,7 @@
+# Copyright (c) 2026 杜非同. All rights reserved.
+# Part of Timelapse Tool — proprietary software.
+# Unauthorized copying, modification, or distribution is prohibited.
+
 """用 macOS `open` 启动外部软件并定位到目标文件夹。
 
 BR/LRT 是手动阶段，工具帮用户「开门」：把对应软件打开并指向素材文件夹，

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 杜非同. All rights reserved.
+// Part of Timelapse Tool — proprietary software.
+// Unauthorized copying, modification, or distribution is prohibited.
+
 const { buildStartPayload, stageBoardModel, canContinue, continueLabel, guidanceText, buildSocialConfig, buildMotionConfig, motionDirections, motionTypesFor, socialPixels, collectWorkflowStages, formatMeta, boxToNormalized, progressPercent } = require("../electron/renderer/pipeline.js");
 
 test("guidanceText 停在 LRT 时含圣光提示", () => {

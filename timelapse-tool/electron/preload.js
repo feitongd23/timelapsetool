@@ -1,3 +1,7 @@
+// Copyright (c) 2026 杜非同. All rights reserved.
+// Part of Timelapse Tool — proprietary software.
+// Unauthorized copying, modification, or distribution is prohibited.
+
 const { contextBridge, ipcRenderer } = require("electron");
 
 // 把后端地址暴露给渲染进程，避免渲染进程硬编码

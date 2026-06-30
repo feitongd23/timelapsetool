@@ -1,8 +1,13 @@
+# Copyright (c) 2026 杜非同. All rights reserved.
+# Part of Timelapse Tool — proprietary software.
+# Unauthorized copying, modification, or distribution is prohibited.
+
 """导出阶段：保留 ProRes 母版 + 用 AVFoundation 出社媒版（替代 Premiere PR）。
 
 裁切/缩放数学在 export_formats（纯函数、可单测）；media_export.swift 只执行。
 """
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -37,6 +42,12 @@ def build_export_cmd(binary, src, out, fmt_swift, start_crop, end_crop, outsize)
 
 
 def ensure_export_binary(run=subprocess.run, binary=EXPORT_BIN, source=EXPORT_SWIFT):
+    # 打包态：用随包预编译的 Swift 二进制（目标机不一定有 swiftc，也不能联网现编）
+    res = os.environ.get("TLT_RESOURCES")
+    if res:
+        packaged = Path(res) / "media_export"
+        if packaged.exists():
+            return str(packaged)
     if Path(binary).exists():
         return binary
     r = run(["swiftc", "-O", str(source), "-o", binary])

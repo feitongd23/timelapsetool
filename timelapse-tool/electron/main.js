@@ -1,3 +1,7 @@
+// Copyright (c) 2026 杜非同. All rights reserved.
+// Part of Timelapse Tool — proprietary software.
+// Unauthorized copying, modification, or distribution is prohibited.
+
 const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
@@ -22,9 +26,19 @@ ipcMain.handle("choose-file", async () => {
 let pyProc = null;
 
 function startBackend() {
-  const pythonBin = path.join(__dirname, "..", "python", ".venv", "bin", "python");
-  const serverScript = path.join(__dirname, "..", "python", "server.py");
-  pyProc = spawn(pythonBin, [serverScript], { stdio: "inherit" });
+  if (app.isPackaged) {
+    // 打包态：spawn 随包的 PyInstaller 可执行；TLT_RESOURCES 让后端找到预编译 Swift 二进制
+    const res = process.resourcesPath; // .app/Contents/Resources
+    // onedir 打包：可执行在 Resources/server/server（同目录有 _internal/），不再每次解压，冷启动快
+    pyProc = spawn(path.join(res, "server", "server"), [], {
+      stdio: "inherit",
+      env: { ...process.env, TLT_RESOURCES: res },
+    });
+  } else {
+    const pythonBin = path.join(__dirname, "..", "python", ".venv", "bin", "python");
+    const serverScript = path.join(__dirname, "..", "python", "server.py");
+    pyProc = spawn(pythonBin, [serverScript], { stdio: "inherit" });
+  }
 }
 
 function createWindow() {

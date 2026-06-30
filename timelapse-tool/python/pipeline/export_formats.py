@@ -1,3 +1,7 @@
+# Copyright (c) 2026 杜非同. All rights reserved.
+# Part of Timelapse Tool — proprietary software.
+# Unauthorized copying, modification, or distribution is prohibited.
+
 """导出格式的唯一事实来源：编码、容器、ProRes 档位、码率范围、预设、校验。"""
 
 CODECS = {"ProRes", "H.264", "H.265"}

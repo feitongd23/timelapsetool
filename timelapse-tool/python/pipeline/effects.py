@@ -1,3 +1,7 @@
+# Copyright (c) 2026 杜非同. All rights reserved.
+# Part of Timelapse Tool — proprietary software.
+# Unauthorized copying, modification, or distribution is prohibited.
+
 """增稳配置校验 + AE 效果映射（matchName 等实机常量集中在此）。
 
 去闪只在 LRT 手动完成，AE 不做去闪（AE 无可用去闪效果）。

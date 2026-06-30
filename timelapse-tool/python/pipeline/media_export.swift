@@ -1,3 +1,7 @@
+// Copyright (c) 2026 杜非同. All rights reserved.
+// Part of Timelapse Tool — proprietary software.
+// Unauthorized copying, modification, or distribution is prohibited.
+
 // media_export —— 把 ProRes 母版转成 H.265/H.264 社媒版，支持运镜（裁框随时间渐变）。
 //
 // 用法:

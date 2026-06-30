@@ -1,6 +1,10 @@
 /**
  * @jest-environment jsdom
  */
+// Copyright (c) 2026 杜非同. All rights reserved.
+// Part of Timelapse Tool — proprietary software.
+// Unauthorized copying, modification, or distribution is prohibited.
+
 const { switchTab, statusLabel, pollHealth } = require("../electron/renderer/app.js");
 
 test("switchTab 切换激活面板", () => {

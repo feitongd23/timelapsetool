@@ -1,3 +1,7 @@
+// Copyright (c) 2026 杜非同. All rights reserved.
+// Part of Timelapse Tool — proprietary software.
+// Unauthorized copying, modification, or distribution is prohibited.
+
 async function initSocialTab(httpBase) {
   const id = (x) => document.getElementById(x);
   let pickedBox = null;

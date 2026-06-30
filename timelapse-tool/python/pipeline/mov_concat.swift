@@ -1,3 +1,7 @@
+// Copyright (c) 2026 杜非同. All rights reserved.
+// Part of Timelapse Tool — proprietary software.
+// Unauthorized copying, modification, or distribution is prohibited.
+
 // mov_concat —— 把同编码 ProRes 片段按序无损拼接成单个 MOV。
 //
 // 用法: mov_concat <output.mov> <chunk1.mov> <chunk2.mov> ...
