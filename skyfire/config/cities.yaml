@@ -1,0 +1,10 @@
+cities:
+  beijing:
+    name: 北京
+    lat: 39.9042
+    lon: 116.4074
+    timezone: Asia/Shanghai
+    spots:
+      - { name: 雾灵山, lat: 40.606, lon: 117.478, elevation_m: 2118 }
+      - { name: 百花山, lat: 39.835, lon: 115.580, elevation_m: 1991 }
+      - { name: 妙峰山, lat: 40.060, lon: 116.055, elevation_m: 1291 }
