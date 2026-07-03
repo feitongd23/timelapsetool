@@ -27,6 +27,16 @@ def _make_client() -> httpx.Client:  # 测试中被 monkeypatch
     return httpx.Client(timeout=30)
 
 
+def _parse_date(s: str | None, default: date_type) -> date_type:
+    if s is None:
+        return default
+    try:
+        return date_type.fromisoformat(s)
+    except ValueError:
+        typer.echo(f"错误:日期格式应为 YYYY-MM-DD,收到 {s!r}", err=True)
+        raise typer.Exit(1)
+
+
 def _open_db(db: Path):
     db.parent.mkdir(parents=True, exist_ok=True)
     conn = store.connect(db)
@@ -43,16 +53,24 @@ def predict(
     db: Path = typer.Option(DEFAULT_DB),
 ):
     """火烧云指数:多模式评分 + 一致性置信度,并归档快照。"""
-    c = load_cities(config)[city]
-    day = date_type.fromisoformat(date) if date else date_type.today()
+    cities = load_cities(config)
+    if city not in cities:
+        typer.echo(f"错误:未知城市 {city!r},可用: {', '.join(cities)}", err=True)
+        raise typer.Exit(1)
+    c = cities[city]
+    day = _parse_date(date, date_type.today())
     win = sun_window(c.lat, c.lon, c.timezone, day, event)
     iso_hour = win.peak.strftime("%Y-%m-%dT%H:00")
 
     client = _make_client()
-    forecasts = fetch_point_forecast(client, c.lat, c.lon, c.timezone)
-    aod = fetch_aod_at(client, c.lat, c.lon, c.timezone, iso_hour)
     geo_pts = channel_points(c.lat, c.lon, win.azimuth_deg)
-    channel = fetch_channel_profile(client, geo_pts, c.timezone, iso_hour)
+    try:
+        forecasts = fetch_point_forecast(client, c.lat, c.lon, c.timezone)
+        aod = fetch_aod_at(client, c.lat, c.lon, c.timezone, iso_hour)
+        channel = fetch_channel_profile(client, geo_pts, c.timezone, iso_hour)
+    except httpx.HTTPError as e:
+        typer.echo(f"错误:Open-Meteo 请求失败({e.__class__.__name__}: {e}),请稍后重试", err=True)
+        raise typer.Exit(1)
     channel_empty = all(p.cloud_low is None and p.cloud_total is None for p in channel)
 
     per_model: dict[str, float] = {}
@@ -108,16 +126,24 @@ def cloudsea(
     db: Path = typer.Option(DEFAULT_DB),
 ):
     """云海指数:按机位输出(前夜条件 + 日出时刻状态)。"""
-    c = load_cities(config)[city]
-    day = date_type.fromisoformat(date) if date else date_type.today() + timedelta(days=1)
+    cities = load_cities(config)
+    if city not in cities:
+        typer.echo(f"错误:未知城市 {city!r},可用: {', '.join(cities)}", err=True)
+        raise typer.Exit(1)
+    c = cities[city]
+    day = _parse_date(date, date_type.today() + timedelta(days=1))
     client = _make_client()
     typer.echo(f"🌊 {day} 云海预报 — {c.name}")
     best = 0.0
     for spot in c.spots:
         win = sun_window(spot.lat, spot.lon, c.timezone, day, "sunrise_glow")
         iso_dawn = win.peak.strftime("%Y-%m-%dT%H:00")
-        forecasts = fetch_point_forecast(client, spot.lat, spot.lon, c.timezone,
-                                         models=("gfs_seamless",))
+        try:
+            forecasts = fetch_point_forecast(client, spot.lat, spot.lon, c.timezone,
+                                             models=("gfs_seamless",))
+        except httpx.HTTPError as e:
+            typer.echo(f"错误:Open-Meteo 请求失败({e.__class__.__name__}: {e}),请稍后重试", err=True)
+            raise typer.Exit(1)
         fc = forecasts[0]
         dawn = fc.at(iso_dawn)
         if dawn is None:

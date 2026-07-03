@@ -55,3 +55,17 @@ def test_backtest_needs_scored_cases(tmp_path):
     result = runner.invoke(app, ["backtest", "--city", "beijing", "--db", str(db)])
     assert result.exit_code != 0
     assert "案例不足" in result.output
+
+
+def test_predict_rejects_bad_date(tmp_path):
+    db = tmp_path / "sky.db"
+    result = runner.invoke(app, ["predict", "--date", "07/03/2026", "--db", str(db)])
+    assert result.exit_code != 0
+    assert "YYYY-MM-DD" in result.output
+
+
+def test_predict_rejects_unknown_city(tmp_path):
+    db = tmp_path / "sky.db"
+    result = runner.invoke(app, ["predict", "--city", "atlantis", "--db", str(db)])
+    assert result.exit_code != 0
+    assert "未知城市" in result.output
