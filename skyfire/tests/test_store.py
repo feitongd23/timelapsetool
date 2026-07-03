@@ -40,3 +40,14 @@ def test_actual_score_and_scored_cases(tmp_path):
     scored = store.scored_cases(conn, "beijing")
     assert len(scored) == 1
     assert scored[0]["rule_score"] == 8.0 and scored[0]["actual_score"] == 9.0
+
+
+def test_upsert_preserves_actual_score_on_reupsert(tmp_path):
+    conn = _db(tmp_path)
+    cid = store.upsert_case(conn, "2026-07-01", "beijing", "sunset_glow",
+                            rule_score=8.0, confidence="high", source="auto")
+    store.set_actual_score(conn, cid, 9.5)
+    store.upsert_case(conn, "2026-07-01", "beijing", "sunset_glow",
+                      rule_score=6.0, confidence="low", source="auto")
+    row = conn.execute("SELECT actual_score FROM cases WHERE id=?", (cid,)).fetchone()
+    assert row[0] == 9.5
