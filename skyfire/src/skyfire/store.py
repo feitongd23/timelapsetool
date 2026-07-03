@@ -1,0 +1,113 @@
+"""SQLite 经验库(spec 6)。satellite_frames/photos/users 由 Plan B/C 写入,表先建好。"""
+import json
+import sqlite3
+from pathlib import Path
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS cases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL,
+  city TEXT NOT NULL,
+  event TEXT NOT NULL CHECK(event IN ('sunrise_glow','sunset_glow','cloud_sea')),
+  rule_score REAL,
+  llm_score REAL,
+  actual_score REAL,
+  confidence TEXT,
+  source TEXT NOT NULL DEFAULT 'auto',
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(date, city, event)
+);
+CREATE TABLE IF NOT EXISTS forecast_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  case_id INTEGER NOT NULL REFERENCES cases(id),
+  model TEXT NOT NULL,
+  run_time TEXT DEFAULT (datetime('now')),
+  payload TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS satellite_frames (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  case_id INTEGER NOT NULL REFERENCES cases(id),
+  ts TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  path TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  case_id INTEGER NOT NULL REFERENCES cases(id),
+  user_id TEXT,
+  score REAL,
+  path TEXT,
+  note TEXT
+);
+CREATE TABLE IF NOT EXISTS spots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  city TEXT NOT NULL,
+  name TEXT NOT NULL,
+  lat REAL, lon REAL, elevation_m REAL,
+  UNIQUE(city, name)
+);
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  openid TEXT UNIQUE,
+  name TEXT
+);
+"""
+
+
+def connect(path: Path | str) -> sqlite3.Connection:
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def init_db(conn: sqlite3.Connection) -> None:
+    conn.executescript(SCHEMA)
+    conn.commit()
+
+
+def upsert_case(conn, date: str, city: str, event: str, *,
+                rule_score: float | None, confidence: str | None, source: str) -> int:
+    conn.execute(
+        """INSERT INTO cases (date, city, event, rule_score, confidence, source)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(date, city, event)
+           DO UPDATE SET rule_score=excluded.rule_score, confidence=excluded.confidence""",
+        (date, city, event, rule_score, confidence, source),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT id FROM cases WHERE date=? AND city=? AND event=?", (date, city, event)
+    ).fetchone()
+    return row[0]
+
+
+def set_actual_score(conn, case_id: int, score: float) -> None:
+    conn.execute("UPDATE cases SET actual_score=? WHERE id=?", (score, case_id))
+    conn.commit()
+
+
+def add_snapshot(conn, case_id: int, model: str, payload: dict) -> None:
+    conn.execute(
+        "INSERT INTO forecast_snapshots (case_id, model, payload) VALUES (?, ?, ?)",
+        (case_id, model, json.dumps(payload, ensure_ascii=False)),
+    )
+    conn.commit()
+
+
+def get_snapshots(conn, case_id: int) -> list[dict]:
+    rows = conn.execute(
+        "SELECT model, run_time, payload FROM forecast_snapshots WHERE case_id=?", (case_id,)
+    ).fetchall()
+    return [{"model": m, "run_time": rt, "payload": json.loads(p)} for m, rt, p in rows]
+
+
+def scored_cases(conn, city: str) -> list[dict]:
+    """已闭环案例(有实际打分),回测用。"""
+    rows = conn.execute(
+        """SELECT date, event, rule_score, actual_score FROM cases
+           WHERE city=? AND actual_score IS NOT NULL AND rule_score IS NOT NULL
+           ORDER BY date""",
+        (city,),
+    ).fetchall()
+    return [{"date": d, "event": e, "rule_score": r, "actual_score": a}
+            for d, e, r, a in rows]
