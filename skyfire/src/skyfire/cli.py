@@ -1,5 +1,5 @@
 """skyfire CLI:predict / cloudsea / backtest / init-db。"""
-from datetime import date as date_type, datetime, timedelta
+from datetime import date as date_type, timedelta
 from pathlib import Path
 
 import httpx
@@ -152,8 +152,9 @@ def cloudsea(
         night_prev = day - timedelta(days=1)
         night_hours = [f"{night_prev}T{h:02d}:00" for h in (22, 23)] + \
                       [f"{day}T{h:02d}:00" for h in (0, 1, 2, 3, 4)]
-        night_vals = [fc.at(t).cloud_cover for t in night_hours
-                      if fc.at(t) and fc.at(t).cloud_cover is not None]
+        night_points = [fc.at(t) for t in night_hours]
+        night_vals = [p.cloud_cover for p in night_points
+                      if p and p.cloud_cover is not None]
         night_avg = sum(night_vals) / len(night_vals) if night_vals else 50.0
         r = cloud_sea_score(CloudSeaInputs(
             night_cloud_avg=night_avg,
