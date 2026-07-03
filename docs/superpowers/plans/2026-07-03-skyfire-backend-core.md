@@ -1006,7 +1006,10 @@ Expected: FAIL — `ImportError: cannot import name 'CloudSeaInputs'`
 """云海规则评分(spec 5.2,MVP 简化:辐射雾/低层云生成条件)。
 
 加分制,满分 10:晴夜辐射降温 3 + 近饱和 2.5 + 静风 2 +
-温度露点差 1 + 日出时低云存在 1.5。阈值待回测校准。
+温度露点差 1 + 日出时低云存在 1.5。
+另有两条物理门槛(不加分,只清零):大风(≥5 m/s)吹散辐射雾 →
+近饱和分清零;空气太干(RH<85%)雾无从生成 → 静风分清零。
+阈值待回测校准。
 """
 from dataclasses import dataclass
 
@@ -1048,6 +1051,11 @@ def cloud_sea_score(inp: CloudSeaInputs) -> CloudSeaScore:
         parts["calm_wind"] = 0.0
     parts["dew_spread"] = 1.0 if inp.dawn_temp_dew_spread <= 2 else 0.0
     parts["low_cloud_present"] = 1.5 if 20 <= inp.dawn_cloud_low <= 90 else 0.0
+    # 物理门槛:大风搅散辐射雾;空气太干雾根本起不来
+    if inp.dawn_wind >= 5:
+        parts["saturation"] = 0.0
+    if inp.dawn_rh < 85:
+        parts["calm_wind"] = 0.0
     total = round(min(10.0, sum(parts.values())), 1)
     return CloudSeaScore(score=total, parts=parts)
 ```
