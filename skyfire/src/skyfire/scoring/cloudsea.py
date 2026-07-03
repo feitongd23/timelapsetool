@@ -2,6 +2,8 @@
 
 加分制,满分 10:晴夜辐射降温 3 + 近饱和 2.5 + 静风 2 +
 温度露点差 1 + 日出时低云存在 1.5。阈值待回测校准。
+另有两条物理门槛(不加分,只清零):大风(≥5 m/s)吹散辐射雾 →
+近饱和分清零;空气太干(RH<85%)雾无从生成 → 静风分清零。
 """
 from dataclasses import dataclass
 
@@ -50,17 +52,11 @@ def cloud_sea_score(inp: CloudSeaInputs) -> CloudSeaScore:
     else:
         parts["low_cloud_present"] = 0.0
 
-    # Apply suppression: high wind suppresses saturation bonus
+    # 物理门槛:大风搅散辐射雾;空气太干雾根本起不来
     if inp.dawn_wind >= 5:
         parts["saturation"] = 0.0
-
-    # Low saturation or high dew_spread suppresses wind bonus
     if inp.dawn_rh < 85:
         parts["calm_wind"] = 0.0
-    elif inp.dawn_temp_dew_spread > 5:
-        parts["calm_wind"] = 0.0
-    elif inp.dawn_rh < 90:
-        parts["calm_wind"] = max(0.0, parts["calm_wind"] - 1.0)
 
     total = round(min(10.0, sum(parts.values())), 1)
     return CloudSeaScore(score=total, parts=parts)
