@@ -366,10 +366,10 @@ def test_corridor_centers_direction():
 def test_corridor_cloudiness_averages_boxes():
     img = np.zeros((600, 1200), dtype=np.uint8)
     img[:, 0:600] = 255  # 西半边全云
-    vals = corridor_cloudiness(img, (700, 300), azimuth_deg=270, step_px=100, n=4, half=30)
+    vals = corridor_cloudiness(img, (760, 300), azimuth_deg=270, step_px=100, n=4, half=30)
     assert len(vals) == 4
-    assert vals[0] < 10          # (600,300) 附近仍在暗区边缘以东
-    assert vals[-1] > 90         # (300,300) 深入亮区
+    assert vals[0] < 10          # (660,300) 仍在暗区(分界 x=600 以东,框不跨界)
+    assert vals[-1] > 90         # (360,300) 深入亮区
 ```
 
 - [ ] **Step 2: 运行确认失败**
