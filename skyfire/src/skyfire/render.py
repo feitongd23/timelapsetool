@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from skyfire.geolines import draw_geolines
 from skyfire.overlay import draw_overlay
 
 BT_MIN, BT_MAX = 180.0, 310.0   # K:平展到 0-255
@@ -98,6 +99,7 @@ def render_annotated(dat_paths: list[Path], band: str, bbox: tuple,
     if max(img.size) > max_px:
         img.thumbnail((max_px, max_px))
     sx, sy = img.size[0] / nat_w, img.size[1] / nat_h
+    draw_geolines(img, data.attrs["area"], sx, sy)
     draw_overlay(img, data.attrs["area"], lat, lon, azimuth_deg, sx, sy)
     out_png = Path(out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)

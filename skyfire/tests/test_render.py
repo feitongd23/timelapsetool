@@ -47,6 +47,9 @@ def test_bt_to_rgb_height_by_temperature():
 
 
 class _FakeArea:
+    width = 640
+    height = 480
+
     def get_xy_from_lonlat(self, lon, lat):
         return 320, 240                     # (col, row)
 
