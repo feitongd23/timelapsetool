@@ -6,22 +6,18 @@ import httpx
 import typer
 from PIL import Image
 
-from skyfire import llm as llm_mod
-from skyfire import rag
 from skyfire import store
 from skyfire.backfill import backfill_row, parse_csv
 from skyfire.backtest import spearman
-from skyfire.cloudiness import box_cloudiness, corridor_cloudiness
+from skyfire.cloudiness import box_cloudiness
 from skyfire.config import load_cities
-from skyfire.consensus import consensus
 from skyfire.drift import estimate_shift, extrapolated_corridor
-from skyfire.geo import channel_points
+from skyfire.engine import compute_prediction
 from skyfire.himawari import (fetch_region, frame_age_minutes, km_per_px,
                               latest_frame_time, round_down_10min)
 from skyfire.nowcast import fuse, obs_score
-from skyfire.openmeteo import fetch_aod_at, fetch_channel_profile, fetch_point_forecast
+from skyfire.openmeteo import fetch_point_forecast
 from skyfire.scoring.cloudsea import CloudSeaInputs, cloud_sea_score
-from skyfire.scoring.firecloud import FireCloudInputs, fire_cloud_score
 from skyfire.suntimes import sun_window
 
 app = typer.Typer(help="火烧云/云海预测助手")
@@ -54,19 +50,6 @@ def _open_db(db: Path):
     return conn
 
 
-def _run_llm(conn, case_id: int, today: dict, city_key: str, event: str):
-    cases = store.cases_with_snapshot(conn, city_key, event, model="gfs_seamless")
-    cases = [c for c in cases if c["case_id"] != case_id]
-    target = rag.factor_vector(today["payload"])
-    similar = rag.similar_cases_from(cases, target, k=3)
-    frames = [Path(f["path"]) for f in store.get_frames(conn, case_id)
-              if Path(f["path"]).exists()]
-    result = llm_mod.interpret(today, similar, frames)
-    if result is not None:
-        store.set_llm_score(conn, case_id, result.llm_score)
-    return result, similar
-
-
 @app.command()
 def predict(
     city: str = typer.Option("beijing"),
@@ -83,81 +66,29 @@ def predict(
         raise typer.Exit(1)
     c = cities[city]
     day = _parse_date(date, date_type.today())
-    win = sun_window(c.lat, c.lon, c.timezone, day, event)
-    iso_hour = win.peak.strftime("%Y-%m-%dT%H:00")
-
+    conn = _open_db(db)
     client = _make_client()
-    geo_pts = channel_points(c.lat, c.lon, win.azimuth_deg)
     try:
-        forecasts = fetch_point_forecast(client, c.lat, c.lon, c.timezone)
-        aod = fetch_aod_at(client, c.lat, c.lon, c.timezone, iso_hour)
-        channel = fetch_channel_profile(client, geo_pts, c.timezone, iso_hour)
+        r = compute_prediction(conn, client, c, city, event, day, run_llm=not no_llm)
     except httpx.HTTPError as e:
         typer.echo(f"错误:Open-Meteo 请求失败({e.__class__.__name__}: {e}),请稍后重试", err=True)
         raise typer.Exit(1)
-    channel_empty = all(p.cloud_low is None and p.cloud_total is None for p in channel)
-
-    per_model: dict[str, float] = {}
-    details = {}
-    for fc in forecasts:
-        h = fc.at(iso_hour)
-        if h is None or h.cloud_high is None:
-            continue  # 该模式缺数据,跳过(spec 8 降级)
-        r = fire_cloud_score(FireCloudInputs(
-            cloud_high=h.cloud_high, cloud_mid=h.cloud_mid or 0,
-            cloud_low=h.cloud_low or 0, precipitation=h.precipitation or 0,
-            aod=aod, channel=channel,
-        ))
-        per_model[fc.model] = r.score
-        details[fc.model] = r
-    if not per_model:
+    except ValueError:
         typer.echo("错误:所有模式数据缺失,无法出分", err=True)
         raise typer.Exit(1)
 
-    cons = consensus(per_model)
-    first = next(iter(details.values()))
     event_zh = "晚霞" if event == "sunset_glow" else "朝霞"
-    typer.echo(f"⚡ {day} {event_zh} — {c.name}")
-    typer.echo(f"火烧云指数: {cons.index}/10  置信度: {CONF_ZH[cons.confidence]}  分歧: {cons.spread}")
-    typer.echo("  " + "  ".join(f"{m.split('_')[0].upper()} {s}" for m, s in cons.per_model.items()))
-    if channel_empty:
+    typer.echo(f"⚡ {day} {event_zh} — {r.city_name}")
+    typer.echo(f"火烧云指数: {r.index}/10  置信度: {CONF_ZH[r.confidence]}  分歧: {r.spread}")
+    typer.echo("  " + "  ".join(f"{m.split('_')[0].upper()} {s}" for m, s in r.per_model.items()))
+    if r.channel_empty:
         typer.echo("警告: 通道数据缺失,评分未含通道透光校验(置信度参考价值打折)")
-    typer.echo(f"通道: {first.blocked_points} 点受阻 (系数 {first.channel_factor})  AOD: {aod}")
-    typer.echo(f"{'日落' if event == 'sunset_glow' else '日出'}: {win.peak.strftime('%H:%M')}  方位 {win.azimuth_deg:.0f}°")
-
-    conn = _open_db(db)
-    case_id = store.upsert_case(conn, str(day), city, event,
-                                rule_score=cons.index, confidence=cons.confidence, source="auto")
-    for fc in forecasts:
-        h = fc.at(iso_hour)
-        if h is None:
-            continue
-        store.add_snapshot(conn, case_id, fc.model, {
-            "hour": iso_hour, "cloud_high": h.cloud_high, "cloud_mid": h.cloud_mid,
-            "cloud_low": h.cloud_low, "cloud_cover": h.cloud_cover,
-            "rh_2m": h.rh_2m, "precipitation": h.precipitation, "aod": aod,
-            "channel": [{"km": p.dist_km, "low": p.cloud_low, "total": p.cloud_total}
-                        for p in channel],
-            "azimuth": round(win.azimuth_deg, 1),
-        })
-
+    typer.echo(f"通道: {r.blocked_points} 点受阻 (系数 {r.channel_factor})  AOD: {r.aod}")
+    typer.echo(f"{'日落' if event == 'sunset_glow' else '日出'}: {r.peak.strftime('%H:%M')}  方位 {r.azimuth:.0f}°")
     if not no_llm:
-        gfs = next((fc for fc in forecasts if fc.model == "gfs_seamless"), forecasts[0])
-        h0 = gfs.at(iso_hour)
-        today = {"date": str(day), "event": event, "rule_score": cons.index,
-                 "confidence": cons.confidence,
-                 "payload": {"cloud_high": h0.cloud_high if h0 else None,
-                             "cloud_mid": h0.cloud_mid if h0 else None,
-                             "cloud_low": h0.cloud_low if h0 else None,
-                             "rh_2m": h0.rh_2m if h0 else None, "aod": aod,
-                             "channel": [{"km": p.dist_km, "low": p.cloud_low,
-                                          "total": p.cloud_total} for p in channel],
-                             "hour": iso_hour}}
-        out = _run_llm(conn, case_id, today, city, event)
-        if out and out[0] is not None:
-            res, similar = out
-            typer.echo(f"AI 修正分: {res.llm_score}/10  {res.analysis}")
-            typer.echo(f"风险: {res.risks}")
+        if r.llm is not None:
+            typer.echo(f"AI 修正分: {r.llm.llm_score}/10  {r.llm.analysis}")
+            typer.echo(f"风险: {r.llm.risks}")
         else:
             typer.echo("AI 解读暂缺(无凭证或调用失败),以上为纯规则分")
 

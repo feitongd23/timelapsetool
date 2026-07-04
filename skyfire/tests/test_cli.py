@@ -124,27 +124,32 @@ def test_backfill_rejects_bad_csv(tmp_path):
     assert "rainbow" in result.output
 
 
-def test_predict_no_llm_flag_skips_llm(tmp_path, monkeypatch):
+def test_predict_no_llm_flag_controls_run_llm(tmp_path, monkeypatch):
     import skyfire.cli as cli
+    from skyfire.engine import PredictionResult
+    from datetime import date, datetime
+    seen = {}
+
+    def _fake_compute(conn, client, c, city, event, day, run_llm=True):
+        seen["run_llm"] = run_llm
+        return PredictionResult(city_name="北京", event=event, day=day, index=5.0,
+                                confidence="high", spread=0.0,
+                                per_model={"gfs_seamless": 5.0}, blocked_points=0,
+                                channel_factor=1.0, aod=0.2, channel_empty=False,
+                                peak=datetime(2026, 7, 3, 19, 46), azimuth=300.0, llm=None)
+
     monkeypatch.setattr(cli, "_make_client",
                         lambda: httpx.Client(transport=_fake_transport()))
-    called = {"llm": False}
-
-    def _spy(*a, **kw):
-        called["llm"] = True
-        return None
-
-    monkeypatch.setattr(cli, "_run_llm", _spy)
+    monkeypatch.setattr(cli, "compute_prediction", _fake_compute)
     db = tmp_path / "sky.db"
-    result = runner.invoke(app, ["predict", "--city", "beijing", "--event", "sunset_glow",
-                                 "--date", "2026-07-03", "--db", str(db), "--no-llm"])
-    assert result.exit_code == 0, result.output
-    assert called["llm"] is False
-    # 默认(不带 --no-llm)会调用
-    result2 = runner.invoke(app, ["predict", "--city", "beijing", "--event", "sunset_glow",
-                                  "--date", "2026-07-03", "--db", str(db)])
-    assert result2.exit_code == 0, result2.output
-    assert called["llm"] is True
+    r1 = runner.invoke(app, ["predict", "--city", "beijing", "--event", "sunset_glow",
+                             "--date", "2026-07-03", "--db", str(db), "--no-llm"])
+    assert r1.exit_code == 0, r1.output
+    assert seen["run_llm"] is False
+    r2 = runner.invoke(app, ["predict", "--city", "beijing", "--event", "sunset_glow",
+                             "--date", "2026-07-03", "--db", str(db)])
+    assert r2.exit_code == 0, r2.output
+    assert seen["run_llm"] is True
 
 
 def test_nowcast_degrades_on_missing_satellite(tmp_path, monkeypatch):
