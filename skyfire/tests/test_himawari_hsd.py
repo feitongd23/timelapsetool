@@ -1,8 +1,13 @@
 # tests/test_himawari_hsd.py
+import bz2
 from datetime import datetime, timezone
 
+import httpx
+import pytest
+
 from skyfire.himawari_hsd import (
-    BAND_RES, CROP_BBOX, bucket_for, hsd_key, sat_code, segments_for, v_fraction,
+    BAND_RES, CROP_BBOX, bucket_for, download_segments, hsd_key, sat_code,
+    segments_for, v_fraction,
 )
 
 
@@ -31,13 +36,6 @@ def test_hsd_key_pattern():
                    "HS_H09_20260506_1000_B13_FLDK_R20_S0210.DAT.bz2")
     assert BAND_RES["B03"] == "R05"
     assert sat_code("noaa-himawari8") == "H08"
-
-
-import bz2
-
-import httpx
-
-from skyfire.himawari_hsd import download_segments
 
 
 def _mock_client(store: dict) -> httpx.Client:
@@ -77,3 +75,37 @@ def test_download_segments_both_missing_returns_empty(tmp_path):
     client = httpx.Client(transport=httpx.MockTransport(handler))
     ts = datetime(2026, 5, 6, 10, 0, tzinfo=timezone.utc)
     assert download_segments(client, ts, "B13", [2], tmp_path) == []
+
+
+def test_download_segments_raises_on_server_error(tmp_path):
+    # 非 404(如 5xx)不是"该桶无档",不换桶、不吞错,直接抛
+    def handler(request):
+        return httpx.Response(500)
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    ts = datetime(2026, 5, 6, 10, 0, tzinfo=timezone.utc)
+    with pytest.raises(httpx.HTTPStatusError):
+        download_segments(client, ts, "B13", [2], tmp_path)
+
+
+def test_download_segments_multi_segment_partial_404_falls_back(tmp_path):
+    # 主桶(H9)段2 有档、段3 404 → 整体回退 H8 重下全部段
+    urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        urls.append(url)
+        if "noaa-himawari9" in url and "S0310" in url:
+            return httpx.Response(404)
+        return httpx.Response(200, content=bz2.compress(b"FAKE_HSD_DATA"))
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    ts = datetime(2026, 5, 6, 10, 0, tzinfo=timezone.utc)
+    paths = download_segments(client, ts, "B13", [2, 3], tmp_path)
+    assert [p.name for p in paths] == [
+        "HS_H08_20260506_1000_B13_FLDK_R20_S0210.DAT",
+        "HS_H08_20260506_1000_B13_FLDK_R20_S0310.DAT",
+    ]
+    assert all(p.read_bytes() == b"FAKE_HSD_DATA" for p in paths)
+    assert sum("noaa-himawari8" in u for u in urls) == 2   # H8 两段都重下
+    # 主桶已成功的段留在缓存,不污染返回结果
+    assert (tmp_path / "HS_H09_20260506_1000_B13_FLDK_R20_S0210.DAT").exists()

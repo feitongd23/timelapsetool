@@ -43,7 +43,11 @@ def v_fraction(lat: float, lon: float) -> float:
 
 def segments_for(lat_min: float, lat_max: float, lon: float,
                  margin: float = 0.008) -> list[int]:
-    """覆盖纬度带的 HSD 段号(1-10,自北向南)。margin 抵消投影近似误差。"""
+    """覆盖纬度带的 HSD 段号(1-10,自北向南)。margin 抵消投影近似误差。
+
+    margin=0.008 经验值:覆盖 CGMS 椭球正算与实际段网格的对齐误差
+    (北京框 v∈[0.11,0.19] 距段界 ≥0.01,0.008 不会误跨段)。
+    """
     vs = (v_fraction(lat_max, lon), v_fraction(lat_min, lon))
     lo, hi = min(vs) - margin, max(vs) + margin
     s0 = max(1, int(lo * N_SEGMENTS) + 1)
@@ -70,7 +74,11 @@ S3_BASE = "https://{bucket}.s3.amazonaws.com/{key}"
 
 def _try_bucket(client: httpx.Client, bucket: str, ts: datetime, band: str,
                 segments: list[int], cache_dir: Path) -> list[Path] | None:
-    """在单个桶下齐所有段;任何段 404 → 返回 None(让上层换桶)。"""
+    """在单个桶下齐所有段;任何段 404 → 返回 None(让上层换桶)。
+
+    仅 404 视为"该桶无档";其他非 200(5xx/403/429 等)抛 HTTPStatusError,
+    不静默换桶(与 himawari.py/openmeteo.py 的 raise_for_status 惯例一致)。
+    """
     sat = sat_code(bucket)
     out: list[Path] = []
     for seg in segments:
@@ -78,8 +86,9 @@ def _try_bucket(client: httpx.Client, bucket: str, ts: datetime, band: str,
         dat = cache_dir / Path(key).name.removesuffix(".bz2")
         if not dat.exists():
             resp = client.get(S3_BASE.format(bucket=bucket, key=key))
-            if resp.status_code != 200:
+            if resp.status_code == 404:
                 return None
+            resp.raise_for_status()
             dat.parent.mkdir(parents=True, exist_ok=True)
             dat.write_bytes(bz2.decompress(resp.content))
         out.append(dat)
