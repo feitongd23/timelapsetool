@@ -89,3 +89,16 @@ def test_cases_with_snapshot_for_rag(tmp_path):
     store.add_snapshot(conn, cid2, "gfs_seamless", {"cloud_high": 5})
     assert len(store.cases_with_snapshot(conn, "beijing", "sunset_glow",
                                          model="gfs_seamless")) == 1
+
+
+def test_notifications_dedup(tmp_path):
+    conn = _db(tmp_path)
+    assert store.was_pushed(conn, "2026-07-04", "beijing", "sunset_glow") is False
+    store.mark_pushed(conn, "2026-07-04", "beijing", "sunset_glow")
+    assert store.was_pushed(conn, "2026-07-04", "beijing", "sunset_glow") is True
+    # 不同日期/城市/天象互不影响
+    assert store.was_pushed(conn, "2026-07-05", "beijing", "sunset_glow") is False
+    assert store.was_pushed(conn, "2026-07-04", "shanghai", "sunset_glow") is False
+    # 重复 mark 幂等(不抛异常)
+    store.mark_pushed(conn, "2026-07-04", "beijing", "sunset_glow")
+    assert store.was_pushed(conn, "2026-07-04", "beijing", "sunset_glow") is True

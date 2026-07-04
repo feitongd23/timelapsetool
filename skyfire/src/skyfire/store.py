@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS users (
   openid TEXT UNIQUE,
   name TEXT
 );
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL,
+  city TEXT NOT NULL,
+  event TEXT NOT NULL,
+  pushed_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(date, city, event)
+);
 """
 
 
@@ -147,3 +155,19 @@ def cases_with_snapshot(conn, city: str, event: str, *, model: str) -> list[dict
     ).fetchall()
     return [{"case_id": i, "date": d, "actual_score": a, "payload": json.loads(p)}
             for i, d, a, p in rows]
+
+
+def was_pushed(conn, date: str, city: str, event: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM notifications WHERE date=? AND city=? AND event=?",
+        (date, city, event),
+    ).fetchone()
+    return row is not None
+
+
+def mark_pushed(conn, date: str, city: str, event: str) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO notifications (date, city, event) VALUES (?, ?, ?)",
+        (date, city, event),
+    )
+    conn.commit()
