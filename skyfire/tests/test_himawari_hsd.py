@@ -1,13 +1,15 @@
 # tests/test_himawari_hsd.py
 import bz2
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 import pytest
 
+import skyfire.himawari_hsd as hsd_mod
 from skyfire.himawari_hsd import (
-    BAND_RES, CROP_BBOX, bucket_for, download_segments, hsd_key, sat_code,
-    segments_for, v_fraction,
+    BAND_RES, CROP_BBOX, bucket_for, download_segments, fetch_case_frames,
+    hsd_key, sat_code, segments_for, v_fraction,
 )
 
 
@@ -109,3 +111,35 @@ def test_download_segments_multi_segment_partial_404_falls_back(tmp_path):
     assert sum("noaa-himawari8" in u for u in urls) == 2   # H8 两段都重下
     # 主桶已成功的段留在缓存,不污染返回结果
     assert (tmp_path / "HS_H09_20260506_1000_B13_FLDK_R20_S0210.DAT").exists()
+
+
+def test_fetch_case_frames_orchestration(tmp_path, monkeypatch):
+    calls = {"download": [], "render": []}
+
+    def fake_download(client, ts, band, segments, cache_dir):
+        calls["download"].append((ts, band, tuple(segments)))
+        if band == "B03" and ts.hour == 9 and ts.minute == 10:  # 模拟单帧缺档
+            return []
+        return [Path(f"seg_{band}_{ts:%H%M}.DAT")]
+
+    def fake_render(dat_paths, band, bbox, out_png, max_px=1400):
+        calls["render"].append((band, str(out_png)))
+        Path(out_png).parent.mkdir(parents=True, exist_ok=True)
+        Path(out_png).write_bytes(b"png")
+        return Path(out_png)
+
+    monkeypatch.setattr(hsd_mod, "download_segments", fake_download)
+    monkeypatch.setattr(hsd_mod, "render_band", fake_render)
+
+    peak = datetime(2026, 5, 6, 10, 47, tzinfo=timezone.utc)
+    frames = fetch_case_frames(object(), peak, tmp_path,
+                               prefix="beijing_2026-05-06_sunset_glow")
+    # ir 4 帧全出;vis 应 2 帧,其中 09:10(peak-90min)的缺档被跳过 → 共 5
+    assert len(frames) == 5
+    bands = [b for _, b, _ in frames]
+    assert bands.count("ir") == 4 and bands.count("vis") == 1
+    ts0, _, p0 = frames[0]
+    assert ts0.minute % 10 == 0                       # 槽对齐
+    assert p0.name.startswith("beijing_2026-05-06_sunset_glow_")
+    # 段选择来自 CROP_BBOX(段 2)
+    assert calls["download"][0][2] == (2,)

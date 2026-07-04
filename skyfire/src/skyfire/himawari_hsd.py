@@ -7,10 +7,12 @@ AWS noaa-himawari8/9 桶存全盘 L1b,10 分钟一槽,按纬度横切 10 段。
 """
 import bz2
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
+
+from skyfire.render import render_band
 
 # GEOS 投影常数(CGMS;单位 km,SAT_H 为地心距)
 R_EQ, R_POL, SAT_H = 6378.137, 6356.7523, 42164.0
@@ -106,3 +108,37 @@ def download_segments(client: httpx.Client, ts: datetime, band: str,
         if got is not None:
             return got
     return []
+
+
+IR_OFFSETS_MIN = (0, 30, 60, 90)    # B13:峰值往前 4 帧看趋势
+VIS_OFFSETS_MIN = (30, 90)          # B03:峰值时刻太阳过低,取稍早帧
+_BANDS = {"ir": ("B13", IR_OFFSETS_MIN), "vis": ("B03", VIS_OFFSETS_MIN)}
+
+
+def round_down_10min(ts: datetime) -> datetime:
+    return ts.replace(minute=ts.minute - ts.minute % 10, second=0, microsecond=0)
+
+
+def fetch_case_frames(client, peak_utc: datetime, frames_dir: Path, *,
+                      prefix: str, bbox: tuple = CROP_BBOX,
+                      hsd_cache: Path | None = None,
+                      ) -> list[tuple[datetime, str, Path]]:
+    """一个案例的学习帧序列:下载 HSD 段 → 渲染 PNG。
+
+    返回 [(ts, "ir"|"vis", png_path)];单帧缺档跳过不失败(尽力语义)。
+    """
+    frames_dir = Path(frames_dir)
+    cache = Path(hsd_cache) if hsd_cache else frames_dir / "hsd_cache"
+    lon_mid = (bbox[0] + bbox[2]) / 2
+    segs = segments_for(bbox[1], bbox[3], lon_mid)
+    out: list[tuple[datetime, str, Path]] = []
+    for channel, (band, offsets) in _BANDS.items():
+        for off in offsets:
+            ts = round_down_10min(peak_utc - timedelta(minutes=off))
+            dats = download_segments(client, ts, band, segs, cache)
+            if not dats:
+                continue
+            png = frames_dir / f"{prefix}_{ts:%H%M}_{channel}.png"
+            render_band(dats, band, bbox, png)
+            out.append((ts, channel, png))
+    return out
