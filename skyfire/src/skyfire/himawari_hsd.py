@@ -111,7 +111,8 @@ def download_segments(client: httpx.Client, ts: datetime, band: str,
 
 
 IR_BURN_MIN = (0, 10, 20, 30)   # 燃烧时刻窗:晚霞日落后 / 朝霞日出前
-VIS_DAY_MIN = (20, 40)          # 日光侧读云型:晚霞日落前 / 朝霞日出后
+VIS_DAY_MIN = (20, 40)          # 晚霞:日落前 20/40min(白天读云型)
+VIS_DAY_MIN_SUNRISE = (60, 90)  # 朝霞:日出后更晚,太阳升高才够亮读厚度
 _BAND_OF = {"ir": "B13", "vis": "B03"}
 
 
@@ -129,8 +130,9 @@ def case_frame_times(peak_utc: datetime, event: str) -> list[tuple[datetime, str
     ir_sign = 1 if sunset else -1
     out = [(round_down_10min(peak_utc + timedelta(minutes=ir_sign * m)), "ir")
            for m in IR_BURN_MIN]
+    vis_offsets = VIS_DAY_MIN if sunset else VIS_DAY_MIN_SUNRISE
     out += [(round_down_10min(peak_utc + timedelta(minutes=-ir_sign * m)), "vis")
-            for m in VIS_DAY_MIN]
+            for m in vis_offsets]
     return out
 
 

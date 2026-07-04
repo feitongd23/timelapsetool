@@ -159,6 +159,25 @@ def test_case_frame_times_sunrise_mirrored():
     assert min(ir) == base - timedelta(minutes=30)
 
 
+def test_case_frame_times_sunrise_vis_is_later_for_daylight():
+    peak = datetime(2026, 1, 7, 23, 30, tzinfo=timezone.utc)  # 日出(UTC)
+    times = case_frame_times(peak, "sunrise_glow")
+    base = datetime(2026, 1, 7, 23, 30, tzinfo=timezone.utc)
+    vis = [t for t, ch in times if ch == "vis"]
+    # 朝霞:可见光取日出后更晚(太阳升高,>=60min),不再是紧贴日出的 20/40
+    assert min(vis) >= base + timedelta(minutes=60)
+    assert max(vis) == base + timedelta(minutes=90)
+
+
+def test_case_frame_times_sunset_vis_unchanged():
+    peak = datetime(2026, 5, 6, 11, 13, tzinfo=timezone.utc)
+    times = case_frame_times(peak, "sunset_glow")
+    base = datetime(2026, 5, 6, 11, 10, tzinfo=timezone.utc)
+    vis = sorted(t for t, ch in times if ch == "vis")
+    # 晚霞:可见光仍取日落前 20/40min(白天)
+    assert vis == [base - timedelta(minutes=40), base - timedelta(minutes=20)]
+
+
 def test_fetch_case_frames_orchestration(tmp_path, monkeypatch):
     calls = {"download": [], "render": []}
 
