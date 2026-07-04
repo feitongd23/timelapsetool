@@ -1,15 +1,24 @@
-"""skyfire CLI:predict / cloudsea / backtest / init-db。"""
-from datetime import date as date_type, timedelta
+"""skyfire CLI:predict / cloudsea / backtest / init-db / nowcast / backfill。"""
+from datetime import date as date_type, datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
 import typer
+from PIL import Image
 
+from skyfire import llm as llm_mod
+from skyfire import rag
 from skyfire import store
+from skyfire.backfill import backfill_row, parse_csv
 from skyfire.backtest import spearman
+from skyfire.cloudiness import box_cloudiness, corridor_cloudiness
 from skyfire.config import load_cities
 from skyfire.consensus import consensus
+from skyfire.drift import estimate_shift, extrapolated_corridor
 from skyfire.geo import channel_points
+from skyfire.himawari import (fetch_region, frame_age_minutes, km_per_px,
+                              latest_frame_time, round_down_10min)
+from skyfire.nowcast import fuse, obs_score
 from skyfire.openmeteo import fetch_aod_at, fetch_channel_profile, fetch_point_forecast
 from skyfire.scoring.cloudsea import CloudSeaInputs, cloud_sea_score
 from skyfire.scoring.firecloud import FireCloudInputs, fire_cloud_score
@@ -19,6 +28,7 @@ app = typer.Typer(help="火烧云/云海预测助手")
 
 DEFAULT_CONFIG = Path(__file__).parent.parent.parent / "config" / "cities.yaml"
 DEFAULT_DB = Path(__file__).parent.parent.parent / "data" / "skyfire.db"
+DEFAULT_FRAMES = Path(__file__).parent.parent.parent / "data" / "frames"
 
 CONF_ZH = {"high": "高", "medium": "中", "low": "低(模式打架)", "degraded": "降级(数据不全)"}
 
@@ -44,6 +54,19 @@ def _open_db(db: Path):
     return conn
 
 
+def _run_llm(conn, case_id: int, today: dict, city_key: str, event: str):
+    cases = store.cases_with_snapshot(conn, city_key, event, model="gfs_seamless")
+    cases = [c for c in cases if c["case_id"] != case_id]
+    target = rag.factor_vector(today["payload"])
+    similar = rag.similar_cases_from(cases, target, k=3)
+    frames = [Path(f["path"]) for f in store.get_frames(conn, case_id)
+              if Path(f["path"]).exists()]
+    result = llm_mod.interpret(today, similar, frames)
+    if result is not None:
+        store.set_llm_score(conn, case_id, result.llm_score)
+    return result, similar
+
+
 @app.command()
 def predict(
     city: str = typer.Option("beijing"),
@@ -51,6 +74,7 @@ def predict(
     date: str = typer.Option(None, help="YYYY-MM-DD,默认今天"),
     config: Path = typer.Option(DEFAULT_CONFIG),
     db: Path = typer.Option(DEFAULT_DB),
+    no_llm: bool = typer.Option(False, "--no-llm", help="跳过 Claude 解读"),
 ):
     """火烧云指数:多模式评分 + 一致性置信度,并归档快照。"""
     cities = load_cities(config)
@@ -116,6 +140,26 @@ def predict(
                         for p in channel],
             "azimuth": round(win.azimuth_deg, 1),
         })
+
+    if not no_llm:
+        gfs = next((fc for fc in forecasts if fc.model == "gfs_seamless"), forecasts[0])
+        h0 = gfs.at(iso_hour)
+        today = {"date": str(day), "event": event, "rule_score": cons.index,
+                 "confidence": cons.confidence,
+                 "payload": {"cloud_high": h0.cloud_high if h0 else None,
+                             "cloud_mid": h0.cloud_mid if h0 else None,
+                             "cloud_low": h0.cloud_low if h0 else None,
+                             "rh_2m": h0.rh_2m if h0 else None, "aod": aod,
+                             "channel": [{"km": p.dist_km, "low": p.cloud_low,
+                                          "total": p.cloud_total} for p in channel],
+                             "hour": iso_hour}}
+        out = _run_llm(conn, case_id, today, city, event)
+        if out and out[0] is not None:
+            res, similar = out
+            typer.echo(f"AI 修正分: {res.llm_score}/10  {res.analysis}")
+            typer.echo(f"风险: {res.risks}")
+        else:
+            typer.echo("AI 解读暂缺(无凭证或调用失败),以上为纯规则分")
 
 
 @app.command()
@@ -194,6 +238,113 @@ def init_db_cmd(db: Path = typer.Option(DEFAULT_DB)):
     """初始化经验库。"""
     _open_db(db)
     typer.echo(f"经验库就绪: {db}")
+
+
+@app.command()
+def backfill(
+    csv: Path = typer.Option(..., help="清单 CSV: date,city,event,score"),
+    config: Path = typer.Option(DEFAULT_CONFIG),
+    db: Path = typer.Option(DEFAULT_DB),
+    frames_dir: Path = typer.Option(DEFAULT_FRAMES),
+    frames: int = typer.Option(3, help="每案例回填卫星帧数"),
+):
+    """冷启动:清单 → 历史预报快照 + 卫星帧 + 闭环案例(spec 6.1)。"""
+    try:
+        rows = parse_csv(csv)
+    except (ValueError, OSError) as e:
+        typer.echo(f"错误:{e}", err=True)
+        raise typer.Exit(1)
+    cities = load_cities(config)
+    conn = _open_db(db)
+    client = _make_client()
+    ok = 0
+    for row in rows:
+        if row.city not in cities:
+            typer.echo(f"跳过 {row.date}:未知城市 {row.city!r}", err=True)
+            continue
+        try:
+            r = backfill_row(conn, client, row, cities[row.city],
+                             frames_dir=frames_dir, n_frames=frames)
+        except httpx.HTTPError as e:
+            typer.echo(f"跳过 {row.date}:数据源请求失败({e.__class__.__name__})", err=True)
+            continue
+        typer.echo(f"✓ {row.date} {row.event} 实际 {row.score} 分"
+                   f"(快照 {r.n_models} 模式,卫星帧 {r.n_frames})")
+        ok += 1
+    typer.echo(f"完成:{ok} 条案例入库(共 {len(rows)} 条)")
+
+
+@app.command()
+def nowcast(
+    city: str = typer.Option("beijing"),
+    event: str = typer.Option("sunset_glow", help="sunset_glow | sunrise_glow"),
+    config: Path = typer.Option(DEFAULT_CONFIG),
+    db: Path = typer.Option(DEFAULT_DB),
+    frames_dir: Path = typer.Option(DEFAULT_FRAMES),
+):
+    """实况层:拉 Himawari 帧 → 云量/外推 → 与今日规则分融合(spec 5.4)。"""
+    cities = load_cities(config)
+    if city not in cities:
+        typer.echo(f"错误:未知城市 {city!r},可用: {', '.join(cities)}", err=True)
+        raise typer.Exit(1)
+    c = cities[city]
+    today = date_type.today()
+    win = sun_window(c.lat, c.lon, c.timezone, today, event)
+    now = datetime.now(timezone.utc)
+    minutes_to = (win.peak.astimezone(timezone.utc) - now).total_seconds() / 60
+    if minutes_to < -60:
+        typer.echo("今日窗口已过,无需临近修正", err=True)
+        raise typer.Exit(1)
+
+    conn = _open_db(db)
+    row = conn.execute(
+        "SELECT id, rule_score FROM cases WHERE date=? AND city=? AND event=?",
+        (str(today), city, event)).fetchone()
+    if row is None or row[1] is None:
+        typer.echo("错误:今日尚无规则分,先运行 skyfire predict", err=True)
+        raise typer.Exit(1)
+    case_id, rule_score = row
+
+    client = _make_client()
+    try:
+        ts1 = latest_frame_time(client)
+        frame1 = fetch_region(client, "infrared", ts1, c.lat, c.lon)
+        ts0 = round_down_10min(ts1 - timedelta(minutes=10))
+        frame0 = fetch_region(client, "infrared", ts0, c.lat, c.lon)
+    except httpx.HTTPError as e:
+        typer.echo(f"错误:卫星数据请求失败({e.__class__.__name__}: {e}),"
+                   f"以规则分为准", err=True)
+        raise typer.Exit(1)
+
+    age = frame_age_minutes(ts1, now)
+    local = box_cloudiness(frame1.gray, frame1.center_px, half=40)
+    step_px = max(1, round(100 / km_per_px(frame1.level)))
+    if frame0.gray.max() > 0:
+        shift = estimate_shift(frame0.gray, frame1.gray)
+    else:
+        shift = (0, 0)
+    frames_ahead = max(0.0, minutes_to) / 10.0
+    corridor_pred = extrapolated_corridor(frame1.gray, frame1.center_px,
+                                          win.azimuth_deg, step_px, 4,
+                                          shift, round(frames_ahead))
+    observed = obs_score(local, corridor_pred)
+    fused = fuse(rule_score, observed, minutes_to, age)
+
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    path = frames_dir / f"{city}_{today}_{event}_{ts1:%H%M}.png"
+    Image.fromarray(frame1.gray, mode="L").save(path)
+    store.add_satellite_frame(conn, case_id, ts1.isoformat(), "infrared", str(path))
+
+    typer.echo(f"🛰  {today} {event} 实况修正 — {c.name}")
+    typer.echo(f"帧时刻: {ts1:%H:%M}Z  帧龄: {age:.0f} 分钟"
+               + ("  ⚠️ 超龄,不参与融合" if fused.degraded else ""))
+    typer.echo(f"本地云量代理: {local:.0f}%  走廊外推: "
+               + " ".join(f"{v:.0f}%" for v in corridor_pred)
+               + f"  位移/帧: {shift}")
+    typer.echo(f"实况分: {fused.obs}  权重: {fused.weight:.2f}")
+    typer.echo(f"综合分: {fused.score}/10(规则分 {rule_score})")
+    store.upsert_case(conn, str(today), city, event,
+                      rule_score=fused.score, confidence="nowcast", source="auto")
 
 
 if __name__ == "__main__":
