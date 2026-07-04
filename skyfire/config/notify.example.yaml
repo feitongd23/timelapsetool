@@ -1,0 +1,4 @@
+# 复制为 notify.local.yaml 并填入真实密钥(该文件已 gitignore)
+provider: bark        # bark | serverchan
+key: YOUR_KEY_HERE    # Bark 的 device key,或 Server酱 的 sendkey
+lead_minutes: 120     # 日落/日出前多少分钟推送(默认 120)
