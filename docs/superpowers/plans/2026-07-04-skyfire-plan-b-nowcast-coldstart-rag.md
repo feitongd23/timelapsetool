@@ -1230,9 +1230,9 @@ def test_similar_cases_ranked_by_distance():
                             "rh_2m": 70, "aod": 0.3, "channel": [],
                             "hour": "2026-07-04T19:00"})
     cases = [
-        {"case_id": 1, "date": "2026-05-12", "actual_score": 9.0,
+        {"case_id": 1, "date": "2026-07-10", "actual_score": 9.0,
          "payload": {"cloud_high": 55, "cloud_mid": 12, "cloud_low": 6,
-                     "rh_2m": 68, "aod": 0.35, "channel": [], "hour": "2026-05-12T19:00"}},
+                     "rh_2m": 68, "aod": 0.35, "channel": [], "hour": "2026-07-10T19:00"}},
         {"case_id": 2, "date": "2026-01-20", "actual_score": 1.0,
          "payload": {"cloud_high": 0, "cloud_mid": 0, "cloud_low": 90,
                      "rh_2m": 30, "aod": 1.5, "channel": [], "hour": "2026-01-20T17:00"}},
