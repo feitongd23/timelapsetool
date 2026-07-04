@@ -111,3 +111,39 @@ def scored_cases(conn, city: str) -> list[dict]:
     ).fetchall()
     return [{"date": d, "event": e, "rule_score": r, "actual_score": a}
             for d, e, r, a in rows]
+
+
+def add_satellite_frame(conn, case_id: int, ts: str, channel: str, path: str) -> None:
+    conn.execute(
+        "INSERT INTO satellite_frames (case_id, ts, channel, path) VALUES (?, ?, ?, ?)",
+        (case_id, ts, channel, path),
+    )
+    conn.commit()
+
+
+def get_frames(conn, case_id: int) -> list[dict]:
+    rows = conn.execute(
+        "SELECT ts, channel, path FROM satellite_frames WHERE case_id=? ORDER BY ts",
+        (case_id,),
+    ).fetchall()
+    return [{"ts": t, "channel": c, "path": p} for t, c, p in rows]
+
+
+def set_llm_score(conn, case_id: int, score: float) -> None:
+    conn.execute("UPDATE cases SET llm_score=? WHERE id=?", (score, case_id))
+    conn.commit()
+
+
+def cases_with_snapshot(conn, city: str, event: str, *, model: str) -> list[dict]:
+    """已闭环案例 + 指定模式的最新快照(相似案例检索用,spec 5.5)。"""
+    rows = conn.execute(
+        """SELECT c.id, c.date, c.actual_score, s.payload
+           FROM cases c JOIN forecast_snapshots s ON s.case_id = c.id
+           WHERE c.city=? AND c.event=? AND c.actual_score IS NOT NULL AND s.model=?
+             AND s.id = (SELECT MAX(id) FROM forecast_snapshots
+                         WHERE case_id=c.id AND model=?)
+           ORDER BY c.date""",
+        (city, event, model, model),
+    ).fetchall()
+    return [{"case_id": i, "date": d, "actual_score": a, "payload": json.loads(p)}
+            for i, d, a, p in rows]
