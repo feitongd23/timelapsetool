@@ -32,6 +32,7 @@ DEFAULT_CONFIG = Path(__file__).parent.parent.parent / "config" / "cities.yaml"
 DEFAULT_DB = Path(__file__).parent.parent.parent / "data" / "skyfire.db"
 DEFAULT_FRAMES = Path(__file__).parent.parent.parent / "data" / "frames"
 DEFAULT_NOTIFY = Path(__file__).parent.parent.parent / "config" / "notify.local.yaml"
+DEFAULT_GRIDMAPS = Path(__file__).parent.parent.parent / "data" / "gridmaps"
 
 CONF_ZH = {"high": "高", "medium": "中", "low": "低(模式打架)", "degraded": "降级(数据不全)"}
 
@@ -169,6 +170,41 @@ def backtest(
         typer.echo("无法计算相关性:所有分数相同(秩零方差),先积累更多有区分度的案例", err=True)
         raise typer.Exit(1)
     typer.echo(f"回测: {len(cases)} 条闭环案例, Spearman ρ = {rho:.3f}")
+
+
+@app.command()
+def cloudmap(
+    city: str = typer.Option("beijing"),
+    event: str = typer.Option("sunset_glow", help="sunset_glow | sunrise_glow"),
+    date: str = typer.Option(None, help="YYYY-MM-DD,默认今天;过去日期走历史存档"),
+    config: Path = typer.Option(DEFAULT_CONFIG),
+    out_dir: Path = typer.Option(DEFAULT_GRIDMAPS),
+):
+    """预报云图:峰值小时高/中/低云三联热图(亮=云多,西=左)。"""
+    from skyfire.gridmap import (DEFAULT_BBOX, DEFAULT_STEP, fetch_cloud_grid,
+                                 grid_points, render_grid_png)
+    cities = load_cities(config)
+    if city not in cities:
+        typer.echo(f"错误:未知城市 {city!r},可用: {', '.join(cities)}", err=True)
+        raise typer.Exit(1)
+    c = cities[city]
+    day = _parse_date(date, date_type.today())
+    win = sun_window(c.lat, c.lon, c.timezone, day, event)
+    iso_hour = win.peak.strftime("%Y-%m-%dT%H:00")
+    pts = grid_points(DEFAULT_BBOX, DEFAULT_STEP)
+    n_cols = len({lon for _, lon in pts})
+    n_rows = len(pts) // n_cols
+    client = _make_client()
+    hist = day < date_type.today()
+    try:
+        grid = fetch_cloud_grid(client, pts, n_rows, n_cols, c.timezone, iso_hour,
+                                date=str(day) if hist else None)
+    except httpx.HTTPError as e:
+        typer.echo(f"错误:Open-Meteo 请求失败({e.__class__.__name__}: {e})", err=True)
+        raise typer.Exit(1)
+    out = render_grid_png(grid, out_dir / f"{city}_{day}_{event}_clouds.png",
+                          label=f"{day} {win.peak:%H:%M}")
+    typer.echo(f"预报云图: {out}")
 
 
 @app.command("init-db")
