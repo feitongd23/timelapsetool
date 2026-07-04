@@ -190,3 +190,80 @@ def test_nowcast_degrades_on_missing_satellite(tmp_path, monkeypatch):
         "SELECT rule_score, confidence FROM cases WHERE date=? AND city='beijing' "
         "AND event='sunset_glow'", (today,)).fetchone()
     assert row == (8.0, "high")
+
+
+def test_notify_pushes_and_marks(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    from skyfire.engine import PredictionResult
+    from datetime import date, datetime
+    from skyfire import store
+
+    pushed = {}
+
+    def _fake_compute(conn, client, c, city, event, day, run_llm=True):
+        return PredictionResult(city_name="北京", event=event, day=day, index=7.5,
+                                confidence="high", spread=0.9,
+                                per_model={"gfs_seamless": 7.5}, blocked_points=1,
+                                channel_factor=0.8, aod=0.3, channel_empty=False,
+                                peak=datetime(2026, 7, 4, 19, 46), azimuth=301.0, llm=None)
+
+    def _fake_push(title, body, cfg, client=None):
+        pushed["title"] = title
+        pushed["body"] = body
+        return True
+
+    monkeypatch.setattr(cli, "_make_client", lambda: None)
+    monkeypatch.setattr(cli, "compute_prediction", _fake_compute)
+    monkeypatch.setattr(cli, "push", _fake_push)
+
+    ncfg = tmp_path / "notify.yaml"
+    ncfg.write_text("provider: bark\nkey: K\n", encoding="utf-8")
+    db = tmp_path / "sky.db"
+    result = runner.invoke(app, ["notify", "--city", "beijing", "--event", "sunset_glow",
+                                 "--db", str(db), "--notify-config", str(ncfg)])
+    assert result.exit_code == 0, result.output
+    assert "7.5" in pushed["title"] and "晚霞" in pushed["title"]
+    conn = store.connect(db)
+    today = str(date.today())
+    assert store.was_pushed(conn, today, "beijing", "sunset_glow") is True
+
+
+def test_notify_no_config_reports_and_exits(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    monkeypatch.setattr(cli, "_make_client", lambda: None)
+    result = runner.invoke(app, ["notify", "--city", "beijing", "--event", "sunset_glow",
+                                 "--db", str(tmp_path / "d.db"),
+                                 "--notify-config", str(tmp_path / "nope.yaml")])
+    assert result.exit_code != 0
+    assert "未配置" in result.output
+
+
+def test_tick_pushes_due_and_dedups(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    from skyfire.engine import PredictionResult
+    from datetime import datetime
+    from skyfire import store
+
+    calls = {"push": 0}
+
+    def _fake_compute(conn, client, c, city, event, day, run_llm=True):
+        return PredictionResult(city_name="北京", event=event, day=day, index=6.0,
+                                confidence="high", spread=0.0,
+                                per_model={"gfs_seamless": 6.0}, blocked_points=0,
+                                channel_factor=1.0, aod=0.2, channel_empty=False,
+                                peak=datetime(2026, 7, 4, 19, 46), azimuth=300.0, llm=None)
+
+    monkeypatch.setattr(cli, "_make_client", lambda: None)
+    monkeypatch.setattr(cli, "compute_prediction", _fake_compute)
+    monkeypatch.setattr(cli, "push", lambda *a, **k: calls.__setitem__("push", calls["push"] + 1) or True)
+    monkeypatch.setattr(cli, "due_events", lambda cities, now, lead_minutes: [("beijing", "sunset_glow")])
+
+    ncfg = tmp_path / "notify.yaml"
+    ncfg.write_text("provider: bark\nkey: K\n", encoding="utf-8")
+    db = tmp_path / "sky.db"
+    r1 = runner.invoke(app, ["tick", "--db", str(db), "--notify-config", str(ncfg)])
+    assert r1.exit_code == 0, r1.output
+    assert calls["push"] == 1
+    r2 = runner.invoke(app, ["tick", "--db", str(db), "--notify-config", str(ncfg)])
+    assert r2.exit_code == 0
+    assert calls["push"] == 1  # 已推,去重不再推

@@ -16,7 +16,11 @@ from skyfire.engine import compute_prediction
 from skyfire.himawari import (fetch_region, frame_age_minutes, km_per_px,
                               latest_frame_time, round_down_10min)
 from skyfire.nowcast import fuse, obs_score
+from skyfire.notifyconf import DEFAULT_LEAD_MINUTES, load_notify_config
 from skyfire.openmeteo import fetch_point_forecast
+from skyfire.push import push
+from skyfire.report import format_report
+from skyfire.schedule import due_events
 from skyfire.scoring.cloudsea import CloudSeaInputs, cloud_sea_score
 from skyfire.suntimes import sun_window
 
@@ -25,6 +29,7 @@ app = typer.Typer(help="火烧云/云海预测助手")
 DEFAULT_CONFIG = Path(__file__).parent.parent.parent / "config" / "cities.yaml"
 DEFAULT_DB = Path(__file__).parent.parent.parent / "data" / "skyfire.db"
 DEFAULT_FRAMES = Path(__file__).parent.parent.parent / "data" / "frames"
+DEFAULT_NOTIFY = Path(__file__).parent.parent.parent / "config" / "notify.local.yaml"
 
 CONF_ZH = {"high": "高", "medium": "中", "low": "低(模式打架)", "degraded": "降级(数据不全)"}
 
@@ -283,6 +288,68 @@ def nowcast(
     typer.echo(f"综合分: {fused.score}/10(规则分 {rule_score})")
     store.upsert_case(conn, str(today), city, event,
                       rule_score=fused.score, confidence="nowcast", source="auto")
+
+
+@app.command()
+def notify(
+    city: str = typer.Option("beijing"),
+    event: str = typer.Option("sunset_glow", help="sunset_glow | sunrise_glow"),
+    config: Path = typer.Option(DEFAULT_CONFIG),
+    db: Path = typer.Option(DEFAULT_DB),
+    notify_config: Path = typer.Option(DEFAULT_NOTIFY),
+):
+    """算一次预测并推送到手机(手动触发一次)。"""
+    ncfg = load_notify_config(notify_config)
+    if ncfg is None:
+        typer.echo(f"错误:推送未配置({notify_config});复制 config/notify.example.yaml "
+                   f"为 notify.local.yaml 并填密钥", err=True)
+        raise typer.Exit(1)
+    cities = load_cities(config)
+    if city not in cities:
+        typer.echo(f"错误:未知城市 {city!r},可用: {', '.join(cities)}", err=True)
+        raise typer.Exit(1)
+    conn = _open_db(db)
+    client = _make_client()
+    try:
+        r = compute_prediction(conn, client, cities[city], city, event,
+                               date_type.today(), run_llm=True)
+    except (httpx.HTTPError, ValueError) as e:
+        typer.echo(f"错误:预测失败({e.__class__.__name__}),未推送", err=True)
+        raise typer.Exit(1)
+    title, body = format_report(r)
+    ok = push(title, body, ncfg)
+    store.mark_pushed(conn, str(date_type.today()), city, event)
+    typer.echo(f"{'✓ 已推送' if ok else '✗ 推送失败(已记录预测)'}: {title}")
+
+
+@app.command()
+def tick(
+    config: Path = typer.Option(DEFAULT_CONFIG),
+    db: Path = typer.Option(DEFAULT_DB),
+    notify_config: Path = typer.Option(DEFAULT_NOTIFY),
+):
+    """调度入口:到点的城市×天象自动预测+推送(launchd 每 30 分钟调一次)。"""
+    ncfg = load_notify_config(notify_config)
+    if ncfg is None:
+        return  # 未配置推送:静默退出(launchd 频繁调用,不刷错误)
+    cities = load_cities(config)
+    conn = _open_db(db)
+    now = datetime.now(timezone.utc)
+    lead = ncfg.get("lead_minutes", DEFAULT_LEAD_MINUTES)
+    for city, event in due_events(cities, now, lead_minutes=lead):
+        today = str(now.astimezone().date())
+        if store.was_pushed(conn, today, city, event):
+            continue
+        client = _make_client()
+        try:
+            r = compute_prediction(conn, client, cities[city], city, event,
+                                   date_type.today(), run_llm=True)
+        except (httpx.HTTPError, ValueError):
+            continue  # 单城失败不影响其他(spec 8)
+        title, body = format_report(r)
+        push(title, body, ncfg)
+        store.mark_pushed(conn, today, city, event)
+        typer.echo(f"✓ {city} {event}: {title}")
 
 
 if __name__ == "__main__":

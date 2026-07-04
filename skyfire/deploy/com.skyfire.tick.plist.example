@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 安装:改下面两处绝对路径 → 复制到 ~/Library/LaunchAgents/com.skyfire.tick.plist
+     → launchctl load ~/Library/LaunchAgents/com.skyfire.tick.plist
+     每 30 分钟跑一次 skyfire tick;日志见 /tmp/skyfire.tick.log -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.skyfire.tick</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/feitong/photo-app/skyfire/.venv/bin/skyfire</string>
+    <string>tick</string>
+  </array>
+  <key>StartInterval</key><integer>1800</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/tmp/skyfire.tick.log</string>
+  <key>StandardErrorPath</key><string>/tmp/skyfire.tick.err</string>
+</dict>
+</plist>
