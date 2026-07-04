@@ -5,8 +5,12 @@ NICT 瓦片服务无多年归档且 INFRARED_FULL 已 404(2026-07 实测);
 AWS noaa-himawari8/9 桶存全盘 L1b,10 分钟一槽,按纬度横切 10 段。
 北京裁剪框整框落在段 2 → 每帧只下 1 段(B13 约 2.8MB / B03 约 22MB)。
 """
+import bz2
 import math
 from datetime import datetime, timezone
+from pathlib import Path
+
+import httpx
 
 # GEOS 投影常数(CGMS;单位 km,SAT_H 为地心距)
 R_EQ, R_POL, SAT_H = 6378.137, 6356.7523, 42164.0
@@ -59,3 +63,37 @@ def hsd_key(ts: datetime, band: str, segment: int, *, sat: str) -> str:
     return (f"AHI-L1b-FLDK/{ts:%Y/%m/%d/%H%M}/"
             f"HS_{sat}_{ts:%Y%m%d_%H%M}_{band}_FLDK_{BAND_RES[band]}_"
             f"S{segment:02d}{N_SEGMENTS}.DAT.bz2")
+
+
+S3_BASE = "https://{bucket}.s3.amazonaws.com/{key}"
+
+
+def _try_bucket(client: httpx.Client, bucket: str, ts: datetime, band: str,
+                segments: list[int], cache_dir: Path) -> list[Path] | None:
+    """在单个桶下齐所有段;任何段 404 → 返回 None(让上层换桶)。"""
+    sat = sat_code(bucket)
+    out: list[Path] = []
+    for seg in segments:
+        key = hsd_key(ts, band, seg, sat=sat)
+        dat = cache_dir / Path(key).name.removesuffix(".bz2")
+        if not dat.exists():
+            resp = client.get(S3_BASE.format(bucket=bucket, key=key))
+            if resp.status_code != 200:
+                return None
+            dat.parent.mkdir(parents=True, exist_ok=True)
+            dat.write_bytes(bz2.decompress(resp.content))
+        out.append(dat)
+    return out
+
+
+def download_segments(client: httpx.Client, ts: datetime, band: str,
+                      segments: list[int], cache_dir: Path) -> list[Path]:
+    """下载并解压一个时刻的 HSD 段(幂等缓存)。两桶都缺 → []。"""
+    cache_dir = Path(cache_dir)
+    primary = bucket_for(ts)
+    other = "noaa-himawari8" if primary.endswith("9") else "noaa-himawari9"
+    for bucket in (primary, other):
+        got = _try_bucket(client, bucket, ts, band, segments, cache_dir)
+        if got is not None:
+            return got
+    return []
