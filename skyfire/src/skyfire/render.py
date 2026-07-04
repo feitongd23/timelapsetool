@@ -9,6 +9,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from skyfire.overlay import draw_overlay
+
 BT_MIN, BT_MAX = 180.0, 310.0   # K:平展到 0-255
 
 
@@ -75,6 +77,28 @@ def render_band(dat_paths: list[Path], band: str, bbox: tuple,
     img = Image.fromarray(_TO_GRAY[band](data.values), mode="L")
     if max(img.size) > max_px:
         img.thumbnail((max_px, max_px))
+    out_png = Path(out_png)
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out_png)
+    return out_png
+
+
+def render_annotated(dat_paths: list[Path], band: str, bbox: tuple,
+                     out_png: Path, *, lat: float, lon: float,
+                     azimuth_deg: float, max_px: int = 1400) -> Path:
+    """HSD 段 → 裁剪 → (B13 伪彩/B03 灰度) → 叠北京/通道/距离环 → PNG。"""
+    data = _load_cropped(dat_paths, band, bbox)
+    if band == "B13":
+        arr = bt_to_rgb(data.values)
+    else:
+        g = refl_to_gray(data.values)
+        arr = np.stack([g, g, g], axis=-1)
+    img = Image.fromarray(arr, mode="RGB")
+    nat_w, nat_h = img.size
+    if max(img.size) > max_px:
+        img.thumbnail((max_px, max_px))
+    sx, sy = img.size[0] / nat_w, img.size[1] / nat_h
+    draw_overlay(img, data.attrs["area"], lat, lon, azimuth_deg, sx, sy)
     out_png = Path(out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_png)

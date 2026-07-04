@@ -168,19 +168,21 @@ def test_fetch_case_frames_orchestration(tmp_path, monkeypatch):
             return []
         return [Path(f"seg_{band}_{ts:%H%M}.DAT")]
 
-    def fake_render(dat_paths, band, bbox, out_png, max_px=1400):
-        calls["render"].append((band, str(out_png)))
+    def fake_render(dat_paths, band, bbox, out_png, *, lat, lon,
+                    azimuth_deg, max_px=1400):
+        calls["render"].append((band, str(out_png), lat, lon, azimuth_deg))
         Path(out_png).parent.mkdir(parents=True, exist_ok=True)
         Path(out_png).write_bytes(b"png")
         return Path(out_png)
 
     monkeypatch.setattr(hsd_mod, "download_segments", fake_download)
-    monkeypatch.setattr(hsd_mod, "render_band", fake_render)
+    monkeypatch.setattr(hsd_mod, "render_annotated", fake_render)
 
     peak = datetime(2026, 5, 6, 10, 47, tzinfo=timezone.utc)
     frames = fetch_case_frames(object(), peak, tmp_path,
                                prefix="beijing_2026-05-06_sunset_glow",
-                               event="sunset_glow")
+                               event="sunset_glow", lat=39.9, lon=116.4,
+                               azimuth_deg=292.6)
     # ir 4 帧全出;vis 应 2 帧,其中 10:00(peak-40min)的缺档被跳过 → 共 5
     assert len(frames) == 5
     bands = [b for _, b, _ in frames]
@@ -190,3 +192,5 @@ def test_fetch_case_frames_orchestration(tmp_path, monkeypatch):
     assert p0.name.startswith("beijing_2026-05-06_sunset_glow_")
     # 段选择来自 CROP_BBOX(段 2)
     assert calls["download"][0][2] == (2,)
+    # 方位角随每帧透传给渲染
+    assert all(azimuth == 292.6 for *_, azimuth in calls["render"])

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import httpx
 
-from skyfire.render import render_band
+from skyfire.render import render_annotated
 
 # GEOS 投影常数(CGMS;单位 km,SAT_H 为地心距)
 R_EQ, R_POL, SAT_H = 6378.137, 6356.7523, 42164.0
@@ -154,12 +154,14 @@ def latest_slot(client: httpx.Client, now: datetime,
 
 
 def fetch_case_frames(client, peak_utc: datetime, frames_dir: Path, *,
-                      prefix: str, event: str, bbox: tuple = CROP_BBOX,
+                      prefix: str, event: str, lat: float, lon: float,
+                      azimuth_deg: float, bbox: tuple = CROP_BBOX,
                       hsd_cache: Path | None = None,
                       ) -> list[tuple[datetime, str, Path]]:
-    """一个案例的学习帧序列:下载 HSD 段 → 渲染 PNG。
+    """一个案例的学习帧序列:下载 HSD 段 → 渲染带地理标注的 PNG。
 
     返回 [(ts, "ir"|"vis", png_path)];单帧缺档跳过不失败(尽力语义)。
+    lat/lon/azimuth_deg 用于叠加北京点标与太阳方位角通道线。
     """
     frames_dir = Path(frames_dir)
     cache = Path(hsd_cache) if hsd_cache else frames_dir / "hsd_cache"
@@ -172,6 +174,7 @@ def fetch_case_frames(client, peak_utc: datetime, frames_dir: Path, *,
         if not dats:
             continue
         png = frames_dir / f"{prefix}_{ts:%H%M}_{channel}.png"
-        render_band(dats, band, bbox, png)
+        render_annotated(dats, band, bbox, png, lat=lat, lon=lon,
+                         azimuth_deg=azimuth_deg)
         out.append((ts, channel, png))
     return out

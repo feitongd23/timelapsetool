@@ -50,6 +50,9 @@ class _FakeArea:
     def get_xy_from_lonlat(self, lon, lat):
         return 320, 240                     # (col, row)
 
+    def get_array_indices_from_lonlat(self, lon, lat):
+        return 320, 240                     # (col, row)
+
 
 class _FakeScene:
     created = []
@@ -91,3 +94,23 @@ def test_load_b13_region_returns_gray_and_center(tmp_path, monkeypatch):
         __import__("numpy").array([[220.0]]))[0, 0]
     assert frame.center_px == (320, 240)
     assert frame.km_px == 2.0
+
+
+def test_render_annotated_ir_is_rgb_with_overlay(tmp_path, monkeypatch):
+    import numpy as np
+    from pathlib import Path
+    from PIL import Image
+
+    import skyfire.render as render_mod
+    from skyfire.render import render_annotated
+
+    monkeypatch.setattr(render_mod, "_scene_cls", lambda: _FakeScene)
+    out = tmp_path / "f.png"
+    render_annotated([Path("seg.DAT")], "B13", (109, 35, 124, 45), out,
+                     lat=39.9, lon=116.4, azimuth_deg=292.6, max_px=400)
+    img = Image.open(out)
+    assert img.mode == "RGB"
+    assert max(img.size) <= 400
+    a = np.asarray(img).reshape(-1, 3)
+    # 北京红标 → 存在明显偏红像素
+    assert ((a[:, 0] > 150) & (a[:, 1] < 100) & (a[:, 2] < 100)).any()
