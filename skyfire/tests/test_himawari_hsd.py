@@ -11,6 +11,7 @@ from skyfire.himawari_hsd import (
     BAND_RES, CROP_BBOX, bucket_for, download_segments, fetch_case_frames,
     hsd_key, sat_code, segments_for, v_fraction,
 )
+from skyfire.himawari_hsd import latest_slot
 
 
 def test_v_fraction_equator_center():
@@ -111,6 +112,27 @@ def test_download_segments_multi_segment_partial_404_falls_back(tmp_path):
     assert sum("noaa-himawari8" in u for u in urls) == 2   # H8 两段都重下
     # 主桶已成功的段留在缓存,不污染返回结果
     assert (tmp_path / "HS_H09_20260506_1000_B13_FLDK_R20_S0210.DAT").exists()
+
+
+def test_latest_slot_scans_back_until_found():
+    ok_ts = {"20260704_1340"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if any(k in str(request.url) for k in ok_ts):
+            return httpx.Response(200, content=bz2.compress(b"D"))
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    now = datetime(2026, 7, 4, 14, 5, tzinfo=timezone.utc)
+    ts = latest_slot(client, now, max_back=8)
+    assert ts == datetime(2026, 7, 4, 13, 40, tzinfo=timezone.utc)
+
+
+def test_latest_slot_none_when_nothing_recent():
+    client = httpx.Client(transport=httpx.MockTransport(
+        lambda request: httpx.Response(404)))
+    now = datetime(2026, 7, 4, 14, 5, tzinfo=timezone.utc)
+    assert latest_slot(client, now, max_back=3) is None
 
 
 def test_fetch_case_frames_orchestration(tmp_path, monkeypatch):

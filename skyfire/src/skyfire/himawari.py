@@ -3,6 +3,8 @@
 投影用正射近似(星下点 140.7°E):对瓦片选择与区域裁剪足够精确
 (中纬度中盘区域误差远小于一个瓦片);不用于精确逐像素定位。
 """
+# 注意(2026-07):NICT INFRARED_FULL 产品已 404,红外一律走 himawari_hsd(AWS);
+# 本模块仅 truecolor 快看与 latest.json 仍可用。
 import io
 import math
 from dataclasses import dataclass

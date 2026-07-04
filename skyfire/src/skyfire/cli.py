@@ -13,12 +13,14 @@ from skyfire.cloudiness import box_cloudiness
 from skyfire.config import load_cities
 from skyfire.drift import estimate_shift, extrapolated_corridor
 from skyfire.engine import compute_prediction
-from skyfire.himawari import (fetch_region, frame_age_minutes, km_per_px,
-                              latest_frame_time, round_down_10min)
+from skyfire.himawari import frame_age_minutes
+from skyfire.himawari_hsd import (CROP_BBOX, download_segments, latest_slot,
+                                  round_down_10min, segments_for)
 from skyfire.nowcast import fuse, obs_score
 from skyfire.notifyconf import DEFAULT_LEAD_MINUTES, load_notify_config
 from skyfire.openmeteo import fetch_point_forecast
 from skyfire.push import push
+from skyfire.render import load_b13_region
 from skyfire.report import format_report
 from skyfire.schedule import due_events
 from skyfire.scoring.cloudsea import CloudSeaInputs, cloud_sea_score
@@ -241,27 +243,31 @@ def nowcast(
     case_id, rule_score = row
 
     client = _make_client()
+    cache = frames_dir / "hsd_cache"
+    lon_mid = (CROP_BBOX[0] + CROP_BBOX[2]) / 2
+    segs = segments_for(CROP_BBOX[1], CROP_BBOX[3], lon_mid)
     try:
-        ts1 = latest_frame_time(client)
-        frame1 = fetch_region(client, "infrared", ts1, c.lat, c.lon)
+        ts1 = latest_slot(client, now)
+        if ts1 is None:
+            raise httpx.HTTPError("近 1 小时无卫星档")
+        dats1 = download_segments(client, ts1, "B13", segs, cache)
         ts0 = round_down_10min(ts1 - timedelta(minutes=10))
-        frame0 = fetch_region(client, "infrared", ts0, c.lat, c.lon)
+        dats0 = download_segments(client, ts0, "B13", segs, cache)
     except httpx.HTTPError as e:
         typer.echo(f"错误:卫星数据请求失败({e.__class__.__name__}: {e}),"
                    f"以规则分为准", err=True)
         raise typer.Exit(1)
-
-    if frame1.gray.max() == 0:
-        # 瓦片全缺(未发布/超出覆盖):不拿全零图冒充实况,退回纯规则分(spec 8)
+    if not dats1:
         typer.echo(f"🛰  {today} {event} 实况修正 — {c.name}")
-        typer.echo("卫星帧全缺(瓦片未发布或超出覆盖),不参与融合,以规则分为准", err=True)
+        typer.echo("卫星帧全缺(归档未落/超出覆盖),不参与融合,以规则分为准", err=True)
         typer.echo(f"综合分: {rule_score}/10(规则分 {rule_score})")
         return
-
+    frame1 = load_b13_region(dats1, CROP_BBOX, c.lat, c.lon)
     age = frame_age_minutes(ts1, now)
     local = box_cloudiness(frame1.gray, frame1.center_px, half=40)
-    step_px = max(1, round(100 / km_per_px(frame1.level)))
-    if frame0.gray.max() > 0:
+    step_px = max(1, round(100 / frame1.km_px))
+    if dats0:
+        frame0 = load_b13_region(dats0, CROP_BBOX, c.lat, c.lon)
         shift = estimate_shift(frame0.gray, frame1.gray)
     else:
         shift = (0, 0)
@@ -275,7 +281,7 @@ def nowcast(
     frames_dir.mkdir(parents=True, exist_ok=True)
     path = frames_dir / f"{city}_{today}_{event}_{ts1:%H%M}.png"
     Image.fromarray(frame1.gray, mode="L").save(path)
-    store.add_satellite_frame(conn, case_id, ts1.isoformat(), "infrared", str(path))
+    store.add_satellite_frame(conn, case_id, ts1.isoformat(), "ir", str(path))
 
     typer.echo(f"🛰  {today} {event} 实况修正 — {c.name}")
     typer.echo(f"帧时刻: {ts1:%H:%M}Z  帧龄: {age:.0f} 分钟"

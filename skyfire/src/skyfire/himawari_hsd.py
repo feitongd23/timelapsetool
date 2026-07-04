@@ -119,6 +119,25 @@ def round_down_10min(ts: datetime) -> datetime:
     return ts.replace(minute=ts.minute - ts.minute % 10, second=0, microsecond=0)
 
 
+def latest_slot(client: httpx.Client, now: datetime,
+                max_back: int = 6) -> datetime | None:
+    """最近一个有 B13 数据的 10 分钟槽(AWS 落档延迟数分钟,向前回扫)。
+
+    以 HEAD 试探段文件是否存在(命中后由 download_segments 复用/下载)。
+    """
+    lon_mid = (CROP_BBOX[0] + CROP_BBOX[2]) / 2
+    segs = segments_for(CROP_BBOX[1], CROP_BBOX[3], lon_mid)
+    ts = round_down_10min(now)
+    for _ in range(max_back):
+        bucket = bucket_for(ts)
+        key = hsd_key(ts, "B13", segs[0], sat=sat_code(bucket))
+        resp = client.head(S3_BASE.format(bucket=bucket, key=key))
+        if resp.status_code == 200:
+            return ts
+        ts -= timedelta(minutes=10)
+    return None
+
+
 def fetch_case_frames(client, peak_utc: datetime, frames_dir: Path, *,
                       prefix: str, bbox: tuple = CROP_BBOX,
                       hsd_cache: Path | None = None,

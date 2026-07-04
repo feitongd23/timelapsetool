@@ -151,7 +151,7 @@ def test_predict_no_llm_flag_controls_run_llm(tmp_path, monkeypatch):
 
 
 def test_nowcast_degrades_on_missing_satellite(tmp_path, monkeypatch):
-    """瓦片全缺(全 404)→ nowcast 退回纯规则分,不写融合分(spec 8)。"""
+    """卫星段全缺(归档未落)→ nowcast 退回纯规则分,不写融合分(spec 8)。"""
     from datetime import datetime, timedelta, timezone
     import skyfire.cli as cli
     from skyfire import store
@@ -163,14 +163,10 @@ def test_nowcast_degrades_on_missing_satellite(tmp_path, monkeypatch):
         event="sunset_glow", peak=peak, window_start=peak, window_end=peak,
         azimuth_deg=300.0))
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("latest.json"):
-            ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            return httpx.Response(200, json={"date": ts, "file": "x.png"})
-        return httpx.Response(404)  # 所有瓦片缺失
-
-    monkeypatch.setattr(cli, "_make_client",
-                        lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(cli, "_make_client", lambda: httpx.Client())
+    monkeypatch.setattr(cli, "latest_slot",
+                        lambda client, now: datetime(2026, 7, 4, 10, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(cli, "download_segments", lambda *a, **k: [])  # 段全缺
 
     db = tmp_path / "sky.db"
     conn = cli._open_db(db)
