@@ -159,9 +159,11 @@ def set_llm_score(conn, case_id: int, score: float) -> None:
 
 
 def cases_with_snapshot(conn, city: str, event: str, *, model: str) -> list[dict]:
-    """已闭环案例 + 指定模式的最新快照(相似案例检索用,spec 5.5)。"""
+    """已闭环案例 + 指定模式的最新快照 + 最新经验笔记(相似案例检索用,spec 5.5)。"""
     rows = conn.execute(
-        """SELECT c.id, c.date, c.actual_score, s.payload
+        """SELECT c.id, c.date, c.actual_score, s.payload,
+                  (SELECT text FROM case_notes WHERE case_id=c.id
+                   ORDER BY id DESC LIMIT 1) AS note
            FROM cases c JOIN forecast_snapshots s ON s.case_id = c.id
            WHERE c.city=? AND c.event=? AND c.actual_score IS NOT NULL AND s.model=?
              AND s.id = (SELECT MAX(id) FROM forecast_snapshots
@@ -169,8 +171,9 @@ def cases_with_snapshot(conn, city: str, event: str, *, model: str) -> list[dict
            ORDER BY c.date""",
         (city, event, model, model),
     ).fetchall()
-    return [{"case_id": i, "date": d, "actual_score": a, "payload": json.loads(p)}
-            for i, d, a, p in rows]
+    return [{"case_id": i, "date": d, "actual_score": a,
+             "payload": json.loads(p), "note": n}
+            for i, d, a, p, n in rows]
 
 
 def was_pushed(conn, date: str, city: str, event: str) -> bool:

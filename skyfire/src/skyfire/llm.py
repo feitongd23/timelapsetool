@@ -39,6 +39,8 @@ def build_content(today: dict, similar: list[dict], frame_paths: list[Path]) -> 
     for c in similar:
         lines.append(f"- {c['date']} 实际 {c['actual_score']} 分 距离 {c['distance']}"
                      f" 因子 {json.dumps(c.get('payload', {}), ensure_ascii=False)}")
+        if c.get("note"):
+            lines.append(f"  经验笔记: {c['note'][:120]}")
     if not similar:
         lines.append("- (暂无闭环案例)")
     content: list[dict] = [{"type": "text", "text": "\n".join(lines)}]

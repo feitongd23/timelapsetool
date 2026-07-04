@@ -87,3 +87,13 @@ def test_explain_swallow_failure():
                 raise RuntimeError
 
     assert explain("卡片", [], client=_Boom()) is None
+
+
+def test_build_content_includes_similar_case_note():
+    today = {"date": "2026-07-05", "event": "sunset_glow", "rule_score": 5,
+             "confidence": "low", "payload": {}}
+    similar = [{"date": "2026-05-06", "actual_score": 10, "distance": 0.1,
+                "payload": {}, "note": "西侧通道裂开是关键"}]
+    content = build_content(today, similar, [])
+    text = content[0]["text"]
+    assert "西侧通道裂开是关键" in text

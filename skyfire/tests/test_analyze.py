@@ -45,3 +45,14 @@ def test_build_case_card_contains_domain_sections():
     for section in ("通道", "云幕", "大气", "卫星形态", "结论"):
         assert section in card
     assert "200km low=10" in card        # 通道剖面进卡片
+
+
+def test_cases_with_snapshot_carries_latest_note():
+    conn = store.connect(":memory:")
+    store.init_db(conn)
+    cid = _mk_case(conn)
+    store.add_case_note(conn, cid, "llm", "第一条")
+    store.add_case_note(conn, cid, "user", "西侧通道裂开是关键")
+    cases = store.cases_with_snapshot(conn, "beijing", "sunset_glow",
+                                      model="gfs_seamless")
+    assert cases[0]["note"] == "西侧通道裂开是关键"
