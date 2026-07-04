@@ -1,6 +1,6 @@
 # tests/test_himawari_hsd.py
 import bz2
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -8,8 +8,8 @@ import pytest
 
 import skyfire.himawari_hsd as hsd_mod
 from skyfire.himawari_hsd import (
-    BAND_RES, CROP_BBOX, bucket_for, download_segments, fetch_case_frames,
-    hsd_key, sat_code, segments_for, v_fraction,
+    BAND_RES, CROP_BBOX, bucket_for, case_frame_times, download_segments,
+    fetch_case_frames, hsd_key, sat_code, segments_for, v_fraction,
 )
 from skyfire.himawari_hsd import latest_slot
 
@@ -135,12 +135,36 @@ def test_latest_slot_none_when_nothing_recent():
     assert latest_slot(client, now, max_back=3) is None
 
 
+def test_case_frame_times_sunset_ir_after_vis_before():
+    peak = datetime(2026, 5, 6, 11, 13, tzinfo=timezone.utc)
+    times = case_frame_times(peak, "sunset_glow")
+    base = datetime(2026, 5, 6, 11, 10, tzinfo=timezone.utc)
+    ir = [t for t, ch in times if ch == "ir"]
+    vis = [t for t, ch in times if ch == "vis"]
+    assert len(ir) == 4 and len(vis) == 2
+    assert all(t >= base for t in ir)
+    assert all(t <= base for t in vis)
+    assert all(t.minute % 10 == 0 for t, _ in times)
+    assert max(ir) == base + timedelta(minutes=30)
+
+
+def test_case_frame_times_sunrise_mirrored():
+    peak = datetime(2026, 1, 7, 23, 30, tzinfo=timezone.utc)
+    times = case_frame_times(peak, "sunrise_glow")
+    base = datetime(2026, 1, 7, 23, 30, tzinfo=timezone.utc)
+    ir = [t for t, ch in times if ch == "ir"]
+    vis = [t for t, ch in times if ch == "vis"]
+    assert all(t <= base for t in ir)
+    assert all(t >= base for t in vis)
+    assert min(ir) == base - timedelta(minutes=30)
+
+
 def test_fetch_case_frames_orchestration(tmp_path, monkeypatch):
     calls = {"download": [], "render": []}
 
     def fake_download(client, ts, band, segments, cache_dir):
         calls["download"].append((ts, band, tuple(segments)))
-        if band == "B03" and ts.hour == 9 and ts.minute == 10:  # 模拟单帧缺档
+        if band == "B03" and ts.hour == 10 and ts.minute == 0:  # 模拟单帧缺档
             return []
         return [Path(f"seg_{band}_{ts:%H%M}.DAT")]
 
@@ -155,8 +179,9 @@ def test_fetch_case_frames_orchestration(tmp_path, monkeypatch):
 
     peak = datetime(2026, 5, 6, 10, 47, tzinfo=timezone.utc)
     frames = fetch_case_frames(object(), peak, tmp_path,
-                               prefix="beijing_2026-05-06_sunset_glow")
-    # ir 4 帧全出;vis 应 2 帧,其中 09:10(peak-90min)的缺档被跳过 → 共 5
+                               prefix="beijing_2026-05-06_sunset_glow",
+                               event="sunset_glow")
+    # ir 4 帧全出;vis 应 2 帧,其中 10:00(peak-40min)的缺档被跳过 → 共 5
     assert len(frames) == 5
     bands = [b for _, b, _ in frames]
     assert bands.count("ir") == 4 and bands.count("vis") == 1

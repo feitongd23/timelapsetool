@@ -110,13 +110,28 @@ def download_segments(client: httpx.Client, ts: datetime, band: str,
     return []
 
 
-IR_OFFSETS_MIN = (0, 30, 60, 90)    # B13:峰值往前 4 帧看趋势
-VIS_OFFSETS_MIN = (30, 90)          # B03:峰值时刻太阳过低,取稍早帧
-_BANDS = {"ir": ("B13", IR_OFFSETS_MIN), "vis": ("B03", VIS_OFFSETS_MIN)}
+IR_BURN_MIN = (0, 10, 20, 30)   # 燃烧时刻窗:晚霞日落后 / 朝霞日出前
+VIS_DAY_MIN = (20, 40)          # 日光侧读云型:晚霞日落前 / 朝霞日出后
+_BAND_OF = {"ir": "B13", "vis": "B03"}
 
 
 def round_down_10min(ts: datetime) -> datetime:
     return ts.replace(minute=ts.minute - ts.minute % 10, second=0, microsecond=0)
+
+
+def case_frame_times(peak_utc: datetime, event: str) -> list[tuple[datetime, str]]:
+    """按天象把取图时刻分到日落/日出正确一侧(knowledge §1)。
+
+    晚霞:红外取日落后(燃烧),可见光取日落前(日光);朝霞相反。
+    返回 [(ts, "ir"|"vis")],均对齐 10 分钟槽。
+    """
+    sunset = event == "sunset_glow"
+    ir_sign = 1 if sunset else -1
+    out = [(round_down_10min(peak_utc + timedelta(minutes=ir_sign * m)), "ir")
+           for m in IR_BURN_MIN]
+    out += [(round_down_10min(peak_utc + timedelta(minutes=-ir_sign * m)), "vis")
+            for m in VIS_DAY_MIN]
+    return out
 
 
 def latest_slot(client: httpx.Client, now: datetime,
@@ -139,7 +154,7 @@ def latest_slot(client: httpx.Client, now: datetime,
 
 
 def fetch_case_frames(client, peak_utc: datetime, frames_dir: Path, *,
-                      prefix: str, bbox: tuple = CROP_BBOX,
+                      prefix: str, event: str, bbox: tuple = CROP_BBOX,
                       hsd_cache: Path | None = None,
                       ) -> list[tuple[datetime, str, Path]]:
     """一个案例的学习帧序列:下载 HSD 段 → 渲染 PNG。
@@ -151,13 +166,12 @@ def fetch_case_frames(client, peak_utc: datetime, frames_dir: Path, *,
     lon_mid = (bbox[0] + bbox[2]) / 2
     segs = segments_for(bbox[1], bbox[3], lon_mid)
     out: list[tuple[datetime, str, Path]] = []
-    for channel, (band, offsets) in _BANDS.items():
-        for off in offsets:
-            ts = round_down_10min(peak_utc - timedelta(minutes=off))
-            dats = download_segments(client, ts, band, segs, cache)
-            if not dats:
-                continue
-            png = frames_dir / f"{prefix}_{ts:%H%M}_{channel}.png"
-            render_band(dats, band, bbox, png)
-            out.append((ts, channel, png))
+    for ts, channel in case_frame_times(peak_utc, event):
+        band = _BAND_OF[channel]
+        dats = download_segments(client, ts, band, segs, cache)
+        if not dats:
+            continue
+        png = frames_dir / f"{prefix}_{ts:%H%M}_{channel}.png"
+        render_band(dats, band, bbox, png)
+        out.append((ts, channel, png))
     return out

@@ -119,7 +119,9 @@ def backfill_row(conn, client: httpx.Client, row: BackfillRow, city: City,
     peak_utc = win.peak.astimezone(timezone.utc)
     prefix = f"{row.city}_{row.date}_{row.event}"
     saved = 0
-    frames = fetch_case_frames(client, peak_utc, frames_dir, prefix=prefix)
+    frame_event = "sunrise_glow" if row.event == "cloud_sea" else row.event
+    frames = fetch_case_frames(client, peak_utc, frames_dir, prefix=prefix,
+                               event=frame_event)
     for ts, ch, path in frames:
         store.add_satellite_frame(conn, case_id, ts.isoformat(), ch, str(path))
         saved += 1
