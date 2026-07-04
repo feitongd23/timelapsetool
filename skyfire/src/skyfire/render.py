@@ -26,6 +26,32 @@ def refl_to_gray(refl: np.ndarray) -> np.ndarray:
     return (g * 255).astype(np.uint8)
 
 
+# 云顶温度锚点 → RGB(暖=低云棕、中云灰、冷=高云蓝、极冷白);线性插值
+_BT_ANCHORS = [
+    (300.0, (10, 10, 10)),      # 暖地表/无云
+    (283.0, (95, 70, 45)),      # 低云(暖顶)
+    (268.0, (150, 150, 150)),   # 低/中云
+    (253.0, (220, 220, 220)),   # 中云
+    (238.0, (200, 225, 255)),   # 高云(冷顶,偏蓝)
+    (223.0, (110, 175, 255)),   # 高云
+    (205.0, (255, 255, 255)),   # 极冷云顶(深对流)
+]
+
+
+def bt_to_rgb(bt: np.ndarray) -> np.ndarray:
+    """亮温(K)→ 伪彩 RGB uint8,按云顶温度区分云高。NaN→黑。"""
+    temps = np.array([a[0] for a in _BT_ANCHORS])
+    chans = np.array([a[1] for a in _BT_ANCHORS], dtype=float)
+    x = np.clip(bt, temps.min(), temps.max())
+    out = np.zeros((*bt.shape, 3), dtype=np.uint8)
+    for k in range(3):
+        out[..., k] = np.nan_to_num(
+            np.interp(x, temps[::-1], chans[::-1, k]), nan=0.0
+        ).astype(np.uint8)
+    out[np.isnan(bt)] = 0
+    return out
+
+
 _CALIBRATION = {"B13": "brightness_temperature", "B03": "reflectance"}
 _TO_GRAY = {"B13": bt_to_gray, "B03": refl_to_gray}
 

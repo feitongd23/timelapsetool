@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 
 import skyfire.render as render_mod
-from skyfire.render import bt_to_gray, refl_to_gray, load_b13_region, render_band
+from skyfire.render import bt_to_gray, bt_to_rgb, refl_to_gray, load_b13_region, render_band
 
 
 def test_bt_to_gray_cold_is_white():
@@ -31,6 +31,19 @@ def test_refl_to_gray_sqrt_stretch():
     assert g[0, 2] == 255
     assert abs(int(g[0, 1]) - 127) <= 2   # sqrt(0.25)=0.5 → ~127
     assert g[0, 3] == 0
+
+
+def test_bt_to_rgb_height_by_temperature():
+    rgb = bt_to_rgb(np.array([[300.0, 253.0, 223.0], [205.0, np.nan, 268.0]]))
+    assert rgb.dtype == np.uint8 and rgb.shape == (2, 3, 3)
+    warm = rgb[0, 0]
+    high = rgb[0, 2]
+    coldest = rgb[1, 0]
+    nan = rgb[1, 1]
+    assert int(warm.max()) <= 40
+    assert high[2] > high[0] and high[2] > 150
+    assert coldest.min() > 200
+    assert tuple(int(v) for v in nan) == (0, 0, 0)
 
 
 class _FakeArea:
