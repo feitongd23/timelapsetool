@@ -145,3 +145,43 @@ def test_predict_no_llm_flag_skips_llm(tmp_path, monkeypatch):
                                   "--date", "2026-07-03", "--db", str(db)])
     assert result2.exit_code == 0, result2.output
     assert called["llm"] is True
+
+
+def test_nowcast_degrades_on_missing_satellite(tmp_path, monkeypatch):
+    """瓦片全缺(全 404)→ nowcast 退回纯规则分,不写融合分(spec 8)。"""
+    from datetime import datetime, timedelta, timezone
+    import skyfire.cli as cli
+    from skyfire import store
+    from skyfire.suntimes import SunWindow
+
+    # 固定一个 2 小时后的窗口,避开真实时钟导致的"窗口已过"分支
+    peak = datetime.now(timezone.utc).astimezone() + timedelta(hours=2)
+    monkeypatch.setattr(cli, "sun_window", lambda *a, **k: SunWindow(
+        event="sunset_glow", peak=peak, window_start=peak, window_end=peak,
+        azimuth_deg=300.0))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("latest.json"):
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            return httpx.Response(200, json={"date": ts, "file": "x.png"})
+        return httpx.Response(404)  # 所有瓦片缺失
+
+    monkeypatch.setattr(cli, "_make_client",
+                        lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+
+    db = tmp_path / "sky.db"
+    conn = cli._open_db(db)
+    today = str(cli.date_type.today())
+    store.upsert_case(conn, today, "beijing", "sunset_glow",
+                      rule_score=8.0, confidence="high", source="auto")
+
+    result = runner.invoke(app, ["nowcast", "--city", "beijing", "--event",
+                                 "sunset_glow", "--db", str(db),
+                                 "--frames-dir", str(tmp_path / "frames")])
+    assert result.exit_code == 0, result.output
+    assert "卫星帧全缺" in result.output
+    # 规则分未被融合分覆盖(仍是 8.0,置信度未变 nowcast)
+    row = conn.execute(
+        "SELECT rule_score, confidence FROM cases WHERE date=? AND city='beijing' "
+        "AND event='sunset_glow'", (today,)).fetchone()
+    assert row == (8.0, "high")

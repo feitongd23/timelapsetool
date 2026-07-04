@@ -316,6 +316,13 @@ def nowcast(
                    f"以规则分为准", err=True)
         raise typer.Exit(1)
 
+    if frame1.gray.max() == 0:
+        # 瓦片全缺(未发布/超出覆盖):不拿全零图冒充实况,退回纯规则分(spec 8)
+        typer.echo(f"🛰  {today} {event} 实况修正 — {c.name}")
+        typer.echo("卫星帧全缺(瓦片未发布或超出覆盖),不参与融合,以规则分为准", err=True)
+        typer.echo(f"综合分: {rule_score}/10(规则分 {rule_score})")
+        return
+
     age = frame_age_minutes(ts1, now)
     local = box_cloudiness(frame1.gray, frame1.center_px, half=40)
     step_px = max(1, round(100 / km_per_px(frame1.level)))
