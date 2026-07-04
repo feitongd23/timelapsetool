@@ -90,6 +90,7 @@ def test_backfill_row_feeds_channel_aod_and_aws_frames(tmp_path, monkeypatch):
         return [(fake_ts, "ir", p)]
 
     monkeypatch.setattr(backfill_mod, "fetch_case_frames", fake_frames)
+    monkeypatch.setattr(backfill_mod, "observer_cloudiness", lambda *a, **k: None)
 
     conn = store.connect(":memory:")
     store.init_db(conn)
@@ -126,6 +127,7 @@ def test_backfill_row_open_channel_scores_high(tmp_path, monkeypatch):
                                                       cloud_total=10)])
     monkeypatch.setattr(backfill_mod, "fetch_aod_range", lambda *a, **k: 0.5)
     monkeypatch.setattr(backfill_mod, "fetch_case_frames", lambda *a, **k: [])
+    monkeypatch.setattr(backfill_mod, "observer_cloudiness", lambda *a, **k: None)
 
     conn = store.connect(":memory:")
     store.init_db(conn)
@@ -138,6 +140,29 @@ def test_backfill_row_open_channel_scores_high(tmp_path, monkeypatch):
     case = conn.execute("SELECT rule_score FROM cases WHERE id=?",
                         (r.case_id,)).fetchone()
     assert case[0] is not None and case[0] > 5.0
+
+
+def test_backfill_row_stores_satellite_cloud(tmp_path, monkeypatch):
+    """卫星实测云量应写入 case(预报云量不可信,实测入库供案例卡展示)。"""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_forecast_payload())
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(backfill_mod, "fetch_channel_profile_range", lambda *a, **k: [])
+    monkeypatch.setattr(backfill_mod, "fetch_aod_range", lambda *a, **k: None)
+    monkeypatch.setattr(backfill_mod, "fetch_case_frames", lambda *a, **k: [])
+    monkeypatch.setattr(backfill_mod, "observer_cloudiness", lambda *a, **k: 25.0)
+
+    conn = store.connect(":memory:")
+    store.init_db(conn)
+    row = BackfillRow(date="2026-05-06", city="beijing", event="sunset_glow", score=10)
+    city = City(key="beijing", name="北京", lat=39.9, lon=116.4,
+                timezone="Asia/Shanghai")
+    r = backfill_row(conn, client, row, city, frames_dir=tmp_path)
+
+    case = store.case_by_key(conn, "2026-05-06", "beijing", "sunset_glow")
+    assert case["id"] == r.case_id
+    assert case["sat_cloud_pct"] == 25.0
 
 
 def test_backfill_row_rerun_does_not_duplicate_frames(tmp_path, monkeypatch):
@@ -155,6 +180,7 @@ def test_backfill_row_rerun_does_not_duplicate_frames(tmp_path, monkeypatch):
         return [(fake_ts, "ir", p)]
 
     monkeypatch.setattr(backfill_mod, "fetch_case_frames", fake_frames)
+    monkeypatch.setattr(backfill_mod, "observer_cloudiness", lambda *a, **k: None)
     conn = store.connect(":memory:")
     store.init_db(conn)
     row = BackfillRow(date="2026-05-06", city="beijing", event="sunset_glow", score=10)

@@ -155,6 +155,30 @@ def latest_slot(client: httpx.Client, now: datetime,
     return None
 
 
+def observer_cloudiness(client, peak_utc: datetime, event: str, lat: float,
+                        lon: float, bbox: tuple = CROP_BBOX,
+                        hsd_cache: Path | None = None) -> float | None:
+    """燃烧时刻卫星实测:观测点上空云量(各红外帧 box_cloudiness 均值)。
+
+    预报云量不可信(实证),此为可信的实际云量来源。全缺→None。
+    """
+    from statistics import mean
+    from skyfire.render import load_b13_region
+    from skyfire.cloudiness import box_cloudiness
+    cache = Path(hsd_cache) if hsd_cache else Path("data/frames/hsd_cache")
+    segs = segments_for(bbox[1], bbox[3], (bbox[0] + bbox[2]) / 2)
+    vals = []
+    for ts, ch in case_frame_times(peak_utc, event):
+        if ch != "ir":
+            continue
+        dats = download_segments(client, ts, "B13", segs, cache)
+        if not dats:
+            continue
+        f = load_b13_region(dats, bbox, lat, lon)
+        vals.append(box_cloudiness(f.gray, f.center_px, half=40))
+    return round(mean(vals), 1) if vals else None
+
+
 def fetch_case_frames(client, peak_utc: datetime, frames_dir: Path, *,
                       prefix: str, event: str, lat: float, lon: float,
                       azimuth_deg: float, bbox: tuple = CROP_BBOX,

@@ -47,6 +47,27 @@ def test_build_case_card_contains_domain_sections():
     assert "200km low=10" in card        # 通道剖面进卡片
 
 
+def test_set_and_read_sat_cloud():
+    conn = store.connect(":memory:")
+    store.init_db(conn)
+    cid = _mk_case(conn)
+    store.set_sat_cloud(conn, cid, 25.0)
+    case = store.case_by_key(conn, "2026-05-06", "beijing", "sunset_glow")
+    assert case["sat_cloud_pct"] == 25.0
+
+
+def test_case_card_shows_satellite_cloud():
+    conn = store.connect(":memory:")
+    store.init_db(conn)
+    cid = _mk_case(conn)
+    store.set_sat_cloud(conn, cid, 25.0)
+    case = store.case_by_key(conn, "2026-05-06", "beijing", "sunset_glow")
+    card = build_case_card(case, store.get_snapshots(conn, cid),
+                           store.get_frames(conn, cid),
+                           store.get_case_notes(conn, cid))
+    assert "卫星实测北京上空云量: 25.0%" in card
+
+
 def test_cases_with_snapshot_carries_latest_note():
     conn = store.connect(":memory:")
     store.init_db(conn)

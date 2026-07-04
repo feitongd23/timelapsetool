@@ -25,9 +25,12 @@ def build_case_card(case: dict, snapshots: list[dict], frames: list[dict],
         f"## 通道(方位 {payload.get('azimuth', '?')}°)",
         _channel_line(payload),
         "",
-        "## 云幕(点预报)",
-        f"高云 {payload.get('cloud_high')}%  中云 {payload.get('cloud_mid')}%"
+        "## 云幕",
+        f"点预报: 高云 {payload.get('cloud_high')}%  中云 {payload.get('cloud_mid')}%"
         f"  低云 {payload.get('cloud_low')}%",
+        f"卫星实测北京上空云量: "
+        + (f"{case['sat_cloud_pct']}%" if case.get('sat_cloud_pct') is not None
+           else "(未测)"),
         "",
         "## 大气",
         f"AOD {payload.get('aod')}  地表RH {payload.get('rh_2m')}%"

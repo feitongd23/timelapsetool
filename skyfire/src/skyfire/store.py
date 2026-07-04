@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS cases (
   llm_score REAL,
   actual_score REAL,
   confidence TEXT,
+  sat_cloud_pct REAL,
   source TEXT NOT NULL DEFAULT 'auto',
   created_at TEXT DEFAULT (datetime('now')),
   UNIQUE(date, city, event)
@@ -79,6 +80,9 @@ def connect(path: Path | str) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(cases)").fetchall()]
+    if "sat_cloud_pct" not in cols:
+        conn.execute("ALTER TABLE cases ADD COLUMN sat_cloud_pct REAL")
     conn.commit()
 
 
@@ -100,6 +104,12 @@ def upsert_case(conn, date: str, city: str, event: str, *,
 
 def set_actual_score(conn, case_id: int, score: float) -> None:
     conn.execute("UPDATE cases SET actual_score=? WHERE id=?", (score, case_id))
+    conn.commit()
+
+
+def set_sat_cloud(conn, case_id: int, pct: float) -> None:
+    """写入卫星实测的观测点上空云量(预报云量不可信,实测为准)。"""
+    conn.execute("UPDATE cases SET sat_cloud_pct=? WHERE id=?", (pct, case_id))
     conn.commit()
 
 
@@ -211,11 +221,12 @@ def get_case_notes(conn, case_id: int) -> list[dict]:
 def case_by_key(conn, date: str, city: str, event: str) -> dict | None:
     row = conn.execute(
         """SELECT id, date, city, event, rule_score, llm_score, actual_score,
-                  confidence FROM cases WHERE date=? AND city=? AND event=?""",
+                  confidence, sat_cloud_pct FROM cases
+           WHERE date=? AND city=? AND event=?""",
         (date, city, event),
     ).fetchone()
     if row is None:
         return None
     keys = ("id", "date", "city", "event", "rule_score", "llm_score",
-            "actual_score", "confidence")
+            "actual_score", "confidence", "sat_cloud_pct")
     return dict(zip(keys, row))

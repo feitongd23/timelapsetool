@@ -46,7 +46,7 @@ from skyfire import store
 from skyfire.config import City
 from skyfire.consensus import consensus
 from skyfire.geo import channel_points
-from skyfire.himawari_hsd import fetch_case_frames
+from skyfire.himawari_hsd import fetch_case_frames, observer_cloudiness
 from skyfire.openmeteo import (fetch_aod_range, fetch_channel_profile_range,
                                fetch_point_forecast_range)
 from skyfire.scoring.firecloud import FireCloudInputs, fire_cloud_score
@@ -126,4 +126,9 @@ def backfill_row(conn, client: httpx.Client, row: BackfillRow, city: City,
     for ts, ch, path in frames:
         store.add_satellite_frame(conn, case_id, ts.isoformat(), ch, str(path))
         saved += 1
+
+    sat_pct = observer_cloudiness(client, peak_utc, frame_event,
+                                  city.lat, city.lon)
+    if sat_pct is not None:
+        store.set_sat_cloud(conn, case_id, sat_pct)
     return BackfillResult(case_id=case_id, n_frames=saved, n_models=len(per_model))

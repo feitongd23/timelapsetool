@@ -178,6 +178,29 @@ def test_case_frame_times_sunset_vis_unchanged():
     assert vis == [base - timedelta(minutes=40), base - timedelta(minutes=20)]
 
 
+def test_observer_cloudiness_averages_ir_frames(monkeypatch):
+    import numpy as np
+    import skyfire.himawari_hsd as hsd_mod
+    from skyfire.himawari_hsd import observer_cloudiness
+
+    monkeypatch.setattr(hsd_mod, "download_segments",
+                        lambda *a, **k: [Path("seg.DAT")])
+    # load_b13_region 在 render 里,observer_cloudiness 内部 import;patch render
+    import skyfire.render as render_mod
+    class _F:
+        gray = np.zeros((10, 10), dtype=np.uint8)
+        center_px = (5, 5)
+        km_px = 2.0
+    monkeypatch.setattr(render_mod, "load_b13_region", lambda *a, **k: _F())
+    import skyfire.cloudiness as cl_mod
+    seq = iter([30.0, 40.0, 20.0, 50.0])
+    monkeypatch.setattr(cl_mod, "box_cloudiness", lambda *a, **k: next(seq))
+
+    peak = datetime(2026, 5, 6, 11, 13, tzinfo=timezone.utc)
+    pct = observer_cloudiness(object(), peak, "sunset_glow", 39.9, 116.4)
+    assert pct == 35.0    # mean(30,40,20,50)
+
+
 def test_fetch_case_frames_orchestration(tmp_path, monkeypatch):
     calls = {"download": [], "render": []}
 
