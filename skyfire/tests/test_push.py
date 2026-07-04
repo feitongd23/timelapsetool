@@ -23,6 +23,20 @@ def test_push_bark_hits_key_url_and_encodes():
     assert "%" in seen["url"]
 
 
+def test_push_bark_encodes_slash_in_body():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"code": 200})
+
+    ok = push("晚霞 7.5/10", "指数 7.5/10 系数 0.82", {"provider": "bark", "key": "K"},
+              client=_client(handler))
+    assert ok is True
+    # body/title 里的 '/' 必须被编码(否则 Bark 当额外路径段):key 后只应剩两段
+    assert seen["url"].split("/K/", 1)[1].count("/") == 1
+
+
 def test_push_serverchan_posts_title_desp():
     seen = {}
 

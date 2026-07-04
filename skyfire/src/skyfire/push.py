@@ -19,7 +19,9 @@ def push(title: str, body: str, config: dict, client: httpx.Client | None = None
         client = httpx.Client(timeout=15)
     try:
         if provider == "bark":
-            resp = client.get(f"{BARK_BASE}/{key}/{quote(title)}/{quote(body)}")
+            # safe='' 连 '/' 也编码:报告正文含 "7.5/10" 等,否则 Bark 会把 '/' 当路径段
+            resp = client.get(
+                f"{BARK_BASE}/{key}/{quote(title, safe='')}/{quote(body, safe='')}")
             resp.raise_for_status()
             return resp.json().get("code") == 200
         if provider == "serverchan":
