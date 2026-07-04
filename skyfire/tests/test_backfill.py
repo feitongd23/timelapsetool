@@ -43,80 +43,92 @@ def test_parse_csv_rejects_missing_score_column(tmp_path):
         parse_csv(p)
 
 
-import io
-
-import httpx
-import numpy as np
-from PIL import Image
-
-from skyfire import store
-from skyfire.backfill import backfill_row
-from skyfire.config import load_cities
-from skyfire.openmeteo import HISTORICAL_FORECAST_URL, MODELS
+from datetime import datetime, timezone
 from pathlib import Path
 
-CONFIG = Path(__file__).parent.parent / "config" / "cities.yaml"
+import httpx
+
+import skyfire.backfill as backfill_mod
+from skyfire import store
+from skyfire.backfill import BackfillRow, backfill_row
+from skyfire.config import City
+from skyfire.models import ChannelPoint
 
 
-def _hist_payload(day: str):
-    times = [f"{day}T{h:02d}:00" for h in range(24)]
-    n = len(times)
-    hourly = {"time": times}
+def _forecast_payload():
+    # fetch_point_forecast_range 默认请求 MODELS(4 模式),_parse_models 在
+    # len(models)>1 时按 "{var}_{model}" 取列,故各模式列需分别给出。
+    from skyfire.openmeteo import MODELS
+    hourly = {"time": ["2026-05-06T19:00"]}
     for m in MODELS:
-        for var, val in [("cloud_cover", 60), ("cloud_cover_low", 10),
-                         ("cloud_cover_mid", 15), ("cloud_cover_high", 48),
-                         ("relative_humidity_2m", 70), ("wind_speed_10m", 2.5),
-                         ("temperature_2m", 30), ("dew_point_2m", 22),
+        for var, val in [("cloud_cover", 80), ("cloud_cover_low", 0),
+                         ("cloud_cover_mid", 20), ("cloud_cover_high", 90),
+                         ("relative_humidity_2m", 50), ("wind_speed_10m", 3),
+                         ("temperature_2m", 20), ("dew_point_2m", 10),
                          ("precipitation", 0)]:
-            hourly[f"{var}_{m}"] = [val] * n
+            hourly[f"{var}_{m}"] = [val]
     return {"hourly": hourly}
 
 
-def _fake_transport(day: str, tile_status=200):
+def test_backfill_row_feeds_channel_aod_and_aws_frames(tmp_path, monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == httpx.URL(HISTORICAL_FORECAST_URL).host:
-            return httpx.Response(200, json=_hist_payload(day))
-        if request.url.path.endswith(".png"):
-            if tile_status != 200:
-                return httpx.Response(tile_status)
-            img = Image.fromarray(np.full((550, 550), 90, dtype=np.uint8), mode="L")
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            return httpx.Response(200, content=buf.getvalue())
-        return httpx.Response(404)
+        return httpx.Response(200, json=_forecast_payload())
+    client = httpx.Client(transport=httpx.MockTransport(handler))
 
-    return httpx.MockTransport(handler)
+    monkeypatch.setattr(backfill_mod, "fetch_channel_profile_range",
+                        lambda *a, **k: [ChannelPoint(dist_km=200, cloud_low=90,
+                                                      cloud_total=95)])
+    monkeypatch.setattr(backfill_mod, "fetch_aod_range", lambda *a, **k: 0.5)
+    fake_ts = datetime(2026, 5, 6, 10, 40, tzinfo=timezone.utc)
 
+    def fake_frames(client, peak_utc, frames_dir, *, prefix, **kw):
+        p = Path(frames_dir) / f"{prefix}_1040_ir.png"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"png")
+        return [(fake_ts, "ir", p)]
 
-def test_backfill_row_creates_closed_case(tmp_path):
-    conn = store.connect(tmp_path / "t.db")
+    monkeypatch.setattr(backfill_mod, "fetch_case_frames", fake_frames)
+
+    conn = store.connect(":memory:")
     store.init_db(conn)
-    client = httpx.Client(transport=_fake_transport("2026-05-12"))
-    row = BackfillRow(date="2026-05-12", city="beijing", event="sunset_glow", score=9.0)
-    city = load_cities(CONFIG)["beijing"]
-    result = backfill_row(conn, client, row, city, frames_dir=tmp_path / "frames",
-                          n_frames=2)
-    assert result.case_id > 0
-    got = conn.execute(
-        "SELECT rule_score, actual_score, source FROM cases WHERE id=?",
-        (result.case_id,)).fetchone()
-    assert got[1] == 9.0 and got[2] == "cold_start"
-    assert got[0] is not None            # 用历史快照重算了规则分
-    snaps = store.get_snapshots(conn, result.case_id)
-    assert {s["model"] for s in snaps} == set(MODELS)
-    frames = store.get_frames(conn, result.case_id)
-    assert len(frames) == 2
-    assert (tmp_path / "frames").exists()
+    row = BackfillRow(date="2026-05-06", city="beijing", event="sunset_glow", score=10)
+    city = City(key="beijing", name="北京", lat=39.9, lon=116.4,
+                timezone="Asia/Shanghai")
+    r = backfill_row(conn, client, row, city, frames_dir=tmp_path)
+
+    assert r.n_frames == 1
+    snaps = store.get_snapshots(conn, r.case_id)
+    payload = snaps[0]["payload"]
+    assert payload["aod"] == 0.5
+    assert payload["channel"] == [{"km": 200, "low": 90, "total": 95}]
+    frames = store.get_frames(conn, r.case_id)
+    assert frames[0]["channel"] == "ir"
+    # 通道全堵 → channel_factor 0.1 → 规则分被压低(不再恒中性)
+    case = conn.execute("SELECT rule_score FROM cases WHERE id=?",
+                        (r.case_id,)).fetchone()
+    assert case[0] is not None and case[0] < 2.0
 
 
-def test_backfill_row_survives_missing_satellite(tmp_path):
-    conn = store.connect(tmp_path / "t.db")
+def test_backfill_row_rerun_does_not_duplicate_frames(tmp_path, monkeypatch):
+    def handler(request):
+        return httpx.Response(200, json=_forecast_payload())
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(backfill_mod, "fetch_channel_profile_range", lambda *a, **k: [])
+    monkeypatch.setattr(backfill_mod, "fetch_aod_range", lambda *a, **k: None)
+    fake_ts = datetime(2026, 5, 6, 10, 40, tzinfo=timezone.utc)
+
+    def fake_frames(client, peak_utc, frames_dir, *, prefix, **kw):
+        p = Path(frames_dir) / f"{prefix}_1040_ir.png"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"png")
+        return [(fake_ts, "ir", p)]
+
+    monkeypatch.setattr(backfill_mod, "fetch_case_frames", fake_frames)
+    conn = store.connect(":memory:")
     store.init_db(conn)
-    client = httpx.Client(transport=_fake_transport("2026-05-12", tile_status=404))
-    row = BackfillRow(date="2026-05-12", city="beijing", event="sunset_glow", score=7.0)
-    city = load_cities(CONFIG)["beijing"]
-    result = backfill_row(conn, client, row, city, frames_dir=tmp_path / "frames",
-                          n_frames=2)
-    # 卫星缺档不阻塞:案例照建,帧数为 0(spec 8 降级思路)
-    assert result.case_id > 0
-    assert store.get_frames(conn, result.case_id) == []
+    row = BackfillRow(date="2026-05-06", city="beijing", event="sunset_glow", score=10)
+    city = City(key="beijing", name="北京", lat=39.9, lon=116.4,
+                timezone="Asia/Shanghai")
+    r1 = backfill_row(conn, client, row, city, frames_dir=tmp_path)
+    r2 = backfill_row(conn, client, row, city, frames_dir=tmp_path)
+    assert len(store.get_frames(conn, r2.case_id)) == 1   # 幂等,不重复

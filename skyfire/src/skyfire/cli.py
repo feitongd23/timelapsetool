@@ -182,7 +182,6 @@ def backfill(
     config: Path = typer.Option(DEFAULT_CONFIG),
     db: Path = typer.Option(DEFAULT_DB),
     frames_dir: Path = typer.Option(DEFAULT_FRAMES),
-    frames: int = typer.Option(3, help="每案例回填卫星帧数"),
 ):
     """冷启动:清单 → 历史预报快照 + 卫星帧 + 闭环案例(spec 6.1)。"""
     try:
@@ -200,7 +199,7 @@ def backfill(
             continue
         try:
             r = backfill_row(conn, client, row, cities[row.city],
-                             frames_dir=frames_dir, n_frames=frames)
+                             frames_dir=frames_dir)
         except httpx.HTTPError as e:
             typer.echo(f"跳过 {row.date}:数据源请求失败({e.__class__.__name__})", err=True)
             continue

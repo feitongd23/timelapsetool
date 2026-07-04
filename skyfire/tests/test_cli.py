@@ -72,14 +72,17 @@ def test_predict_rejects_unknown_city(tmp_path):
 
 
 def test_backfill_command(tmp_path, monkeypatch):
-    import io
-    import numpy as np
-    from PIL import Image
     from skyfire.openmeteo import HISTORICAL_FORECAST_URL, MODELS as _MODELS
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == httpx.URL(HISTORICAL_FORECAST_URL).host:
             times = [f"2026-05-12T{h:02d}:00" for h in range(24)]
+            if "," in str(request.url.params.get("latitude", "")):
+                # 通道剖面:多地点、单模式、无后缀列
+                count = str(request.url.params["latitude"]).count(",") + 1
+                loc = {"hourly": {"time": times, "cloud_cover": [30] * 24,
+                                  "cloud_cover_low": [10] * 24}}
+                return httpx.Response(200, json=[loc] * count)
             hourly = {"time": times}
             for m in _MODELS:
                 for var, val in [("cloud_cover", 60), ("cloud_cover_low", 10),
@@ -89,12 +92,7 @@ def test_backfill_command(tmp_path, monkeypatch):
                                  ("precipitation", 0)]:
                     hourly[f"{var}_{m}"] = [val] * 24
             return httpx.Response(200, json={"hourly": hourly})
-        if request.url.path.endswith(".png"):
-            img = Image.fromarray(np.full((550, 550), 90, dtype=np.uint8), mode="L")
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            return httpx.Response(200, content=buf.getvalue())
-        return httpx.Response(404)
+        return httpx.Response(404)  # AOD/AWS HSD 段等:缺档尽力跳过
 
     import skyfire.cli as cli
     monkeypatch.setattr(cli, "_make_client",

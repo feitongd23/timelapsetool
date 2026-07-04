@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   pushed_at TEXT DEFAULT (datetime('now')),
   UNIQUE(date, city, event)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_frames_dedup
+  ON satellite_frames(case_id, ts, channel);
 """
 
 
@@ -102,6 +104,12 @@ def add_snapshot(conn, case_id: int, model: str, payload: dict) -> None:
     conn.commit()
 
 
+def clear_snapshots(conn, case_id: int) -> None:
+    """删除某案例全部历史快照(回填幂等:重跑前先清空再重写)。"""
+    conn.execute("DELETE FROM forecast_snapshots WHERE case_id=?", (case_id,))
+    conn.commit()
+
+
 def get_snapshots(conn, case_id: int) -> list[dict]:
     rows = conn.execute(
         "SELECT model, run_time, payload FROM forecast_snapshots WHERE case_id=?", (case_id,)
@@ -123,7 +131,8 @@ def scored_cases(conn, city: str) -> list[dict]:
 
 def add_satellite_frame(conn, case_id: int, ts: str, channel: str, path: str) -> None:
     conn.execute(
-        "INSERT INTO satellite_frames (case_id, ts, channel, path) VALUES (?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO satellite_frames (case_id, ts, channel, path)"
+        " VALUES (?, ?, ?, ?)",
         (case_id, ts, channel, path),
     )
     conn.commit()

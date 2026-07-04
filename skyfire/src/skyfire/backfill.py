@@ -38,16 +38,17 @@ def parse_csv(path: Path) -> list[BackfillRow]:
     return rows
 
 
-from datetime import timedelta, timezone
+from datetime import timezone
 
 import httpx
-from PIL import Image
 
 from skyfire import store
 from skyfire.config import City
 from skyfire.consensus import consensus
-from skyfire.himawari import fetch_region, round_down_10min
-from skyfire.openmeteo import fetch_point_forecast_range
+from skyfire.geo import channel_points
+from skyfire.himawari_hsd import fetch_case_frames
+from skyfire.openmeteo import (fetch_aod_range, fetch_channel_profile_range,
+                               fetch_point_forecast_range)
 from skyfire.scoring.firecloud import FireCloudInputs, fire_cloud_score
 from skyfire.suntimes import sun_window
 
@@ -60,18 +61,25 @@ class BackfillResult:
 
 
 def backfill_row(conn, client: httpx.Client, row: BackfillRow, city: City,
-                 frames_dir, n_frames: int = 3) -> BackfillResult:
-    """单条清单 → 完整案例:历史多模式快照 + 规则分重算 + 卫星帧(尽力)。
+                 frames_dir) -> BackfillResult:
+    """单条清单 → 完整案例:历史快照 + 真实通道/AOD + AWS 卫星帧。
 
-    冷启动无通道剖面与 AOD(历史点阵回填成本高,留观)——规则分以
-    canvas/本地因子为主,channel=[] 走 firecloud 的"缺数据不罚"路径;
-    检索层(rag)对缺失字段做中性处理。
+    通道剖面与 AOD 走历史存档(尽力,失败→中性);帧走 AWS HSD 归档
+    (ir×4 + vis×2,单帧缺档跳过)。幂等:重跑覆盖快照分、帧去重。
     """
     day = date_type.fromisoformat(row.date)
-    # cloud_sea 属日出前后的天象,取 sunrise 窗回填
     win = sun_window(city.lat, city.lon, city.timezone, day,
                      "sunrise_glow" if row.event == "cloud_sea" else row.event)
     iso_hour = win.peak.strftime("%Y-%m-%dT%H:00")
+
+    pts = channel_points(city.lat, city.lon, win.azimuth_deg)
+    try:
+        channel = fetch_channel_profile_range(client, pts, city.timezone,
+                                              iso_hour, row.date)
+    except httpx.HTTPError:
+        channel = []                       # 存档边界外:退回"缺数据不罚"
+    aod = fetch_aod_range(client, city.lat, city.lon, city.timezone,
+                          iso_hour, row.date)
 
     forecasts = fetch_point_forecast_range(client, city.lat, city.lon, city.timezone,
                                            row.date, row.date)
@@ -83,7 +91,7 @@ def backfill_row(conn, client: httpx.Client, row: BackfillRow, city: City,
         r = fire_cloud_score(FireCloudInputs(
             cloud_high=h.cloud_high, cloud_mid=h.cloud_mid or 0,
             cloud_low=h.cloud_low or 0, precipitation=h.precipitation or 0,
-            aod=None, channel=[],
+            aod=aod, channel=channel,
         ))
         per_model[fc.model] = r.score
     rule = consensus(per_model).index if per_model else None
@@ -92,6 +100,9 @@ def backfill_row(conn, client: httpx.Client, row: BackfillRow, city: City,
     case_id = store.upsert_case(conn, row.date, row.city, row.event,
                                 rule_score=rule, confidence=conf, source="cold_start")
     store.set_actual_score(conn, case_id, row.score)
+    store.clear_snapshots(conn, case_id)
+    channel_json = [{"km": p.dist_km, "low": p.cloud_low, "total": p.cloud_total}
+                    for p in channel]
     for fc in forecasts:
         h = fc.at(iso_hour)
         if h is None:
@@ -99,24 +110,17 @@ def backfill_row(conn, client: httpx.Client, row: BackfillRow, city: City,
         store.add_snapshot(conn, case_id, fc.model, {
             "hour": iso_hour, "cloud_high": h.cloud_high, "cloud_mid": h.cloud_mid,
             "cloud_low": h.cloud_low, "cloud_cover": h.cloud_cover,
-            "rh_2m": h.rh_2m, "precipitation": h.precipitation, "aod": None,
-            "channel": [], "azimuth": round(win.azimuth_deg, 1),
+            "rh_2m": h.rh_2m, "precipitation": h.precipitation, "aod": aod,
+            "channel": channel_json, "azimuth": round(win.azimuth_deg, 1),
         })
 
     frames_dir = Path(frames_dir)
     frames_dir.mkdir(parents=True, exist_ok=True)
     peak_utc = win.peak.astimezone(timezone.utc)
+    prefix = f"{row.city}_{row.date}_{row.event}"
     saved = 0
-    for k in range(n_frames):
-        ts = round_down_10min(peak_utc - timedelta(minutes=30 * k))
-        try:
-            frame = fetch_region(client, "infrared", ts, city.lat, city.lon)
-        except httpx.HTTPError:
-            continue
-        if frame.gray.max() == 0:
-            continue  # 全缺瓦片视为无档
-        path = frames_dir / f"{row.city}_{row.date}_{row.event}_{ts:%H%M}.png"
-        Image.fromarray(frame.gray, mode="L").save(path)
-        store.add_satellite_frame(conn, case_id, ts.isoformat(), "infrared", str(path))
+    frames = fetch_case_frames(client, peak_utc, frames_dir, prefix=prefix)
+    for ts, ch, path in frames:
+        store.add_satellite_frame(conn, case_id, ts.isoformat(), ch, str(path))
         saved += 1
     return BackfillResult(case_id=case_id, n_frames=saved, n_models=len(per_model))
