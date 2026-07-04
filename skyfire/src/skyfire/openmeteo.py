@@ -5,6 +5,7 @@ from skyfire.geo import GeoPoint
 from skyfire.models import ChannelPoint, HourlyPoint, ModelForecast
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+HISTORICAL_FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
 MODELS = ("ecmwf_ifs025", "gfs_seamless", "icon_seamless", "cma_grapes_global")
@@ -32,17 +33,8 @@ def _series(hourly: dict, var: str, model_suffix: str, n: int) -> list:
     return values
 
 
-def fetch_point_forecast(
-    client: httpx.Client, lat: float, lon: float, tz: str,
-    models: tuple[str, ...] = MODELS, forecast_days: int = 3,
-) -> list[ModelForecast]:
-    resp = client.get(FORECAST_URL, params={
-        "latitude": lat, "longitude": lon, "timezone": tz,
-        "hourly": ",".join(HOURLY_VARS), "models": ",".join(models),
-        "wind_speed_unit": "ms", "forecast_days": forecast_days,
-    })
-    resp.raise_for_status()
-    hourly = resp.json()["hourly"]
+def _parse_models(data: dict, models: tuple[str, ...]) -> list[ModelForecast]:
+    hourly = data["hourly"]
     times = hourly["time"]
     result = []
     for m in models:
@@ -57,6 +49,33 @@ def fetch_point_forecast(
         ]
         result.append(ModelForecast(model=m, hourly=points))
     return result
+
+
+def fetch_point_forecast(
+    client: httpx.Client, lat: float, lon: float, tz: str,
+    models: tuple[str, ...] = MODELS, forecast_days: int = 3,
+) -> list[ModelForecast]:
+    resp = client.get(FORECAST_URL, params={
+        "latitude": lat, "longitude": lon, "timezone": tz,
+        "hourly": ",".join(HOURLY_VARS), "models": ",".join(models),
+        "wind_speed_unit": "ms", "forecast_days": forecast_days,
+    })
+    resp.raise_for_status()
+    return _parse_models(resp.json(), models)
+
+
+def fetch_point_forecast_range(
+    client: httpx.Client, lat: float, lon: float, tz: str,
+    start_date: str, end_date: str, models: tuple[str, ...] = MODELS,
+) -> list[ModelForecast]:
+    """历史预报存档(冷启动回填用,spec 6.1):同一解析,不同端点+日期窗。"""
+    resp = client.get(HISTORICAL_FORECAST_URL, params={
+        "latitude": lat, "longitude": lon, "timezone": tz,
+        "hourly": ",".join(HOURLY_VARS), "models": ",".join(models),
+        "wind_speed_unit": "ms", "start_date": start_date, "end_date": end_date,
+    })
+    resp.raise_for_status()
+    return _parse_models(resp.json(), models)
 
 
 def fetch_aod_at(client: httpx.Client, lat: float, lon: float, tz: str, iso_hour: str) -> float | None:

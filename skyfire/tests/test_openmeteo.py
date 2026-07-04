@@ -69,3 +69,24 @@ def test_fetch_channel_profile():
     assert len(profile) == 2
     assert profile[0].dist_km == 100 and profile[0].cloud_low == 70
     assert profile[1].cloud_total == 20
+
+
+from skyfire.openmeteo import HISTORICAL_FORECAST_URL, fetch_point_forecast_range
+
+
+def test_fetch_point_forecast_range_hits_historical_url_with_dates():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["host"] = request.url.host
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json=_multi_model_payload())
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    forecasts = fetch_point_forecast_range(client, 39.9, 116.4, "Asia/Shanghai",
+                                           "2026-05-12", "2026-05-12")
+    assert seen["host"] == httpx.URL(HISTORICAL_FORECAST_URL).host
+    assert seen["params"]["start_date"] == "2026-05-12"
+    assert seen["params"]["end_date"] == "2026-05-12"
+    assert [f.model for f in forecasts] == list(MODELS)
+    assert forecasts[0].at("2026-07-03T19:00").cloud_high == 48
