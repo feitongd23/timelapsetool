@@ -917,6 +917,14 @@ def test_parse_csv_rejects_bad_date_and_score(tmp_path):
     p.write_text("date,city,event,score\n2026-05-12,beijing,sunset_glow,11\n", encoding="utf-8")
     with pytest.raises(ValueError, match="0-10"):
         parse_csv(p)
+
+
+def test_parse_csv_rejects_missing_score_column(tmp_path):
+    # 缺 score 列的短行应给友好的 ValueError,而非裸 TypeError
+    p = tmp_path / "short.csv"
+    p.write_text("date,city,event,score\n2026-05-12,beijing,sunset_glow\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="必须是数字"):
+        parse_csv(p)
 ```
 
 - [ ] **Step 2: 运行确认失败**
@@ -959,7 +967,7 @@ def parse_csv(path: Path) -> list[BackfillRow]:
             if event not in VALID_EVENTS:
                 raise ValueError(f"第 {i} 行:未知天象 {event!r},可用: {', '.join(VALID_EVENTS)}")
             try:
-                score = float(rec.get("score", ""))
+                score = float((rec.get("score") or "").strip())
             except ValueError:
                 raise ValueError(f"第 {i} 行:score 必须是数字")
             if not 0 <= score <= 10:

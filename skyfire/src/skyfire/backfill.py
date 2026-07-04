@@ -28,7 +28,7 @@ def parse_csv(path: Path) -> list[BackfillRow]:
             if event not in VALID_EVENTS:
                 raise ValueError(f"第 {i} 行:未知天象 {event!r},可用: {', '.join(VALID_EVENTS)}")
             try:
-                score = float(rec.get("score", ""))
+                score = float((rec.get("score") or "").strip())
             except ValueError:
                 raise ValueError(f"第 {i} 行:score 必须是数字")
             if not 0 <= score <= 10:
