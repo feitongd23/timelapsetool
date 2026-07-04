@@ -6,7 +6,9 @@ from skyfire.geo import GeoPoint
 from skyfire.openmeteo import (
     MODELS,
     fetch_aod_at,
+    fetch_aod_range,
     fetch_channel_profile,
+    fetch_channel_profile_range,
     fetch_point_forecast,
 )
 
@@ -90,3 +92,40 @@ def test_fetch_point_forecast_range_hits_historical_url_with_dates():
     assert seen["params"]["end_date"] == "2026-05-12"
     assert [f.model for f in forecasts] == list(MODELS)
     assert forecasts[0].at("2026-07-03T19:00").cloud_high == 48
+
+
+def test_fetch_channel_profile_range_hits_historical_endpoint():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["host"] = request.url.host
+        seen["params"] = dict(request.url.params)
+        loc = {"hourly": {"time": ["2026-05-06T18:00", "2026-05-06T19:00"],
+                          "cloud_cover": [70, 80], "cloud_cover_low": [10, 20]}}
+        return httpx.Response(200, json=[loc, loc])
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    pts = [GeoPoint(lat=40.0, lon=115.0, dist_km=100),
+           GeoPoint(lat=40.1, lon=114.0, dist_km=200)]
+    prof = fetch_channel_profile_range(client, pts, "Asia/Shanghai",
+                                       "2026-05-06T19:00", "2026-05-06")
+    assert seen["host"] == "historical-forecast-api.open-meteo.com"
+    assert seen["params"]["start_date"] == "2026-05-06"
+    assert [p.dist_km for p in prof] == [100, 200]
+    assert prof[0].cloud_low == 20 and prof[0].cloud_total == 80
+
+
+def test_fetch_aod_range_returns_value_or_none():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert dict(request.url.params)["start_date"] == "2026-05-06"
+        return httpx.Response(200, json={"hourly": {
+            "time": ["2026-05-06T19:00"], "aerosol_optical_depth": [0.42]}})
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    assert fetch_aod_range(client, 39.9, 116.4, "Asia/Shanghai",
+                           "2026-05-06T19:00", "2026-05-06") == 0.42
+
+    def handler_err(request):
+        return httpx.Response(400)   # CAMS 存档边界外(<2022-07-29)
+    client = httpx.Client(transport=httpx.MockTransport(handler_err))
+    assert fetch_aod_range(client, 39.9, 116.4, "Asia/Shanghai",
+                           "2020-09-01T18:00", "2020-09-01") is None
