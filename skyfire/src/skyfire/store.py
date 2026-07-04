@@ -59,6 +59,13 @@ CREATE TABLE IF NOT EXISTS notifications (
   pushed_at TEXT DEFAULT (datetime('now')),
   UNIQUE(date, city, event)
 );
+CREATE TABLE IF NOT EXISTS case_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  case_id INTEGER NOT NULL REFERENCES cases(id),
+  author TEXT NOT NULL CHECK(author IN ('user','llm')),
+  text TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_frames_dedup
   ON satellite_frames(case_id, ts, channel);
 """
@@ -180,3 +187,32 @@ def mark_pushed(conn, date: str, city: str, event: str) -> None:
         (date, city, event),
     )
     conn.commit()
+
+
+def add_case_note(conn, case_id: int, author: str, text: str) -> None:
+    conn.execute(
+        "INSERT INTO case_notes (case_id, author, text) VALUES (?, ?, ?)",
+        (case_id, author, text),
+    )
+    conn.commit()
+
+
+def get_case_notes(conn, case_id: int) -> list[dict]:
+    rows = conn.execute(
+        "SELECT author, text, created_at FROM case_notes WHERE case_id=? ORDER BY id",
+        (case_id,),
+    ).fetchall()
+    return [{"author": a, "text": t, "created_at": ct} for a, t, ct in rows]
+
+
+def case_by_key(conn, date: str, city: str, event: str) -> dict | None:
+    row = conn.execute(
+        """SELECT id, date, city, event, rule_score, llm_score, actual_score,
+                  confidence FROM cases WHERE date=? AND city=? AND event=?""",
+        (date, city, event),
+    ).fetchone()
+    if row is None:
+        return None
+    keys = ("id", "date", "city", "event", "rule_score", "llm_score",
+            "actual_score", "confidence")
+    return dict(zip(keys, row))

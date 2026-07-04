@@ -79,3 +79,36 @@ def interpret(today: dict, similar: list[dict], frame_paths: list[Path],
                          risks=str(data.get("risks", "")))
     except Exception:
         return None
+
+
+_EXPLAIN_SYSTEM = (
+    "你是资深火烧云预报员。给你一条已知实际得分的历史案例卡与当天卫星云图"
+    "(红外:云顶越冷越亮;可见光:看纹理)。请解释为什么这天是这个分,"
+    "按五段输出:通道/云幕/大气/卫星形态/结论。判读口径:透光通道是否被"
+    "低云堵、云幕是否中高云带破口、空气是否通透、正在降水否决但雨后初晴是"
+    "利好。若预报与实际背离,点名哪一因子骗了预报。只输出这五段中文,"
+    "每段一两句。"
+)
+
+
+def explain(card_md: str, frame_paths: list[Path], client=None) -> str | None:
+    """案例复盘解读(analyze 命令用);失败静默 → None(spec 8)。"""
+    try:
+        if client is None:
+            import anthropic
+            client = anthropic.Anthropic()
+        content: list[dict] = [{"type": "text", "text": card_md}]
+        for p in frame_paths[:6]:
+            data = base64.standard_b64encode(Path(p).read_bytes()).decode()
+            content.append({"type": "image",
+                            "source": {"type": "base64", "media_type": "image/png",
+                                       "data": data}})
+        resp = client.messages.create(
+            model=MODEL, max_tokens=2000, thinking={"type": "adaptive"},
+            system=_EXPLAIN_SYSTEM,
+            messages=[{"role": "user", "content": content}],
+        )
+        text = next((b.text for b in resp.content if b.type == "text"), "")
+        return text.strip() or None
+    except Exception:
+        return None

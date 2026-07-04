@@ -207,6 +207,46 @@ def cloudmap(
     typer.echo(f"预报云图: {out}")
 
 
+@app.command()
+def analyze(
+    date: str = typer.Option(..., help="案例日期 YYYY-MM-DD"),
+    city: str = typer.Option("beijing"),
+    event: str = typer.Option("sunset_glow"),
+    db: Path = typer.Option(DEFAULT_DB),
+    no_llm: bool = typer.Option(False, "--no-llm"),
+    save: bool = typer.Option(False, "--save", help="把 LLM 解读存为案例笔记"),
+    note: str = typer.Option(None, "--note", help="追加一条用户笔记并退出"),
+):
+    """案例复盘:案例卡 + 云图 LLM 解读(为什么是这个分),沉淀经验笔记。"""
+    from skyfire.analyze import build_case_card
+    from skyfire.llm import explain
+    conn = _open_db(db)
+    case = store.case_by_key(conn, date, city, event)
+    if case is None:
+        typer.echo(f"错误:无案例 {date} {city} {event}(先 backfill/打分)", err=True)
+        raise typer.Exit(1)
+    if note:
+        store.add_case_note(conn, case["id"], "user", note)
+        typer.echo("✓ 已记用户笔记")
+        return
+    snaps = store.get_snapshots(conn, case["id"])
+    frames = store.get_frames(conn, case["id"])
+    notes = store.get_case_notes(conn, case["id"])
+    card = build_case_card(case, snaps, frames, notes)
+    typer.echo(card)
+    if no_llm:
+        return
+    paths = [Path(f["path"]) for f in frames if Path(f["path"]).exists()]
+    result = explain(card, paths)
+    if result is None:
+        typer.echo("\nAI 解读暂缺(无凭证或调用失败)", err=True)
+        return
+    typer.echo("\n===== AI 复盘 =====\n" + result)
+    if save:
+        store.add_case_note(conn, case["id"], "llm", result)
+        typer.echo("✓ 已存为案例笔记")
+
+
 @app.command("init-db")
 def init_db_cmd(db: Path = typer.Option(DEFAULT_DB)):
     """初始化经验库。"""

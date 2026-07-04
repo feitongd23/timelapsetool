@@ -1,7 +1,7 @@
 import json
 from types import SimpleNamespace
 
-from skyfire.llm import LlmResult, build_content, interpret
+from skyfire.llm import LlmResult, build_content, explain, interpret
 
 
 class _FakeMessages:
@@ -72,3 +72,18 @@ def test_build_content_caps_images(tmp_path):
         paths.append(p)
     content = build_content(_today(), [], paths)
     assert sum(1 for b in content if b["type"] == "image") == 3  # 最多 3 帧控成本
+
+
+def test_explain_returns_text():
+    fake = _FakeClient("通道:通畅…")
+    assert explain("卡片", [], client=fake) == "通道:通畅…"
+
+
+def test_explain_swallow_failure():
+    class _Boom:
+        class messages:
+            @staticmethod
+            def create(**kwargs):
+                raise RuntimeError
+
+    assert explain("卡片", [], client=_Boom()) is None
