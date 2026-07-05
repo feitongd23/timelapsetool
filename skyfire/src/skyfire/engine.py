@@ -23,7 +23,7 @@ from skyfire.himawari_hsd import (
     round_down_10min,
     segments_for,
 )
-from skyfire.llm import LlmResult, MODEL_FAST, interpret, predict_pct
+from skyfire.llm import LlmResult, MODEL_DEEP, interpret, predict_pct
 from skyfire.openmeteo import fetch_aod_at, fetch_channel_profile, fetch_point_forecast
 from skyfire.percent import baseline_percent
 from skyfire.rag import factor_vector, similar_cases_from
@@ -226,4 +226,6 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
 
 
 def _pick_model() -> str:
-    return MODEL_FAST
+    # 用户 2026-07-05 拍板:日常检查点用 Sonnet 5(Haiku 推理深度不够,
+    # 曾把干冷气团方向猜反;Sonnet 读图接近 Opus,月成本仍 <$6)。
+    return MODEL_DEEP
