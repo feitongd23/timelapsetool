@@ -122,6 +122,7 @@ def test_run_checkpoint_no_llm_pending(monkeypatch):
     # C1 早间展望:短时外推冒充不了届时云况 → 基线只用预报(不加云量修正)
     # rule 5.0 high → qual 50, prob 50(外推 52 不参与)
     assert rec["probability_pct"] == 50 and rec["quality_pct"] == 50
+    assert rec["per_model_pct"] == {"gfs_seamless": (50, 50)}
 
 
 def test_run_checkpoint_c3_uses_satellite_extrapolation(monkeypatch):
@@ -130,6 +131,7 @@ def test_run_checkpoint_c3_uses_satellite_extrapolation(monkeypatch):
                          date_type(2026, 7, 6), "c3")
     # C3 临近:外推 52% 落甜区 → prob 50+15=65
     assert rec["probability_pct"] == 65 and rec["quality_pct"] == 50
+    assert rec["per_model_pct"] == {"gfs_seamless": (65, 50)}
 
 
 def test_run_checkpoint_gated_skips_small_delta(monkeypatch):

@@ -181,10 +181,11 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
     # C1 早间展望距燃烧还有数小时:短时外推冒充不了届时云况
     # (knowledge §3.2:远期信预报当底子,临近才信实测外推),
     # 基线只用预报驱动的规则分;C2/C3/gated 临近才引入卫星外推修正。
-    if checkpoint == "c1":
-        prob, qual = baseline_percent(r.index, r.confidence, None, None)
-    else:
-        prob, qual = baseline_percent(r.index, r.confidence, sat_now, burn_pct)
+    cloud_args = (None, None) if checkpoint == "c1" else (sat_now, burn_pct)
+    prob, qual = baseline_percent(r.index, r.confidence, *cloud_args)
+    # 各模式单独换算(用户要求推送分模型;也喂给 LLM 看模式间分歧)
+    per_model_pct = {m: baseline_percent(s, r.confidence, *cloud_args)
+                     for m, s in r.per_model.items()}
 
     if gate:
         last = store.latest_prediction(conn, str(day), city_key, event)
@@ -197,7 +198,8 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
     payload = {"date": str(day), "event": event, "checkpoint": checkpoint,
                "hours_to_peak": hours_to_peak,
                "rule_score": r.index, "confidence": r.confidence,
-               "per_model": r.per_model, "aod": r.aod,
+               "per_model": r.per_model, "per_model_pct": per_model_pct,
+               "aod": r.aod,
                "sat_cloud_now": sat_now, "burn_cloud_projected": burn_pct,
                "trend": trend, "baseline_prob": prob, "baseline_quality": qual}
     cases = store.cases_with_snapshot(conn, city_key, event, model="gfs_seamless")
@@ -222,7 +224,7 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
     return {**rec, "id": pred_id, "date": str(day), "city": city_key,
             "event": event, "checkpoint": checkpoint, "rule_score": r.index,
             "sat_cloud_pct": sat_now, "trend": trend, "peak": r.peak,
-            "city_name": city.name}
+            "per_model_pct": per_model_pct, "city_name": city.name}
 
 
 def _pick_model() -> str:

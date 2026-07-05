@@ -35,6 +35,10 @@ def format_pct_report(rec: dict) -> tuple[str, str]:
         f"置信: {_CONF_ZH.get(rec['confidence'], rec['confidence'])}"
         f"  规则分 {rec['rule_score']}",
     ]
+    if rec.get("per_model_pct"):
+        lines.append("各模式(概率/质量): " + "  ".join(
+            f"{m.split('_')[0].upper()} {p:.0f}/{q:.0f}"
+            for m, (p, q) in rec["per_model_pct"].items()))
     if rec.get("trend"):
         lines.append(f"云量趋势: {rec['trend']}")
     if rec.get("llm_status") == "done":
