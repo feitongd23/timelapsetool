@@ -1,6 +1,7 @@
 import numpy as np
 
-from skyfire.drift import estimate_shift, extrapolated_corridor
+from skyfire.drift import (estimate_shift, extrapolated_corridor,
+                           projected_box_cloudiness)
 
 
 def _cloud_field(seed=7):
@@ -40,3 +41,14 @@ def test_extrapolated_corridor_backtracks_upstream():
                                 shift_per_frame=(0, 20), frames_ahead=6)  # 每帧东移 20px
     # 回溯采样点整体西移 120px → 更深入亮云带 → 预测云量高于当前
     assert sum(fut) > sum(now)
+
+
+def test_projected_box_cloudiness_samples_upstream():
+    gray = np.zeros((100, 100), dtype=np.uint8)
+    gray[40:60, 10:30] = 255          # 云块在西边(上游)
+    center = (50, 50)
+    # 云每帧向东移 dx=+10:3 帧后云到 center → 回溯采样 (50-30, 50)=(20,50) 命中云块
+    val = projected_box_cloudiness(gray, center, (0, 10), 3, half=8)
+    assert val > 80
+    # 不外推(0 帧)→ center 现在没云
+    assert projected_box_cloudiness(gray, center, (0, 10), 0, half=8) < 10

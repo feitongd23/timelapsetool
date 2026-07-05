@@ -31,3 +31,12 @@ def extrapolated_corridor(gray: np.ndarray, origin: tuple[int, int], azimuth_deg
     centers = corridor_centers(origin, azimuth_deg, step_px, n)
     return [box_cloudiness(gray, (cx + offset_x, cy + offset_y), half)
             for cx, cy in centers]
+
+
+def projected_box_cloudiness(gray: np.ndarray, center: tuple[int, int],
+                             shift_per_frame: tuple[int, int],
+                             frames_ahead: int, half: int = 40) -> float:
+    """燃烧时刻观测点上空云量外推:半拉格朗日回溯上游采样(同 corridor 思路)。"""
+    dy, dx = shift_per_frame
+    cx, cy = center
+    return box_cloudiness(gray, (cx - dx * frames_ahead, cy - dy * frames_ahead), half)
