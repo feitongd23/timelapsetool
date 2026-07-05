@@ -102,3 +102,56 @@ def test_notifications_dedup(tmp_path):
     # 重复 mark 幂等(不抛异常)
     store.mark_pushed(conn, "2026-07-04", "beijing", "sunset_glow")
     assert store.was_pushed(conn, "2026-07-04", "beijing", "sunset_glow") is True
+
+
+def _conn():
+    c = store.connect(":memory:")
+    store.init_db(c)
+    return c
+
+
+def test_prediction_roundtrip_and_latest():
+    c = _conn()
+    store.add_prediction(c, "2026-07-06", "beijing", "sunset_glow", "c1",
+                         probability_pct=60, quality_pct=55, confidence="medium",
+                         rule_score=4.2, sat_cloud_pct=None, trend=None,
+                         llm_status="pending", reasoning=None, risks=None)
+    store.add_prediction(c, "2026-07-06", "beijing", "sunset_glow", "c2",
+                         probability_pct=72, quality_pct=64, confidence="high",
+                         rule_score=5.0, sat_cloud_pct=48.0, trend="now=48%→burn=52%",
+                         llm_status="done", reasoning="通道通", risks="低云")
+    latest = store.latest_prediction(c, "2026-07-06", "beijing", "sunset_glow")
+    assert latest["checkpoint"] == "c2" and latest["probability_pct"] == 72
+    traj = store.predictions_for(c, "2026-07-06", "beijing", "sunset_glow")
+    assert [p["checkpoint"] for p in traj] == ["c1", "c2"]
+
+
+def test_checkpoint_idempotent_but_gated_repeatable():
+    c = _conn()
+    kw = dict(probability_pct=50, quality_pct=50, confidence="low",
+              rule_score=3.0, sat_cloud_pct=None, trend=None,
+              llm_status="pending", reasoning=None, risks=None)
+    store.add_prediction(c, "2026-07-06", "beijing", "sunset_glow", "c1", **kw)
+    assert store.has_checkpoint(c, "2026-07-06", "beijing", "sunset_glow", "c1")
+    import pytest, sqlite3
+    with pytest.raises(sqlite3.IntegrityError):
+        store.add_prediction(c, "2026-07-06", "beijing", "sunset_glow", "c1", **kw)
+    # gated 可多次
+    store.add_prediction(c, "2026-07-06", "beijing", "sunset_glow", "gated", **kw)
+    store.add_prediction(c, "2026-07-06", "beijing", "sunset_glow", "gated", **kw)
+    assert len(store.predictions_for(c, "2026-07-06", "beijing", "sunset_glow")) == 3
+
+
+def test_pending_and_unnoted_queries():
+    c = _conn()
+    kw = dict(probability_pct=50, quality_pct=50, confidence="low",
+              rule_score=3.0, sat_cloud_pct=None, trend=None,
+              llm_status="pending", reasoning=None, risks=None)
+    store.add_prediction(c, "2026-07-06", "beijing", "sunset_glow", "c1", **kw)
+    assert len(store.pending_predictions(c)) == 1
+    cid = store.upsert_case(c, "2026-07-01", "beijing", "sunset_glow",
+                            rule_score=1.0, confidence="low", source="feedback")
+    store.set_actual_score(c, cid, 8.0)
+    assert [x["id"] for x in store.closed_cases_without_llm_note(c)] == [cid]
+    store.add_case_note(c, cid, "llm", "复盘")
+    assert store.closed_cases_without_llm_note(c) == []

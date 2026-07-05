@@ -67,6 +67,27 @@ CREATE TABLE IF NOT EXISTS case_notes (
   text TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS predictions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL,
+  city TEXT NOT NULL,
+  event TEXT NOT NULL,
+  checkpoint TEXT NOT NULL CHECK(checkpoint IN ('c1','c2','c3','gated','manual')),
+  probability_pct REAL NOT NULL,
+  quality_pct REAL NOT NULL,
+  confidence TEXT,
+  rule_score REAL,
+  sat_cloud_pct REAL,
+  trend TEXT,
+  llm_status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(llm_status IN ('done','pending','skipped')),
+  reasoning TEXT,
+  risks TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pred_checkpoint
+  ON predictions(date, city, event, checkpoint)
+  WHERE checkpoint IN ('c1','c2','c3');
 CREATE UNIQUE INDEX IF NOT EXISTS idx_frames_dedup
   ON satellite_frames(case_id, ts, channel);
 """
@@ -230,3 +251,82 @@ def case_by_key(conn, date: str, city: str, event: str) -> dict | None:
     keys = ("id", "date", "city", "event", "rule_score", "llm_score",
             "actual_score", "confidence", "sat_cloud_pct")
     return dict(zip(keys, row))
+
+
+_PRED_KEYS = ("id", "date", "city", "event", "checkpoint", "probability_pct",
+              "quality_pct", "confidence", "rule_score", "sat_cloud_pct",
+              "trend", "llm_status", "reasoning", "risks", "created_at")
+
+
+def add_prediction(conn, date: str, city: str, event: str, checkpoint: str, *,
+                   probability_pct: float, quality_pct: float,
+                   confidence: str | None, rule_score: float | None,
+                   sat_cloud_pct: float | None, trend: str | None,
+                   llm_status: str, reasoning: str | None, risks: str | None) -> int:
+    cur = conn.execute(
+        """INSERT INTO predictions (date, city, event, checkpoint,
+             probability_pct, quality_pct, confidence, rule_score,
+             sat_cloud_pct, trend, llm_status, reasoning, risks)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (date, city, event, checkpoint, probability_pct, quality_pct,
+         confidence, rule_score, sat_cloud_pct, trend, llm_status,
+         reasoning, risks))
+    conn.commit()
+    return cur.lastrowid
+
+
+def _pred_rows(rows) -> list[dict]:
+    return [dict(zip(_PRED_KEYS, r)) for r in rows]
+
+
+def predictions_for(conn, date: str, city: str, event: str) -> list[dict]:
+    rows = conn.execute(
+        f"SELECT {','.join(_PRED_KEYS)} FROM predictions"
+        " WHERE date=? AND city=? AND event=? ORDER BY id",
+        (date, city, event)).fetchall()
+    return _pred_rows(rows)
+
+
+def latest_prediction(conn, date: str, city: str, event: str) -> dict | None:
+    rows = predictions_for(conn, date, city, event)
+    return rows[-1] if rows else None
+
+
+def has_checkpoint(conn, date: str, city: str, event: str, checkpoint: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM predictions WHERE date=? AND city=? AND event=? AND checkpoint=?",
+        (date, city, event, checkpoint)).fetchone() is not None
+
+
+def pending_predictions(conn) -> list[dict]:
+    rows = conn.execute(
+        f"SELECT {','.join(_PRED_KEYS)} FROM predictions"
+        " WHERE llm_status='pending' ORDER BY id").fetchall()
+    return _pred_rows(rows)
+
+
+def set_prediction_llm(conn, pred_id: int, status: str,
+                       reasoning: str | None = None, risks: str | None = None,
+                       probability_pct: float | None = None,
+                       quality_pct: float | None = None) -> None:
+    row = conn.execute("SELECT probability_pct, quality_pct FROM predictions"
+                       " WHERE id=?", (pred_id,)).fetchone()
+    p = probability_pct if probability_pct is not None else row[0]
+    q = quality_pct if quality_pct is not None else row[1]
+    conn.execute(
+        """UPDATE predictions SET llm_status=?, reasoning=?, risks=?,
+             probability_pct=?, quality_pct=? WHERE id=?""",
+        (status, reasoning, risks, p, q, pred_id))
+    conn.commit()
+
+
+def closed_cases_without_llm_note(conn) -> list[dict]:
+    """已闭环(有实际分)但还没有 LLM 复盘笔记的案例(catchup 用)。"""
+    rows = conn.execute(
+        """SELECT id, date, city, event, actual_score FROM cases
+           WHERE actual_score IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM case_notes
+                             WHERE case_id=cases.id AND author='llm')
+           ORDER BY date""").fetchall()
+    return [dict(zip(("id", "date", "city", "event", "actual_score"), r))
+            for r in rows]
