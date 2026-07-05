@@ -158,7 +158,7 @@ def observe_burn_clouds(client, peak_utc, event: str, lat: float, lon: float,
         # azimuth 只用于 live 图标注,粗值即可(西/东);精确方位角由 compute_prediction 另算
         render_annotated(dats1, "B13", CROP_BBOX, png, lat=lat, lon=lon,
                          azimuth_deg=270.0 if event == "sunset_glow" else 90.0)
-        trend = f"now={now_pct:.0f}%→burn={burn_pct:.0f}%"
+        trend = f"现在{now_pct:.0f}% → 届时约{burn_pct:.0f}%"
         return round(now_pct, 1), round(burn_pct, 1), trend, [png]
     except (httpx.HTTPError, OSError):
         return None, None, None, []
@@ -224,7 +224,8 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
     return {**rec, "id": pred_id, "date": str(day), "city": city_key,
             "event": event, "checkpoint": checkpoint, "rule_score": r.index,
             "sat_cloud_pct": sat_now, "trend": trend, "peak": r.peak,
-            "per_model_pct": per_model_pct, "city_name": city.name}
+            "per_model_pct": per_model_pct, "aod": r.aod,
+            "city_name": city.name}
 
 
 def _pick_model() -> str:

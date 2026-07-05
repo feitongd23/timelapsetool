@@ -43,12 +43,14 @@ def test_format_pct_report():
     rec = {"date": "2026-07-06", "event": "sunset_glow", "checkpoint": "c2",
            "probability_pct": 72.0, "quality_pct": 64.0, "confidence": "high",
            "rule_score": 5.0, "sat_cloud_pct": 48.0,
-           "trend": "now=48%→burn=52%", "llm_status": "done",
+           "trend": "现在48% → 届时约52%", "llm_status": "done", "aod": 0.25,
            "per_model_pct": {"ecmwf_ifs025": (72, 64), "gfs_seamless": (12, 10)},
            "reasoning": "通道通", "risks": "低云带", "city_name": "北京"}
     title, body = format_pct_report(rec)
     assert "概率72%" in title and "质量64%" in title and "北京" in title
-    assert "C2" in body and "now=48%→burn=52%" in body and "通道通" in body
+    assert "现在48% → 届时约52%" in body and "通道通" in body
+    assert "北京上空云量" in body and "AOD 0.25" in body and "通透" in body
+    assert "机会较大" in body and "可信度" in body
     assert "ECMWF 72/64" in body and "GFS 12/10" in body
 
 
@@ -59,4 +61,4 @@ def test_format_pct_report_pending():
            "llm_status": "pending", "reasoning": None, "risks": None,
            "city_name": "北京"}
     title, body = format_pct_report(rec)
-    assert "朝霞" in title and "AI 解读待补" in body
+    assert "朝霞" in title and "AI 解读暂缺" in body
