@@ -1,8 +1,11 @@
+from datetime import date as date_type
+
 import httpx
 
+import skyfire.engine as engine_mod
 from skyfire import store
-from skyfire.config import load_cities
-from skyfire.engine import PredictionResult, compute_prediction
+from skyfire.config import City, load_cities
+from skyfire.engine import PredictionResult, compute_prediction, run_checkpoint
 from skyfire.openmeteo import AIR_QUALITY_URL, MODELS
 from pathlib import Path
 
@@ -75,3 +78,57 @@ def test_compute_prediction_raises_on_all_models_missing(tmp_path):
     with pytest.raises(ValueError):
         compute_prediction(conn, client, city, "beijing", "sunset_glow",
                            date(2026, 7, 3), run_llm=False)
+
+
+def _fake_pr(index=5.0, confidence="high"):
+    from datetime import datetime, timezone
+    return PredictionResult(
+        city_name="北京", event="sunset_glow", day=date_type(2026, 7, 6),
+        index=index, confidence=confidence, spread=1.0,
+        per_model={"gfs_seamless": index}, blocked_points=0, channel_factor=1.0,
+        aod=0.3, channel_empty=False,
+        peak=datetime(2026, 7, 6, 19, 40, tzinfo=timezone.utc), azimuth=295.0,
+        llm=None)
+
+
+def _setup(monkeypatch, llm_result):
+    monkeypatch.setattr(engine_mod, "compute_prediction",
+                        lambda *a, **k: _fake_pr())
+    monkeypatch.setattr(engine_mod, "observe_burn_clouds",
+                        lambda *a, **k: (48.0, 52.0, "now=48%→burn=52%", []))
+    monkeypatch.setattr(engine_mod, "predict_pct", lambda *a, **k: llm_result)
+    conn = store.connect(":memory:")
+    store.init_db(conn)
+    city = City(key="beijing", name="北京", lat=39.9, lon=116.4,
+                timezone="Asia/Shanghai")
+    return conn, city
+
+
+def test_run_checkpoint_llm_done(monkeypatch):
+    llm = {"probability_pct": 72.0, "quality_pct": 64.0, "reasoning": "通",
+           "risks": "低云", "confidence": "high"}
+    conn, city = _setup(monkeypatch, llm)
+    rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
+                         date_type(2026, 7, 6), "c2")
+    assert rec["probability_pct"] == 72 and rec["llm_status"] == "done"
+    assert store.has_checkpoint(conn, "2026-07-06", "beijing", "sunset_glow", "c2")
+
+
+def test_run_checkpoint_no_llm_pending(monkeypatch):
+    conn, city = _setup(monkeypatch, None)      # LLM 失败/无 key
+    rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
+                         date_type(2026, 7, 6), "c1")
+    assert rec["llm_status"] == "pending"
+    # 免费层基线:rule 5.0 high → qual 50;外推 52 甜区 → prob 50+15=65
+    assert rec["probability_pct"] == 65 and rec["quality_pct"] == 50
+
+
+def test_run_checkpoint_gated_skips_small_delta(monkeypatch):
+    conn, city = _setup(monkeypatch, None)
+    run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
+                   date_type(2026, 7, 6), "c1")            # 落一版 prob=65
+    rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
+                         date_type(2026, 7, 6), "gated", gate=True)
+    assert rec is None                                      # Δ=0 < 15pp,不落库
+    assert len(store.predictions_for(conn, "2026-07-06", "beijing",
+                                     "sunset_glow")) == 1
