@@ -93,6 +93,63 @@ _EXPLAIN_SYSTEM = (
 )
 
 
+MODEL_FAST = "claude-haiku-4-5-20251001"   # 日常检查点
+MODEL_DEEP = "claude-sonnet-5"             # 疑难升级(spec §4)
+
+_PREDICT_SYSTEM = (
+    "你是资深火烧云预报员。给你免费层数据(多模式预报/规则分/卫星实测与"
+    "外推云量/趋势)、相似历史案例及经验笔记、当天判读云图。判读口径:"
+    "透光通道是否被低云堵(高云盖顶不算堵)、云幕是否连贯成片的中高云带破口"
+    "(零碎小块不算画布)、燃烧时刻云量以卫星实测/外推为准(预报数字只当"
+    "趋势底子)、空气与湿度压色、雨后初晴利好。只输出 JSON:"
+    '{"probability_pct": 0-100, "quality_pct": 0-100,'
+    ' "reasoning": 两三句中文, "risks": 一句最大风险,'
+    ' "confidence": "high|medium|low"}'
+)
+
+
+def predict_pct(payload: dict, similar: list[dict], frame_paths: list[Path],
+                model: str = MODEL_FAST, client=None) -> dict | None:
+    """检查点预测:免费层+案例+云图 → 百分数 JSON。失败静默 None(spec 8)。"""
+    try:
+        if client is None:
+            import anthropic
+            client = anthropic.Anthropic()
+        lines = [f"免费层数据: {json.dumps(payload, ensure_ascii=False)}",
+                 "历史相似案例(含经验笔记):"]
+        for c in similar:
+            lines.append(f"- {c['date']} 实际 {c['actual_score']} 分"
+                         f" 因子 {json.dumps(c.get('payload', {}), ensure_ascii=False)}")
+            if c.get("note"):
+                lines.append(f"  经验笔记: {c['note'][:120]}")
+        if not similar:
+            lines.append("- (暂无)")
+        content: list[dict] = [{"type": "text", "text": "\n".join(lines)}]
+        for p in frame_paths[:6]:
+            data = base64.standard_b64encode(Path(p).read_bytes()).decode()
+            content.append({"type": "image",
+                            "source": {"type": "base64", "media_type": "image/png",
+                                       "data": data}})
+        resp = client.messages.create(
+            model=model, max_tokens=1500, thinking={"type": "adaptive"},
+            system=_PREDICT_SYSTEM,
+            messages=[{"role": "user", "content": content}])
+        text = next((b.text for b in resp.content if b.type == "text"), "")
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if not m:
+            return None
+        d = json.loads(m.group(0))
+        prob, qual = float(d["probability_pct"]), float(d["quality_pct"])
+        if not (0 <= prob <= 100 and 0 <= qual <= 100):
+            return None
+        return {"probability_pct": prob, "quality_pct": qual,
+                "reasoning": str(d.get("reasoning", "")),
+                "risks": str(d.get("risks", "")),
+                "confidence": str(d.get("confidence", "medium"))}
+    except Exception:
+        return None
+
+
 def explain(card_md: str, frame_paths: list[Path], client=None) -> str | None:
     """案例复盘解读(analyze 命令用);失败静默 → None(spec 8)。"""
     try:

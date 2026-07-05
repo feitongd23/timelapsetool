@@ -1,7 +1,7 @@
 import json
 from types import SimpleNamespace
 
-from skyfire.llm import LlmResult, build_content, explain, interpret
+from skyfire.llm import LlmResult, MODEL_DEEP, MODEL_FAST, build_content, explain, interpret, predict_pct
 
 
 class _FakeMessages:
@@ -97,3 +97,28 @@ def test_build_content_includes_similar_case_note():
     content = build_content(today, similar, [])
     text = content[0]["text"]
     assert "西侧通道裂开是关键" in text
+
+
+def test_predict_pct_parses_json():
+    text = ('{"probability_pct": 72, "quality_pct": 64,'
+            ' "reasoning": "通道通+画布甜区", "risks": "低云带",'
+            ' "confidence": "high"}')
+    r = predict_pct({"rule_score": 5.0}, [], [], client=_FakeClient(text))
+    assert r == {"probability_pct": 72.0, "quality_pct": 64.0,
+                 "reasoning": "通道通+画布甜区", "risks": "低云带",
+                 "confidence": "high"}
+
+
+def test_predict_pct_rejects_out_of_range_and_failures():
+    bad = '{"probability_pct": 140, "quality_pct": 50, "reasoning": "", "risks": "", "confidence": "low"}'
+    assert predict_pct({}, [], [], client=_FakeClient(bad)) is None
+
+    class _Boom:
+        def __getattr__(self, name):
+            raise RuntimeError
+    assert predict_pct({}, [], [], client=_Boom()) is None
+
+
+def test_model_tiers_exist():
+    assert MODEL_FAST.startswith("claude-haiku")
+    assert MODEL_DEEP.startswith("claude-sonnet")
