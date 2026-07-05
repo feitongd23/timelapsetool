@@ -178,14 +178,24 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
     peak_utc = r.peak.astimezone(timezone.utc)
     sat_now, burn_pct, trend, live_frames = observe_burn_clouds(
         client, peak_utc, event, city.lat, city.lon, frames_dir)
-    prob, qual = baseline_percent(r.index, r.confidence, sat_now, burn_pct)
+    # C1 早间展望距燃烧还有数小时:短时外推冒充不了届时云况
+    # (knowledge §3.2:远期信预报当底子,临近才信实测外推),
+    # 基线只用预报驱动的规则分;C2/C3/gated 临近才引入卫星外推修正。
+    if checkpoint == "c1":
+        prob, qual = baseline_percent(r.index, r.confidence, None, None)
+    else:
+        prob, qual = baseline_percent(r.index, r.confidence, sat_now, burn_pct)
 
     if gate:
         last = store.latest_prediction(conn, str(day), city_key, event)
         if not gate_exceeded(last["probability_pct"] if last else None, prob):
             return None
 
+    from datetime import datetime as _dt
+    hours_to_peak = round((peak_utc - _dt.now(timezone.utc)).total_seconds()
+                          / 3600, 1)
     payload = {"date": str(day), "event": event, "checkpoint": checkpoint,
+               "hours_to_peak": hours_to_peak,
                "rule_score": r.index, "confidence": r.confidence,
                "per_model": r.per_model, "aod": r.aod,
                "sat_cloud_now": sat_now, "burn_cloud_projected": burn_pct,
