@@ -1,4 +1,5 @@
 """skyfire CLI:predict / cloudsea / backtest / init-db / nowcast / backfill。"""
+import shutil
 from datetime import date as date_type, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -8,6 +9,7 @@ import typer
 from PIL import Image
 
 from skyfire import store
+from skyfire.analyze import build_case_card, format_trajectory
 from skyfire.backfill import backfill_row, parse_csv
 from skyfire.backtest import spearman
 from skyfire.checkpoints import due_checkpoint
@@ -16,8 +18,10 @@ from skyfire.config import load_cities
 from skyfire.drift import estimate_shift, extrapolated_corridor
 from skyfire.engine import compute_prediction, run_checkpoint
 from skyfire.himawari import frame_age_minutes
-from skyfire.himawari_hsd import (CROP_BBOX, download_segments, latest_slot,
+from skyfire.himawari_hsd import (CROP_BBOX, download_segments, fetch_case_frames,
+                                  latest_slot, observer_cloudiness,
                                   round_down_10min, segments_for)
+from skyfire.llm import explain
 from skyfire.nowcast import fuse, obs_score
 from skyfire.notifyconf import load_notify_config
 from skyfire.openmeteo import fetch_point_forecast
@@ -34,6 +38,7 @@ DEFAULT_DB = Path(__file__).parent.parent.parent / "data" / "skyfire.db"
 DEFAULT_FRAMES = Path(__file__).parent.parent.parent / "data" / "frames"
 DEFAULT_NOTIFY = Path(__file__).parent.parent.parent / "config" / "notify.local.yaml"
 DEFAULT_GRIDMAPS = Path(__file__).parent.parent.parent / "data" / "gridmaps"
+DEFAULT_PHOTOS = Path(__file__).parent.parent.parent / "data" / "photos"
 
 CONF_ZH = {"high": "高", "medium": "中", "low": "低(模式打架)", "degraded": "降级(数据不全)"}
 
@@ -219,8 +224,6 @@ def analyze(
     note: str = typer.Option(None, "--note", help="追加一条用户笔记并退出"),
 ):
     """案例复盘:案例卡 + 云图 LLM 解读(为什么是这个分),沉淀经验笔记。"""
-    from skyfire.analyze import build_case_card
-    from skyfire.llm import explain
     conn = _open_db(db)
     case = store.case_by_key(conn, date, city, event)
     if case is None:
@@ -481,6 +484,93 @@ def checkpoint(
     title, body = format_pct_report(rec)
     typer.echo(title)
     typer.echo(body)
+
+
+def _ensure_case_frames(conn, client, case_id: int, city, city_key: str,
+                        event: str, day) -> int:
+    """反馈闭环:该案例还没有卫星帧则回填(尽力),返回新增帧数。"""
+    if store.get_frames(conn, case_id):
+        return 0
+    win = sun_window(city.lat, city.lon, city.timezone, day,
+                     "sunrise_glow" if event == "cloud_sea" else event)
+    peak_utc = win.peak.astimezone(timezone.utc)
+    prefix = f"{city_key}_{day}_{event}"
+    saved = 0
+    for ts, ch, path in fetch_case_frames(
+            client, peak_utc, DEFAULT_FRAMES, prefix=prefix, event=event,
+            lat=city.lat, lon=city.lon, azimuth_deg=win.azimuth_deg):
+        store.add_satellite_frame(conn, case_id, ts.isoformat(), ch, str(path))
+        saved += 1
+    pct = observer_cloudiness(client, peak_utc, event, city.lat, city.lon)
+    if pct is not None:
+        store.set_sat_cloud(conn, case_id, pct)
+    return saved
+
+
+@app.command()
+def feedback(
+    date: str = typer.Option(..., help="案例日期 YYYY-MM-DD"),
+    city: str = typer.Option("beijing"),
+    event: str = typer.Option("sunset_glow"),
+    score: float = typer.Option(None, help="实际得分 0-10"),
+    photo: Path = typer.Option(None, help="实拍照片路径"),
+    wrong: bool = typer.Option(False, "--wrong", help="仅标记'预报不准'"),
+    config: Path = typer.Option(DEFAULT_CONFIG),
+    db: Path = typer.Option(DEFAULT_DB),
+    photos_dir: Path = typer.Option(DEFAULT_PHOTOS),
+):
+    """反馈闭环:落实际得分/照片 → 自动复盘写经验笔记(spec §5)。"""
+    if score is None and photo is None and not wrong:
+        typer.echo("错误:至少给 --score / --photo / --wrong 之一", err=True)
+        raise typer.Exit(1)
+    cities = load_cities(config)
+    if city not in cities:
+        typer.echo(f"错误:未知城市 {city!r}", err=True)
+        raise typer.Exit(1)
+    c = cities[city]
+    day = _parse_date(date, None)
+    conn = _open_db(db)
+    case = store.case_by_key(conn, date, city, event)
+    if case is None:
+        cid = store.upsert_case(conn, date, city, event, rule_score=None,
+                                confidence=None, source="feedback")
+    else:
+        cid = case["id"]
+    if score is not None:
+        store.set_actual_score(conn, cid, score)
+    photo_saved = None
+    if photo is not None:
+        photos_dir.mkdir(parents=True, exist_ok=True)
+        photo_saved = photos_dir / f"{city}_{date}_{event}{photo.suffix}"
+        shutil.copy(photo, photo_saved)
+        conn.execute("INSERT INTO photos (case_id, score, path) VALUES (?,?,?)",
+                     (cid, score, str(photo_saved)))
+        conn.commit()
+    typer.echo(f"✓ 已记录反馈: {date} {event}"
+               + (f" 实际 {score} 分" if score is not None else " (预报不准)"))
+
+    client = _make_client()
+    n = _ensure_case_frames(conn, client, cid, c, city, event, day)
+    if n:
+        typer.echo(f"✓ 已补当日卫星帧 {n} 张")
+    case = store.case_by_key(conn, date, city, event)
+    card = build_case_card(case, store.get_snapshots(conn, cid),
+                           store.get_frames(conn, cid),
+                           store.get_case_notes(conn, cid))
+    card += "\n\n" + format_trajectory(store.predictions_for(conn, date,
+                                                             city, event))
+    if wrong and score is None:
+        card += "\n\n(用户反馈:预报不准,实际得分未知)"
+    paths = [Path(f["path"]) for f in store.get_frames(conn, cid)
+             if Path(f["path"]).exists()]
+    if photo_saved is not None:
+        paths.append(photo_saved)
+    result = explain(card, paths)
+    if result is None:
+        typer.echo("AI 复盘待补(无凭证或调用失败),稍后 skyfire catchup 补跑")
+        return
+    store.add_case_note(conn, cid, "llm", result)
+    typer.echo("===== AI 复盘 =====\n" + result)
 
 
 if __name__ == "__main__":

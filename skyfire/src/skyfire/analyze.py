@@ -48,3 +48,17 @@ def build_case_card(case: dict, snapshots: list[dict], frames: list[dict],
     else:
         lines.append("(待分析)")
     return "\n".join(lines)
+
+
+def format_trajectory(preds: list[dict]) -> str:
+    """预测轨迹 → 复盘输入文本(哪版对哪版错,教训在轨迹里)。"""
+    if not preds:
+        return "(当日无预测记录)"
+    lines = ["## 预测轨迹"]
+    for p in preds:
+        lines.append(
+            f"- {p['checkpoint'].upper()} 概率{p['probability_pct']:.0f}%"
+            f" 质量{p['quality_pct']:.0f}% 规则分{p['rule_score']}"
+            f" 实测云量{p['sat_cloud_pct']}% 趋势{p['trend']}"
+            f" [{p['llm_status']}]")
+    return "\n".join(lines)

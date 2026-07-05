@@ -77,3 +77,21 @@ def test_cases_with_snapshot_carries_latest_note():
     cases = store.cases_with_snapshot(conn, "beijing", "sunset_glow",
                                       model="gfs_seamless")
     assert cases[0]["note"] == "西侧通道裂开是关键"
+
+
+def test_case_card_appends_prediction_trajectory():
+    conn = store.connect(":memory:")
+    store.init_db(conn)
+    cid = _mk_case(conn)
+    store.add_prediction(conn, "2026-05-06", "beijing", "sunset_glow", "c1",
+                         probability_pct=40, quality_pct=35, confidence="low",
+                         rule_score=3.5, sat_cloud_pct=None, trend=None,
+                         llm_status="pending", reasoning=None, risks=None)
+    store.add_prediction(conn, "2026-05-06", "beijing", "sunset_glow", "c3",
+                         probability_pct=80, quality_pct=75, confidence="high",
+                         rule_score=5.0, sat_cloud_pct=54.0, trend="now=54%→burn=50%",
+                         llm_status="done", reasoning="通道通", risks="-")
+    from skyfire.analyze import format_trajectory
+    txt = format_trajectory(store.predictions_for(conn, "2026-05-06",
+                                                  "beijing", "sunset_glow"))
+    assert "C1 概率40% 质量35%" in txt and "C3 概率80% 质量75%" in txt

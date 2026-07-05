@@ -284,3 +284,45 @@ def test_tick_skips_already_run_checkpoint(tmp_path, monkeypatch):
                          llm_status="pending", reasoning=None, risks=None)
     result = runner.invoke(app, ["tick", "--db", str(db)])
     assert result.exit_code == 0 and called == []   # 幂等:已跑过不重跑
+
+
+def test_feedback_closes_case_saves_photo_and_triggers_retro(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    from skyfire import store
+    db = tmp_path / "t.db"
+    conn = store.connect(db); store.init_db(conn)
+    store.upsert_case(conn, "2026-07-06", "beijing", "sunset_glow",
+                      rule_score=5.0, confidence="high", source="auto")
+    photo = tmp_path / "shot.jpg"; photo.write_bytes(b"jpg")
+    monkeypatch.setattr(cli, "explain", lambda card, paths: "复盘:预测偏低,通道其实开")
+    monkeypatch.setattr(cli, "_ensure_case_frames", lambda *a, **k: 0)
+    result = runner.invoke(cli.app, [
+        "feedback", "--date", "2026-07-06", "--score", "9",
+        "--photo", str(photo), "--db", str(db),
+        "--photos-dir", str(tmp_path / "photos")])
+    assert result.exit_code == 0
+    case = store.case_by_key(conn, "2026-07-06", "beijing", "sunset_glow")
+    assert case["actual_score"] == 9.0
+    notes = store.get_case_notes(conn, case["id"])
+    assert notes and notes[-1]["author"] == "llm"
+    saved = list((tmp_path / "photos").glob("*"))
+    assert len(saved) == 1
+    row = conn.execute("SELECT path FROM photos WHERE case_id=?",
+                       (case["id"],)).fetchone()
+    assert row and str(tmp_path / "photos") in row[0]
+
+
+def test_feedback_no_llm_leaves_pending(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    from skyfire import store
+    db = tmp_path / "t.db"
+    conn = store.connect(db); store.init_db(conn)
+    monkeypatch.setattr(cli, "explain", lambda card, paths: None)   # 无 key
+    monkeypatch.setattr(cli, "_ensure_case_frames", lambda *a, **k: 0)
+    result = runner.invoke(cli.app, [
+        "feedback", "--date", "2026-07-06", "--wrong", "--db", str(db)])
+    assert result.exit_code == 0
+    assert "待补" in result.output
+    case = store.case_by_key(conn, "2026-07-06", "beijing", "sunset_glow")
+    assert case is not None                     # 案例被创建
+    assert store.get_case_notes(conn, case["id"]) == []   # 笔记 pending(无)
