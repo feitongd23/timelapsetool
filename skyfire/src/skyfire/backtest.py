@@ -28,3 +28,32 @@ def spearman(xs: list[float], ys: list[float]) -> float:
     if vx == 0 or vy == 0:
         raise ValueError("zero variance in ranks")
     return cov / (vx * vy) ** 0.5
+
+
+def pct_report(rows: list[dict]) -> dict:
+    """终版预测百分数 vs 实际得分:相关性 + 命中率(spec 里程碑 4)。
+
+    报烧 = probability_pct>=50;真烧 = actual_score>=6。
+    """
+    n = len(rows)
+    out = {"n": n, "spearman_quality": None,
+           "hit_rate": None, "precision": None, "recall": None}
+    if n >= 3:
+        try:
+            out["spearman_quality"] = spearman(
+                [r["quality_pct"] for r in rows],
+                [r["actual_score"] for r in rows])
+        except ValueError:
+            pass
+    if n:
+        tp = sum(1 for r in rows if r["probability_pct"] >= 50
+                 and r["actual_score"] >= 6)
+        fp = sum(1 for r in rows if r["probability_pct"] >= 50
+                 and r["actual_score"] < 6)
+        fn = sum(1 for r in rows if r["probability_pct"] < 50
+                 and r["actual_score"] >= 6)
+        tn = n - tp - fp - fn
+        out["hit_rate"] = (tp + tn) / n
+        out["precision"] = tp / (tp + fp) if tp + fp else None
+        out["recall"] = tp / (tp + fn) if tp + fn else None
+    return out

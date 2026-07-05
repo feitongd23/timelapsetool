@@ -11,7 +11,7 @@ from PIL import Image
 from skyfire import store
 from skyfire.analyze import build_case_card, format_trajectory
 from skyfire.backfill import backfill_row, parse_csv
-from skyfire.backtest import spearman
+from skyfire.backtest import pct_report, spearman
 from skyfire.checkpoints import due_checkpoint
 from skyfire.cloudiness import box_cloudiness
 from skyfire.config import load_cities
@@ -163,9 +163,26 @@ def cloudsea(
 def backtest(
     city: str = typer.Option("beijing"),
     db: Path = typer.Option(DEFAULT_DB),
+    pct: bool = typer.Option(False, "--pct", help="百分数回测(质量%/概率% vs 实际,spec 里程碑 4)"),
 ):
     """规则分 vs 实际打分的 Spearman 相关性(spec 9 首要验收)。"""
     conn = _open_db(db)
+    if pct:
+        rows = conn.execute(
+            """SELECT p.quality_pct, p.probability_pct, c.actual_score
+               FROM cases c JOIN predictions p
+                 ON p.date=c.date AND p.city=c.city AND p.event=c.event
+               WHERE c.city=? AND c.actual_score IS NOT NULL
+                 AND p.id = (SELECT MAX(id) FROM predictions
+                             WHERE date=c.date AND city=c.city AND event=c.event)
+            """, (city,)).fetchall()
+        r = pct_report([{"quality_pct": q, "probability_pct": pr,
+                         "actual_score": a} for q, pr, a in rows])
+        rho_disp = r["spearman_quality"] if r["spearman_quality"] is None else round(r["spearman_quality"], 3)
+        typer.echo(f"百分数回测: {r['n']} 条  质量%↔实际 Spearman ρ={rho_disp}")
+        typer.echo(f"命中率 {r['hit_rate']}  精确率 {r['precision']}"
+                   f"  召回 {r['recall']}(报烧=概率≥50,真烧=实际≥6)")
+        return
     cases = store.scored_cases(conn, city)
     if len(cases) < 3:
         typer.echo(f"案例不足({len(cases)} 条,需 ≥3):先积累打分或跑冷启动回填(Plan B)", err=True)
