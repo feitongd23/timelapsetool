@@ -132,10 +132,12 @@ def predict_pct(payload: dict, similar: list[dict], frame_paths: list[Path],
             content.append({"type": "image",
                             "source": {"type": "base64", "media_type": "image/png",
                                        "data": data}})
+        kwargs = {}
+        if not model.startswith("claude-haiku"):
+            kwargs["thinking"] = {"type": "adaptive"}  # Haiku 4.5 不支持 adaptive
         resp = client.messages.create(
-            model=model, max_tokens=1500, thinking={"type": "adaptive"},
-            system=_PREDICT_SYSTEM,
-            messages=[{"role": "user", "content": content}])
+            model=model, max_tokens=1500, system=_PREDICT_SYSTEM,
+            messages=[{"role": "user", "content": content}], **kwargs)
         text = next((b.text for b in resp.content if b.type == "text"), "")
         m = re.search(r"\{.*\}", text, re.DOTALL)
         if not m:

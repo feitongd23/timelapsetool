@@ -122,3 +122,27 @@ def test_predict_pct_rejects_out_of_range_and_failures():
 def test_model_tiers_exist():
     assert MODEL_FAST.startswith("claude-haiku")
     assert MODEL_DEEP.startswith("claude-sonnet")
+
+
+def test_predict_pct_omits_thinking_for_haiku():
+    """Haiku 4.5 不支持 adaptive thinking(实测 400),不发该参数。"""
+    from types import SimpleNamespace
+    captured = {}
+    text = ('{"probability_pct": 50, "quality_pct": 50,'
+            ' "reasoning": "r", "risks": "k", "confidence": "low"}')
+
+    class _Cap:
+        def __init__(self):
+            self.messages = SimpleNamespace(create=self._create)
+
+        def _create(self, **kw):
+            captured.update(kw)
+            return SimpleNamespace(
+                content=[SimpleNamespace(type="text", text=text)])
+
+    from skyfire.llm import MODEL_DEEP, MODEL_FAST
+    assert predict_pct({}, [], [], model=MODEL_FAST, client=_Cap()) is not None
+    assert "thinking" not in captured
+    captured.clear()
+    assert predict_pct({}, [], [], model=MODEL_DEEP, client=_Cap()) is not None
+    assert captured.get("thinking") == {"type": "adaptive"}
