@@ -232,32 +232,55 @@ def test_notify_no_config_reports_and_exits(tmp_path, monkeypatch):
     assert "未配置" in result.output
 
 
-def test_tick_pushes_due_and_dedups(tmp_path, monkeypatch):
+def test_tick_no_config_silent_exit(tmp_path, monkeypatch):
     import skyfire.cli as cli
-    from skyfire.engine import PredictionResult
-    from datetime import datetime
-    from skyfire import store
-
-    calls = {"push": 0}
-
-    def _fake_compute(conn, client, c, city, event, day, run_llm=True):
-        return PredictionResult(city_name="北京", event=event, day=day, index=6.0,
-                                confidence="high", spread=0.0,
-                                per_model={"gfs_seamless": 6.0}, blocked_points=0,
-                                channel_factor=1.0, aod=0.2, channel_empty=False,
-                                peak=datetime(2026, 7, 4, 19, 46), azimuth=300.0, llm=None)
-
-    monkeypatch.setattr(cli, "_make_client", lambda: None)
-    monkeypatch.setattr(cli, "compute_prediction", _fake_compute)
-    monkeypatch.setattr(cli, "push", lambda *a, **k: calls.__setitem__("push", calls["push"] + 1) or True)
-    monkeypatch.setattr(cli, "due_events", lambda cities, now, lead_minutes: [("beijing", "sunset_glow")])
-
-    ncfg = tmp_path / "notify.yaml"
-    ncfg.write_text("provider: bark\nkey: K\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "load_notify_config", lambda p: None)
     db = tmp_path / "sky.db"
-    r1 = runner.invoke(app, ["tick", "--db", str(db), "--notify-config", str(ncfg)])
-    assert r1.exit_code == 0, r1.output
-    assert calls["push"] == 1
-    r2 = runner.invoke(app, ["tick", "--db", str(db), "--notify-config", str(ncfg)])
-    assert r2.exit_code == 0
-    assert calls["push"] == 1  # 已推,去重不再推
+    result = runner.invoke(app, ["tick", "--db", str(db),
+                                 "--notify-config", str(tmp_path / "nope.yaml")])
+    assert result.exit_code == 0
+    assert result.output == ""
+
+
+def test_tick_runs_due_checkpoint_and_pushes(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    pushed = []
+    monkeypatch.setattr(cli, "load_notify_config",
+                        lambda p: {"provider": "bark", "key": "k"})
+    monkeypatch.setattr(cli, "push", lambda t, b, cfg: pushed.append(t) or True)
+    monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev:
+                        "c1" if ev == "sunset_glow" else None)
+    rec = {"probability_pct": 65.0, "quality_pct": 50.0, "confidence": "high",
+           "llm_status": "pending", "reasoning": None, "risks": None,
+           "date": "2026-07-06", "event": "sunset_glow", "checkpoint": "c1",
+           "rule_score": 5.0, "sat_cloud_pct": None, "trend": None,
+           "city_name": "北京"}
+    calls = []
+    monkeypatch.setattr(cli, "run_checkpoint",
+                        lambda *a, **k: calls.append((a, k)) or rec)
+    db = tmp_path / "t.db"
+    result = runner.invoke(app, ["tick", "--db", str(db)])
+    assert result.exit_code == 0
+    assert len(pushed) == 1 and "概率65%" in pushed[0]
+
+
+def test_tick_skips_already_run_checkpoint(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    from skyfire import store
+    monkeypatch.setattr(cli, "load_notify_config",
+                        lambda p: {"provider": "bark", "key": "k"})
+    monkeypatch.setattr(cli, "push", lambda t, b, cfg: True)
+    monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev:
+                        "c1" if ev == "sunset_glow" else None)
+    called = []
+    monkeypatch.setattr(cli, "run_checkpoint", lambda *a, **k: called.append(1))
+    db = tmp_path / "t.db"
+    conn = store.connect(db); store.init_db(conn)
+    from datetime import date as _d
+    today = str(_d.today())
+    store.add_prediction(conn, today, "beijing", "sunset_glow", "c1",
+                         probability_pct=50, quality_pct=50, confidence="low",
+                         rule_score=3.0, sat_cloud_pct=None, trend=None,
+                         llm_status="pending", reasoning=None, risks=None)
+    result = runner.invoke(app, ["tick", "--db", str(db)])
+    assert result.exit_code == 0 and called == []   # 幂等:已跑过不重跑

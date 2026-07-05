@@ -1,6 +1,7 @@
 """skyfire CLI:predict / cloudsea / backtest / init-db / nowcast / backfill。"""
 from datetime import date as date_type, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 import typer
@@ -9,20 +10,20 @@ from PIL import Image
 from skyfire import store
 from skyfire.backfill import backfill_row, parse_csv
 from skyfire.backtest import spearman
+from skyfire.checkpoints import due_checkpoint
 from skyfire.cloudiness import box_cloudiness
 from skyfire.config import load_cities
 from skyfire.drift import estimate_shift, extrapolated_corridor
-from skyfire.engine import compute_prediction
+from skyfire.engine import compute_prediction, run_checkpoint
 from skyfire.himawari import frame_age_minutes
 from skyfire.himawari_hsd import (CROP_BBOX, download_segments, latest_slot,
                                   round_down_10min, segments_for)
 from skyfire.nowcast import fuse, obs_score
-from skyfire.notifyconf import DEFAULT_LEAD_MINUTES, load_notify_config
+from skyfire.notifyconf import load_notify_config
 from skyfire.openmeteo import fetch_point_forecast
 from skyfire.push import push
 from skyfire.render import load_b13_region
-from skyfire.report import format_report
-from skyfire.schedule import due_events
+from skyfire.report import format_pct_report, format_report
 from skyfire.scoring.cloudsea import CloudSeaInputs, cloud_sea_score
 from skyfire.suntimes import sun_window
 
@@ -409,28 +410,77 @@ def tick(
     db: Path = typer.Option(DEFAULT_DB),
     notify_config: Path = typer.Option(DEFAULT_NOTIFY),
 ):
-    """调度入口:到点的城市×天象自动预测+推送(launchd 每 30 分钟调一次)。"""
+    """调度入口:检查点驱动的自动预测+推送(launchd 每 30 分钟调一次)。
+
+    每个城市×天象×(今天/明天)判断是否到点(c1/c2/c3);到点未跑过则跑一版并推送;
+    检查点之间(c1 已跑、峰值未到)用免费层门控,概率摆动超 15pp 才补跑一版。
+    """
     ncfg = load_notify_config(notify_config)
     if ncfg is None:
         return  # 未配置推送:静默退出(launchd 频繁调用,不刷错误)
     cities = load_cities(config)
     conn = _open_db(db)
     now = datetime.now(timezone.utc)
-    lead = ncfg.get("lead_minutes", DEFAULT_LEAD_MINUTES)
-    for city, event in due_events(cities, now, lead_minutes=lead):
-        today = str(now.astimezone().date())
-        if store.was_pushed(conn, today, city, event):
-            continue
-        client = _make_client()
-        try:
-            r = compute_prediction(conn, client, cities[city], city, event,
-                                   date_type.today(), run_llm=True)
-        except (httpx.HTTPError, ValueError):
-            continue  # 单城失败不影响其他(spec 8)
-        title, body = format_report(r)
-        push(title, body, ncfg)
-        store.mark_pushed(conn, today, city, event)
-        typer.echo(f"✓ {city} {event}: {title}")
+    for city_key, c in cities.items():
+        now_local = now.astimezone(ZoneInfo(c.timezone))
+        for event in ("sunset_glow", "sunrise_glow"):
+            for day_offset in (0, 1):
+                day = (now_local + timedelta(days=day_offset)).date()
+                win = sun_window(c.lat, c.lon, c.timezone, day, event)
+                cp = due_checkpoint(now_local, win.peak, event)
+                pred_date = str(win.peak.date())
+                client = _make_client()
+                try:
+                    if cp is not None:
+                        if store.has_checkpoint(conn, pred_date, city_key,
+                                                event, cp):
+                            break  # 该检查点已跑过:该 event 已处理,不看另一天
+                        rec = run_checkpoint(conn, client, c, city_key, event,
+                                             win.peak.date(), cp)
+                    else:
+                        # 检查点之间:c1 之后到峰值前,免费层门控
+                        c1_done = store.has_checkpoint(conn, pred_date,
+                                                       city_key, event, "c1")
+                        to_peak = (win.peak - now_local).total_seconds() / 60
+                        if not (c1_done and 0 < to_peak):
+                            continue
+                        rec = run_checkpoint(conn, client, c, city_key, event,
+                                             win.peak.date(), "gated", gate=True)
+                    if rec is None:
+                        continue
+                    title, body = format_pct_report(rec)
+                    push(title, body, ncfg)
+                    typer.echo(f"✓ {city_key} {event} [{rec['checkpoint']}]"
+                               f" {title}")
+                except (httpx.HTTPError, ValueError):
+                    continue  # 单城失败不影响其他(spec 8)
+                break  # 该 event 已按其中一天处理,不再看另一天
+
+
+@app.command()
+def checkpoint(
+    cp: str = typer.Option("manual", help="c1|c2|c3|gated|manual"),
+    city: str = typer.Option("beijing"),
+    event: str = typer.Option("sunset_glow"),
+    date: str = typer.Option(None, help="YYYY-MM-DD,默认今天"),
+    config: Path = typer.Option(DEFAULT_CONFIG),
+    db: Path = typer.Option(DEFAULT_DB),
+):
+    """手动跑一个预测检查点(调试/补跑)。"""
+    cities = load_cities(config)
+    if city not in cities:
+        typer.echo(f"错误:未知城市 {city!r}", err=True)
+        raise typer.Exit(1)
+    day = _parse_date(date, date_type.today())
+    conn = _open_db(db)
+    rec = run_checkpoint(conn, _make_client(), cities[city], city, event,
+                         day, cp)
+    if rec is None:
+        typer.echo("门控未触发,无更新")
+        return
+    title, body = format_pct_report(rec)
+    typer.echo(title)
+    typer.echo(body)
 
 
 if __name__ == "__main__":

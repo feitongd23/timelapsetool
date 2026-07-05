@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from skyfire.engine import PredictionResult
 from skyfire.llm import LlmResult
-from skyfire.report import format_report
+from skyfire.report import format_pct_report, format_report
 
 
 def _result(**kw):
@@ -37,3 +37,24 @@ def test_format_report_includes_llm_when_present():
 def test_format_report_sunrise_label():
     title, _ = format_report(_result(event="sunrise_glow"))
     assert "朝霞" in title
+
+
+def test_format_pct_report():
+    rec = {"date": "2026-07-06", "event": "sunset_glow", "checkpoint": "c2",
+           "probability_pct": 72.0, "quality_pct": 64.0, "confidence": "high",
+           "rule_score": 5.0, "sat_cloud_pct": 48.0,
+           "trend": "now=48%→burn=52%", "llm_status": "done",
+           "reasoning": "通道通", "risks": "低云带", "city_name": "北京"}
+    title, body = format_pct_report(rec)
+    assert "概率72%" in title and "质量64%" in title and "北京" in title
+    assert "C2" in body and "now=48%→burn=52%" in body and "通道通" in body
+
+
+def test_format_pct_report_pending():
+    rec = {"date": "2026-07-06", "event": "sunrise_glow", "checkpoint": "c1",
+           "probability_pct": 40.0, "quality_pct": 35.0, "confidence": "low",
+           "rule_score": 3.5, "sat_cloud_pct": None, "trend": None,
+           "llm_status": "pending", "reasoning": None, "risks": None,
+           "city_name": "北京"}
+    title, body = format_pct_report(rec)
+    assert "朝霞" in title and "AI 解读待补" in body
