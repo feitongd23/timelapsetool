@@ -16,7 +16,7 @@ def format_report(r: PredictionResult) -> tuple[str, str]:
         f"{when_zh}: {r.peak.strftime('%H:%M')}  方位 {r.azimuth:.0f}°",
     ]
     if r.channel_empty:
-        lines.append("⚠️ 通道数据缺失,置信度参考价值打折")
+        lines.append("通道数据缺失,置信度参考价值打折")
     if r.llm is not None:
         lines.append(f"AI 修正分: {r.llm.llm_score}/10  {r.llm.analysis}")
         lines.append(f"风险: {r.llm.risks}")
@@ -64,28 +64,28 @@ def format_pct_report(rec: dict) -> tuple[str, str]:
     if peak is not None:
         when = "日落" if sunset else "日出"
         best = "其后约15分钟" if sunset else "其前约15分钟"
-        lines.append(f"⏰ {when} {peak.strftime('%H:%M')}(最佳观赏在{best})")
-    lines.append(f"🔥 概率 {rec['probability_pct']:.0f}%"
+        lines.append(f"{when} {peak.strftime('%H:%M')}(最佳观赏在{best})")
+    lines.append(f"概率 {rec['probability_pct']:.0f}%"
                  f"({_prob_word(rec['probability_pct'])})"
                  f" · 质量 {rec['quality_pct']:.0f}%"
                  f"({_qual_word(rec['quality_pct'])})")
     if rec.get("per_model_pct"):
-        lines.append("📊 各模式看法(概率/质量): " + "  ".join(
+        lines.append("各模式看法(概率/质量): " + "  ".join(
             f"{m.split('_')[0].upper()} {p:.0f}/{q:.0f}"
             for m, (p, q) in rec["per_model_pct"].items()))
     if rec.get("trend"):
-        lines.append(f"☁️ {rec['city_name']}上空云量: {rec['trend']}")
+        lines.append(f"{rec['city_name']}上空云量: {rec['trend']}")
     if "aod" in rec:
         aod = rec["aod"]
         aod_s = f"{aod}" if aod is not None else "—"
-        lines.append(f"🌫 空气(气溶胶AOD {aod_s}): {_aod_word(aod)}")
-    lines.append(f"🎯 可信度: "
+        lines.append(f"空气(气溶胶AOD {aod_s}): {_aod_word(aod)}")
+    lines.append(f"可信度: "
                  f"{_CONF_PLAIN.get(rec['confidence'], rec['confidence'])}")
-    lines.append(f"📐 物理底分 {rec['rule_score']}/10"
+    lines.append(f"物理底分 {rec['rule_score']}/10"
                  f"(按云量·透光通道·降水等硬条件的打分)")
     if rec.get("llm_status") == "done":
-        lines.append(f"💡 解读: {rec['reasoning']}")
-        lines.append(f"⚠️ 风险: {rec['risks']}")
+        lines.append(f"解读: {rec['reasoning']}")
+        lines.append(f"风险: {rec['risks']}")
     else:
-        lines.append("💡 AI 解读暂缺,以上为基础数据")
+        lines.append("AI 解读暂缺,以上为基础数据")
     return title, "\n".join(lines)
