@@ -326,3 +326,26 @@ def test_feedback_no_llm_leaves_pending(tmp_path, monkeypatch):
     case = store.case_by_key(conn, "2026-07-06", "beijing", "sunset_glow")
     assert case is not None                     # 案例被创建
     assert store.get_case_notes(conn, case["id"]) == []   # 笔记 pending(无)
+
+
+def test_catchup_retro_notes_and_prediction_pending(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    from skyfire import store
+    db = tmp_path / "t.db"
+    conn = store.connect(db); store.init_db(conn)
+    # 1) 闭环无笔记案例
+    cid = store.upsert_case(conn, "2026-07-01", "beijing", "sunset_glow",
+                            rule_score=2.0, confidence="low", source="cold_start")
+    store.set_actual_score(conn, cid, 9.0)
+    # 2) 过期 pending 预测
+    store.add_prediction(conn, "2026-07-01", "beijing", "sunset_glow", "c1",
+                         probability_pct=30, quality_pct=25, confidence="low",
+                         rule_score=2.0, sat_cloud_pct=None, trend=None,
+                         llm_status="pending", reasoning=None, risks=None)
+    monkeypatch.setattr(cli, "explain", lambda card, paths: "补跑复盘")
+    result = runner.invoke(cli.app, ["catchup", "--db", str(db)])
+    assert result.exit_code == 0
+    assert store.get_case_notes(conn, cid)[-1]["text"] == "补跑复盘"
+    preds = store.predictions_for(conn, "2026-07-01", "beijing", "sunset_glow")
+    assert preds[0]["llm_status"] == "skipped"     # 过期 → skipped
+    assert store.pending_predictions(conn) == []

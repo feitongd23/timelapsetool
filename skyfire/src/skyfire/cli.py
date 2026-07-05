@@ -573,5 +573,39 @@ def feedback(
     typer.echo("===== AI 复盘 =====\n" + result)
 
 
+@app.command()
+def catchup(
+    config: Path = typer.Option(DEFAULT_CONFIG),
+    db: Path = typer.Option(DEFAULT_DB),
+):
+    """补跑 pending:闭环案例的复盘笔记;过期 pending 预测标 skipped(spec §4)。"""
+    conn = _open_db(db)
+    done = 0
+    for case in store.closed_cases_without_llm_note(conn):
+        cid = case["id"]
+        full = store.case_by_key(conn, case["date"], case["city"], case["event"])
+        card = build_case_card(full, store.get_snapshots(conn, cid),
+                               store.get_frames(conn, cid),
+                               store.get_case_notes(conn, cid))
+        card += "\n\n" + format_trajectory(
+            store.predictions_for(conn, case["date"], case["city"], case["event"]))
+        paths = [Path(f["path"]) for f in store.get_frames(conn, cid)
+                 if Path(f["path"]).exists()]
+        result = explain(card, paths)
+        if result is None:
+            typer.echo(f"跳过 {case['date']} {case['event']}(LLM 不可用)")
+            continue
+        store.add_case_note(conn, cid, "llm", result)
+        done += 1
+        typer.echo(f"✓ 复盘 {case['date']} {case['event']}")
+    today = str(date_type.today())
+    for p in store.pending_predictions(conn):
+        if p["date"] < today:
+            store.set_prediction_llm(conn, p["id"], "skipped")
+            typer.echo(f"· {p['date']} {p['event']} [{p['checkpoint']}]"
+                       f" 过期 pending → skipped")
+    typer.echo(f"完成:补复盘 {done} 条")
+
+
 if __name__ == "__main__":
     app()
