@@ -9,7 +9,8 @@ def format_report(r: PredictionResult) -> tuple[str, str]:
     when_zh = "日落" if r.event == "sunset_glow" else "日出"
     title = f"{event_zh} {r.index}/10 — {r.city_name}"
     lines = [
-        f"{r.day} {r.city_name}{event_zh}火烧云指数 {r.index}/10",
+        f"{r.day.year}年{r.day.month}月{r.day.day}日"
+        f" {r.city_name}{event_zh}火烧云指数 {r.index}/10",
         f"置信度: {_CONF_ZH.get(r.confidence, r.confidence)}  模式分歧: {r.spread}",
         "  " + "  ".join(f"{m.split('_')[0].upper()} {s}" for m, s in r.per_model.items()),
         f"通道: {r.blocked_points} 点受阻(系数 {r.channel_factor})  AOD: {r.aod}",
@@ -53,6 +54,18 @@ _CONF_PLAIN = {"high": "高 — 各家气象模式结论一致",
                "degraded": "弱 — 数据不全,仅供参考"}
 
 
+def _date_zh(rec: dict) -> str | None:
+    """预测对象日期的年月日串;date 键(YYYY-MM-DD)优先,缺则回退 peak。"""
+    d = rec.get("date")
+    if d:
+        y, m, day = d.split("-")
+        return f"{int(y)}年{int(m)}月{int(day)}日"
+    peak = rec.get("peak")
+    if peak is not None:
+        return f"{peak.year}年{peak.month}月{peak.day}日"
+    return None
+
+
 def format_pct_report(rec: dict) -> tuple[str, str]:
     """百分数检查点 → 推送标题/正文(大众化排版,一行一条信息)。"""
     sunset = rec["event"] == "sunset_glow"
@@ -60,6 +73,9 @@ def format_pct_report(rec: dict) -> tuple[str, str]:
     title = (f"{event_zh} 概率{rec['probability_pct']:.0f}%"
              f" 质量{rec['quality_pct']:.0f}% — {rec['city_name']}")
     lines = []
+    date_zh = _date_zh(rec)
+    if date_zh:
+        lines.append(f"预测日期: {date_zh}")
     peak = rec.get("peak")
     if peak is not None:
         when = "日落" if sunset else "日出"
@@ -148,6 +164,9 @@ def format_outlook_report(rec_sunrise: dict | None,
     p_ss = f"{rec_sunset['probability_pct']:.0f}%" if rec_sunset else "—%"
     title = f"明日展望 朝霞{p_sr} 晚霞{p_ss} — {some['city_name']}"
     lines: list[str] = []
+    date_zh = _date_zh(some)
+    if date_zh:
+        lines.append(f"预测日期: {date_zh}")
     for rec, label in ((rec_sunrise, "明日朝霞"), (rec_sunset, "明日晚霞")):
         if rec is None:
             lines.append(f"{label}: 数据缺失(后续检查点自动补上)")

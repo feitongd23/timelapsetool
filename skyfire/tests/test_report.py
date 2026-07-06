@@ -29,6 +29,7 @@ def test_format_report_body_has_key_facts():
     assert "19:46" in body          # 日落时刻
     assert "置信度" in body
     assert "301" in body            # 方位角
+    assert "2026年7月3日" in body   # 预测日期(年月日,用户2026-07-07要求)
 
 
 def test_format_report_includes_llm_when_present():
@@ -55,6 +56,7 @@ def test_format_pct_report():
     assert "北京上空云量" in body and "AOD 0.25" in body and "通透" in body
     assert "机会较大" in body and "可信度" in body
     assert "ECMWF 72/64" in body and "GFS 12/10" in body
+    assert "预测日期: 2026年7月6日" in body
 
 
 def test_format_pct_report_pending():
@@ -90,6 +92,7 @@ def test_format_outlook_report_two_sections():
     assert "EC 35/40 · 高80 中20 低10 · 无雨" in body
     assert "GFS 20/30 · 高100 中40 低30 · 雨5.0mm" in body
     assert "解读: 高云画布可期" in body
+    assert "预测日期: 2026年7月7日" in body   # 无 date 键时从 peak 回退
 
 
 def test_format_outlook_report_missing_side():
