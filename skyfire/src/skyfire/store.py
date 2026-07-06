@@ -107,16 +107,28 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _write(conn, sql: str, params=()) -> sqlite3.Cursor:
+    """执行单条写语句并提交;失败先回滚再抛——否则连接残留打开的写事务,
+    长驻进程复用连接时会一直持锁,拖垮后续 BEGIN IMMEDIATE。"""
+    try:
+        cur = conn.execute(sql, params)
+        conn.commit()
+        return cur
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def upsert_case(conn, date: str, city: str, event: str, *,
                 rule_score: float | None, confidence: str | None, source: str) -> int:
-    conn.execute(
+    _write(
+        conn,
         """INSERT INTO cases (date, city, event, rule_score, confidence, source)
            VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT(date, city, event)
            DO UPDATE SET rule_score=excluded.rule_score, confidence=excluded.confidence""",
         (date, city, event, rule_score, confidence, source),
     )
-    conn.commit()
     row = conn.execute(
         "SELECT id FROM cases WHERE date=? AND city=? AND event=?", (date, city, event)
     ).fetchone()
@@ -124,28 +136,25 @@ def upsert_case(conn, date: str, city: str, event: str, *,
 
 
 def set_actual_score(conn, case_id: int, score: float) -> None:
-    conn.execute("UPDATE cases SET actual_score=? WHERE id=?", (score, case_id))
-    conn.commit()
+    _write(conn, "UPDATE cases SET actual_score=? WHERE id=?", (score, case_id))
 
 
 def set_sat_cloud(conn, case_id: int, pct: float) -> None:
     """写入卫星实测的观测点上空云量(预报云量不可信,实测为准)。"""
-    conn.execute("UPDATE cases SET sat_cloud_pct=? WHERE id=?", (pct, case_id))
-    conn.commit()
+    _write(conn, "UPDATE cases SET sat_cloud_pct=? WHERE id=?", (pct, case_id))
 
 
 def add_snapshot(conn, case_id: int, model: str, payload: dict) -> None:
-    conn.execute(
+    _write(
+        conn,
         "INSERT INTO forecast_snapshots (case_id, model, payload) VALUES (?, ?, ?)",
         (case_id, model, json.dumps(payload, ensure_ascii=False)),
     )
-    conn.commit()
 
 
 def clear_snapshots(conn, case_id: int) -> None:
     """删除某案例全部历史快照(回填幂等:重跑前先清空再重写)。"""
-    conn.execute("DELETE FROM forecast_snapshots WHERE case_id=?", (case_id,))
-    conn.commit()
+    _write(conn, "DELETE FROM forecast_snapshots WHERE case_id=?", (case_id,))
 
 
 def get_snapshots(conn, case_id: int) -> list[dict]:
@@ -168,12 +177,12 @@ def scored_cases(conn, city: str) -> list[dict]:
 
 
 def add_satellite_frame(conn, case_id: int, ts: str, channel: str, path: str) -> None:
-    conn.execute(
+    _write(
+        conn,
         "INSERT OR IGNORE INTO satellite_frames (case_id, ts, channel, path)"
         " VALUES (?, ?, ?, ?)",
         (case_id, ts, channel, path),
     )
-    conn.commit()
 
 
 def get_frames(conn, case_id: int) -> list[dict]:
@@ -185,8 +194,7 @@ def get_frames(conn, case_id: int) -> list[dict]:
 
 
 def set_llm_score(conn, case_id: int, score: float) -> None:
-    conn.execute("UPDATE cases SET llm_score=? WHERE id=?", (score, case_id))
-    conn.commit()
+    _write(conn, "UPDATE cases SET llm_score=? WHERE id=?", (score, case_id))
 
 
 def cases_with_snapshot(conn, city: str, event: str, *, model: str) -> list[dict]:
@@ -216,19 +224,19 @@ def was_pushed(conn, date: str, city: str, event: str) -> bool:
 
 
 def mark_pushed(conn, date: str, city: str, event: str) -> None:
-    conn.execute(
+    _write(
+        conn,
         "INSERT OR IGNORE INTO notifications (date, city, event) VALUES (?, ?, ?)",
         (date, city, event),
     )
-    conn.commit()
 
 
 def add_case_note(conn, case_id: int, author: str, text: str) -> None:
-    conn.execute(
+    _write(
+        conn,
         "INSERT INTO case_notes (case_id, author, text) VALUES (?, ?, ?)",
         (case_id, author, text),
     )
-    conn.commit()
 
 
 def get_case_notes(conn, case_id: int) -> list[dict]:
@@ -263,7 +271,8 @@ def add_prediction(conn, date: str, city: str, event: str, checkpoint: str, *,
                    confidence: str | None, rule_score: float | None,
                    sat_cloud_pct: float | None, trend: str | None,
                    llm_status: str, reasoning: str | None, risks: str | None) -> int:
-    cur = conn.execute(
+    cur = _write(
+        conn,
         """INSERT INTO predictions (date, city, event, checkpoint,
              probability_pct, quality_pct, confidence, rule_score,
              sat_cloud_pct, trend, llm_status, reasoning, risks)
@@ -271,7 +280,6 @@ def add_prediction(conn, date: str, city: str, event: str, checkpoint: str, *,
         (date, city, event, checkpoint, probability_pct, quality_pct,
          confidence, rule_score, sat_cloud_pct, trend, llm_status,
          reasoning, risks))
-    conn.commit()
     return cur.lastrowid
 
 
@@ -313,11 +321,11 @@ def set_prediction_llm(conn, pred_id: int, status: str,
                        " WHERE id=?", (pred_id,)).fetchone()
     p = probability_pct if probability_pct is not None else row[0]
     q = quality_pct if quality_pct is not None else row[1]
-    conn.execute(
+    _write(
+        conn,
         """UPDATE predictions SET llm_status=?, reasoning=?, risks=?,
              probability_pct=?, quality_pct=? WHERE id=?""",
         (status, reasoning, risks, p, q, pred_id))
-    conn.commit()
 
 
 def closed_cases_without_llm_note(conn) -> list[dict]:
