@@ -33,16 +33,22 @@ def grid_points(bbox: tuple, step: float) -> list[tuple[float, float]]:
 def fetch_cloud_grid(client: httpx.Client, pts: list[tuple[float, float]],
                      n_rows: int, n_cols: int, tz: str, iso_hour: str,
                      date: str | None = None, model: str = "gfs_seamless",
+                     with_precip: bool = False,
                      ) -> dict[str, list[list[float | None]]]:
-    """峰值小时的高/中/低云网格。date=None 走预报端点,否则走历史存档。"""
-    values: dict[str, list] = {k: [] for k in LAYERS}
+    """峰值小时的高/中/低云网格。date=None 走预报端点,否则走历史存档。
+
+    with_precip=True 时额外拉取降水层(spec §2 heatgrid 需要)。
+    """
+    layers = LAYERS + ("precip",) if with_precip else LAYERS
+    values: dict[str, list] = {k: [] for k in layers}
     for i in range(0, len(pts), _CHUNK):
         chunk = pts[i:i + _CHUNK]
         params = {
             "latitude": ",".join(str(p[0]) for p in chunk),
             "longitude": ",".join(str(p[1]) for p in chunk),
             "timezone": tz, "models": model,
-            "hourly": "cloud_cover_high,cloud_cover_mid,cloud_cover_low",
+            "hourly": "cloud_cover_high,cloud_cover_mid,cloud_cover_low"
+                      + (",precipitation" if with_precip else ""),
         }
         if date is None:
             url = FORECAST_URL
@@ -60,8 +66,11 @@ def fetch_cloud_grid(client: httpx.Client, pts: list[tuple[float, float]],
             for layer in LAYERS:
                 col = hourly.get(f"cloud_cover_{layer}")
                 values[layer].append(col[idx] if idx is not None and col else None)
+            if with_precip:
+                col = hourly.get("precipitation")
+                values["precip"].append(col[idx] if idx is not None and col else None)
     return {layer: [values[layer][r * n_cols:(r + 1) * n_cols]
-                    for r in range(n_rows)] for layer in LAYERS}
+                    for r in range(n_rows)] for layer in layers}
 
 
 def _panel(grid: list[list[float | None]], title: str) -> Image.Image:
