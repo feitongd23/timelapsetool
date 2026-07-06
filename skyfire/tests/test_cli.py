@@ -324,6 +324,38 @@ def test_tick_sunrise_c1_runs_outlook_and_pushes_combined(tmp_path, monkeypatch)
     assert "明日朝霞" in pushed[0][1] and "明日晚霞" in pushed[0][1]
 
 
+def test_tick_outlook_dedup_not_rerun(tmp_path, monkeypatch):
+    """spec §6:outlook 判重——已存在(如手动 --cp outlook 预跑)不再重跑。"""
+    import skyfire.cli as cli
+    from skyfire import store
+    pushed = []
+    monkeypatch.setattr(cli, "load_notify_config",
+                        lambda p: {"provider": "bark", "key": "k"})
+    monkeypatch.setattr(cli, "push", lambda t, b, cfg: pushed.append(t) or True)
+    monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev:
+                        "c1" if ev == "sunrise_glow" else None)
+    calls = []
+
+    def fake_run(conn, client, c, key, event, day, cp, **kw):
+        calls.append((event, cp))
+        return _outlookable_rec(event, cp)
+
+    monkeypatch.setattr(cli, "run_checkpoint", fake_run)
+    db = tmp_path / "t.db"
+    conn = store.connect(db); store.init_db(conn)
+    # 预置今天(day_offset=0 的日出峰值日期)的 outlook 行
+    from datetime import date as _d
+    store.add_prediction(conn, str(_d.today()), "beijing", "sunset_glow",
+                         "outlook", probability_pct=60, quality_pct=55,
+                         confidence="high", rule_score=5.5, sat_cloud_pct=None,
+                         trend=None, llm_status="done", reasoning="r", risks="k")
+    result = runner.invoke(app, ["tick", "--db", str(db)])
+    assert result.exit_code == 0
+    assert ("sunrise_glow", "c1") in calls
+    assert all(cp != "outlook" for _, cp in calls)   # 判重生效,不重跑
+    assert len(pushed) == 1                          # 仍推一条(朝霞节)
+
+
 def test_tick_outlook_failure_still_pushes_sunrise(tmp_path, monkeypatch):
     import httpx
     import skyfire.cli as cli

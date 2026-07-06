@@ -498,7 +498,7 @@ def tick(
 
 @app.command()
 def checkpoint(
-    cp: str = typer.Option("manual", help="c1|c2|c3|gated|manual"),
+    cp: str = typer.Option("manual", help="c1|c2|c3|gated|manual|outlook"),
     city: str = typer.Option("beijing"),
     event: str = typer.Option("sunset_glow"),
     date: str = typer.Option(None, help="YYYY-MM-DD,默认今天"),

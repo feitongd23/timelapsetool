@@ -944,4 +944,4 @@ Expected: 打印明日晚霞 outlook 的概率/质量;latest 列出该记录。
 
 - Spec 覆盖:§1→Task 1/2/4,§2→Task 4/6,§3→Task 3,§4→Task 5,§5→Task 3/6,§6→各任务测试,latest(会话追加需求)→Task 7。✓
 - 类型一致性:per_model_raw 在 PredictionResult(Task 2)、payload/rec(Task 4)、report(Task 5)、cli 测试 fake(Task 6)四处字段名与结构一致;per_model_json 的 prob/qual 键与 Task 3 测试断言一致。✓
-- 已知取舍:tick 半失败恢复路径(c1 已跑、outlook 缺)下一轮 tick 只补跑 outlook 并推送 `朝霞—%` 节标缺失——朝霞数字已在上一条推送里,可接受;不为此加存量回读逻辑(YAGNI)。
+- 已知取舍(执行后修正,原文描述有误):tick 半失败(c1 已跑、outlook 失败)**当晚不补跑**——下一轮 tick 在 c1 判重处 break,不会单独补跑 outlook;晚霞信息由次日 11:00 晚霞 C1 自然补上。推送文案已改为真实语义"数据缺失(后续检查点自动补上)"(commit 4c58e47)。Task 5 的模式缩写按 spec §4 示例用 EC/GFS/ICON/CMA 固定映射(计划样例代码的 split 写法与自身测试断言矛盾,执行时已修正)。
