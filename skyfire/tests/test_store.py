@@ -142,6 +142,29 @@ def test_checkpoint_idempotent_but_gated_repeatable():
     assert len(store.predictions_for(c, "2026-07-06", "beijing", "sunset_glow")) == 3
 
 
+def test_write_failure_leaves_no_open_transaction():
+    """写入抛 IntegrityError 后必须回滚——残留写事务会让长驻进程一直持锁。"""
+    import pytest, sqlite3
+    c = _conn()
+    kw = dict(probability_pct=50, quality_pct=50, confidence="low",
+              rule_score=3.0, sat_cloud_pct=None, trend=None,
+              llm_status="pending", reasoning=None, risks=None)
+    store.add_prediction(c, "2026-07-06", "beijing", "sunset_glow", "c1", **kw)
+    with pytest.raises(sqlite3.IntegrityError):  # 唯一索引 idx_pred_checkpoint 冲突
+        store.add_prediction(c, "2026-07-06", "beijing", "sunset_glow", "c1", **kw)
+    assert not c.in_transaction
+    with pytest.raises(sqlite3.IntegrityError):  # 外键指向不存在的案例
+        store.add_snapshot(c, 999, "gfs_seamless", {"cloud_high": 1})
+    assert not c.in_transaction
+    with pytest.raises(sqlite3.IntegrityError):  # CHECK(author) 不合法
+        store.add_case_note(c, 999, "robot", "x")
+    assert not c.in_transaction
+    with pytest.raises(sqlite3.IntegrityError):  # CHECK(event) 不合法
+        store.upsert_case(c, "2026-07-06", "beijing", "typhoon",
+                          rule_score=None, confidence=None, source="auto")
+    assert not c.in_transaction
+
+
 def test_pending_and_unnoted_queries():
     c = _conn()
     kw = dict(probability_pct=50, quality_pct=50, confidence="low",
