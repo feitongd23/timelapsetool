@@ -105,6 +105,9 @@ def init_db(conn: sqlite3.Connection) -> None:
     cols = [r[1] for r in conn.execute("PRAGMA table_info(cases)").fetchall()]
     if "sat_cloud_pct" not in cols:
         conn.execute("ALTER TABLE cases ADD COLUMN sat_cloud_pct REAL")
+    ucols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+    if "token_hash" not in ucols:
+        conn.execute("ALTER TABLE users ADD COLUMN token_hash TEXT")
     _migrate_predictions(conn)
     conn.commit()
 
@@ -407,3 +410,19 @@ def closed_cases_without_llm_note(conn) -> list[dict]:
            ORDER BY date""").fetchall()
     return [dict(zip(("id", "date", "city", "event", "actual_score"), r))
             for r in rows]
+
+
+def set_user_token(conn, openid: str, token_hash: str) -> int:
+    """微信登录:openid 落库并绑定新会话 token(重登覆盖旧 token)。"""
+    _write(conn,
+           """INSERT INTO users (openid, token_hash) VALUES (?, ?)
+              ON CONFLICT(openid) DO UPDATE SET token_hash=excluded.token_hash""",
+           (openid, token_hash))
+    row = conn.execute("SELECT id FROM users WHERE openid=?", (openid,)).fetchone()
+    return row[0]
+
+
+def user_by_token(conn, token_hash: str) -> dict | None:
+    row = conn.execute("SELECT id, openid FROM users WHERE token_hash=?",
+                       (token_hash,)).fetchone()
+    return None if row is None else {"id": row[0], "openid": row[1]}

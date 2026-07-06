@@ -4,3 +4,4 @@ __pycache__/
 data/
 *.egg-info/
 config/notify.local.yaml
+config/wechat.local.yaml

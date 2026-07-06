@@ -1,0 +1,3 @@
+# cp wechat.example.yaml wechat.local.yaml 并填入小程序凭证(mp.weixin.qq.com)
+app_id: wx0000000000000000
+app_secret: 请填小程序AppSecret

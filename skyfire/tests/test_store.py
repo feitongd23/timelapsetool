@@ -270,3 +270,14 @@ def test_recent_predictions_orders_desc_and_limits(tmp_path):
                              cp, **kw)
     rows = store.recent_predictions(conn, "beijing", limit=2)
     assert [r["checkpoint"] for r in rows] == ["c3", "c2"]   # 最新在前
+
+
+def test_user_token_roundtrip(tmp_path):
+    conn = store.connect(tmp_path / "t.db")
+    store.init_db(conn)
+    store.set_user_token(conn, "openid-1", "hash-a")
+    store.set_user_token(conn, "openid-1", "hash-b")   # 重登覆盖
+    assert store.user_by_token(conn, "hash-a") is None
+    u = store.user_by_token(conn, "hash-b")
+    assert u["openid"] == "openid-1"
+    assert store.user_by_token(conn, "nope") is None
