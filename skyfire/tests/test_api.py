@@ -129,3 +129,58 @@ def test_summary_shape_dates_events_status(tmp_path, monkeypatch):
     assert sunrise["latest"] is None               # 没喂朝霞数据
     assert data["dates"][1]["label"].startswith("明天")
     assert "peak" in sunset and "-" in sunset["best_window"]
+
+
+def _stub_cloud_grid(calls):
+    def fake(client, pts, n_rows, n_cols, tz, iso_hour, date=None,
+             model="gfs_seamless", with_precip=False):
+        calls.append(iso_hour)
+        mk = lambda v: [[v] * n_cols for _ in range(n_rows)]
+        return {"high": mk(60), "mid": mk(15), "low": mk(5), "precip": mk(0.0)}
+    return fake
+
+
+def test_heatmap_png_and_cache(tmp_path, monkeypatch):
+    import skyfire.api as api_mod
+    app, db = _make_app(tmp_path, _wx_transport())
+    calls = []
+    monkeypatch.setattr(api_mod, "fetch_cloud_grid", _stub_cloud_grid(calls))
+    api_mod._HEATMAP_CACHE.clear()
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    hdr = {"X-Session": token}
+    url = "/v1/heatmap?city=beijing&event=sunset_glow&date=2026-07-07&kind=prob"
+    r = client.get(url, headers=hdr)
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
+    r2 = client.get(url, headers=hdr)
+    assert r2.status_code == 200 and len(calls) == 1     # 缓存命中,不再拉网格
+    client.get(url.replace("kind=prob", "kind=quality"), headers=hdr)
+    assert len(calls) == 2                                # kind 不同重新算
+
+
+def test_heatmap_bad_kind_422(tmp_path):
+    app, _ = _make_app(tmp_path, _wx_transport())
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    r = client.get("/v1/heatmap?city=beijing&event=sunset_glow"
+                   "&date=2026-07-07&kind=nope", headers={"X-Session": token})
+    assert r.status_code == 422
+
+
+def test_heatmap_upstream_failure_503(tmp_path, monkeypatch):
+    import httpx as _hx
+    import skyfire.api as api_mod
+
+    def boom(*a, **k):
+        raise _hx.ConnectError("net down")
+
+    app, _ = _make_app(tmp_path, _wx_transport())
+    monkeypatch.setattr(api_mod, "fetch_cloud_grid", boom)
+    api_mod._HEATMAP_CACHE.clear()
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    r = client.get("/v1/heatmap?city=beijing&event=sunset_glow"
+                   "&date=2026-07-07&kind=prob", headers={"X-Session": token})
+    assert r.status_code == 503

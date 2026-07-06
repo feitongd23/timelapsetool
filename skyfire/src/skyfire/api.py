@@ -5,19 +5,22 @@ app 工厂可测;鉴权=微信登录换发的会话 token(X-Session 头,自用�
 import hashlib
 import json
 import secrets
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from skyfire import store
 from skyfire.config import load_cities
+from skyfire.gridmap import DEFAULT_BBOX, DEFAULT_STEP, fetch_cloud_grid, grid_points
+from skyfire.heatgrid import render_heatmap_png, score_grids
 from skyfire.report import _prob_word, _qual_word
-from skyfire.suntimes import sun_window
+from skyfire.suntimes import nearest_iso_hour, sun_window
 from skyfire.wechatconf import load_wechat_config
 
 _JSCODE_URL = "https://api.weixin.qq.com/sns/jscode2session"
@@ -33,6 +36,10 @@ def _hash(token: str) -> str:
 
 def _now_local(tz: str) -> datetime:
     return datetime.now(ZoneInfo(tz))
+
+
+_HEATMAP_CACHE: dict[tuple, tuple[float, bytes]] = {}
+_HEATMAP_TTL = 1800.0
 
 
 def create_app(db_path: Path, config_path: Path, wechat_path: Path) -> FastAPI:
@@ -127,5 +134,43 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path) -> FastAPI:
         return {"city": city, "city_name": ct.name,
                 "updated_at": now.isoformat(timespec="seconds"),
                 "dates": dates}
+
+    @app.get("/v1/heatmap", dependencies=[Depends(require_session)])
+    def heatmap(city: str = "beijing", event: str = "sunset_glow",
+                date: str = "", kind: str = "prob", c=Depends(conn)):
+        if city not in app.state.cities:
+            raise HTTPException(422, f"未知城市 {city!r}")
+        if event not in ("sunrise_glow", "sunset_glow"):
+            raise HTTPException(422, f"未知天象 {event!r}")
+        if kind not in ("prob", "quality"):
+            raise HTTPException(422, f"kind 需为 prob|quality,收到 {kind!r}")
+        ct = app.state.cities[city]
+        try:
+            day = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(422, f"date 需为 YYYY-MM-DD,收到 {date!r}")
+        key = (city, event, str(day), kind)
+        hit = _HEATMAP_CACHE.get(key)
+        if hit and time.monotonic() < hit[0]:
+            return Response(hit[1], media_type="image/png")
+        win = sun_window(ct.lat, ct.lon, ct.timezone, day, event)
+        pts = grid_points(DEFAULT_BBOX, DEFAULT_STEP)
+        n_cols = len({lon for _, lon in pts})
+        n_rows = len(pts) // n_cols
+        latest = store.latest_prediction(c, str(day), city, event)
+        confidence = (latest or {}).get("confidence") or "medium"
+        try:
+            cloud = fetch_cloud_grid(httpx.Client(timeout=30), pts, n_rows,
+                                     n_cols, ct.timezone,
+                                     nearest_iso_hour(win.peak),
+                                     with_precip=True)
+        except httpx.HTTPError as e:
+            raise HTTPException(503, f"网格数据拉取失败: {e.__class__.__name__}")
+        grids = score_grids(cloud, confidence)
+        lon0, lat0, lon1, lat1 = DEFAULT_BBOX
+        marker = ((lat1 - ct.lat) / DEFAULT_STEP, (ct.lon - lon0) / DEFAULT_STEP)
+        png = render_heatmap_png(grids[kind], kind, marker_rc=marker)
+        _HEATMAP_CACHE[key] = (time.monotonic() + _HEATMAP_TTL, png)
+        return Response(png, media_type="image/png")
 
     return app
