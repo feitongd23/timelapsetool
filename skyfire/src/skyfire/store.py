@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS predictions (
   date TEXT NOT NULL,
   city TEXT NOT NULL,
   event TEXT NOT NULL,
-  checkpoint TEXT NOT NULL CHECK(checkpoint IN ('c1','c2','c3','gated','manual')),
+  checkpoint TEXT NOT NULL CHECK(checkpoint IN ('c1','c2','c3','gated','manual','outlook')),
   probability_pct REAL NOT NULL,
   quality_pct REAL NOT NULL,
   confidence TEXT,
@@ -83,11 +83,12 @@ CREATE TABLE IF NOT EXISTS predictions (
     CHECK(llm_status IN ('done','pending','skipped')),
   reasoning TEXT,
   risks TEXT,
+  per_model_json TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pred_checkpoint
   ON predictions(date, city, event, checkpoint)
-  WHERE checkpoint IN ('c1','c2','c3');
+  WHERE checkpoint IN ('c1','c2','c3','outlook');
 CREATE UNIQUE INDEX IF NOT EXISTS idx_frames_dedup
   ON satellite_frames(case_id, ts, channel);
 """
@@ -104,7 +105,52 @@ def init_db(conn: sqlite3.Connection) -> None:
     cols = [r[1] for r in conn.execute("PRAGMA table_info(cases)").fetchall()]
     if "sat_cloud_pct" not in cols:
         conn.execute("ALTER TABLE cases ADD COLUMN sat_cloud_pct REAL")
+    _migrate_predictions(conn)
     conn.commit()
+
+
+def _migrate_predictions(conn: sqlite3.Connection) -> None:
+    """老库升级:CHECK 加 outlook 需重建表(SQLite 不能改 CHECK);幂等。"""
+    sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table'"
+                       " AND name='predictions'").fetchone()
+    if sql and "'outlook'" not in sql[0]:
+        conn.executescript("""
+        ALTER TABLE predictions RENAME TO predictions_old;
+        CREATE TABLE predictions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          city TEXT NOT NULL,
+          event TEXT NOT NULL,
+          checkpoint TEXT NOT NULL CHECK(checkpoint IN ('c1','c2','c3','gated','manual','outlook')),
+          probability_pct REAL NOT NULL,
+          quality_pct REAL NOT NULL,
+          confidence TEXT,
+          rule_score REAL,
+          sat_cloud_pct REAL,
+          trend TEXT,
+          llm_status TEXT NOT NULL DEFAULT 'pending'
+            CHECK(llm_status IN ('done','pending','skipped')),
+          reasoning TEXT,
+          risks TEXT,
+          per_model_json TEXT,
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+        INSERT INTO predictions (id, date, city, event, checkpoint,
+            probability_pct, quality_pct, confidence, rule_score, sat_cloud_pct,
+            trend, llm_status, reasoning, risks, created_at)
+          SELECT id, date, city, event, checkpoint, probability_pct, quality_pct,
+                 confidence, rule_score, sat_cloud_pct, trend, llm_status,
+                 reasoning, risks, created_at
+          FROM predictions_old;
+        DROP TABLE predictions_old;
+        DROP INDEX IF EXISTS idx_pred_checkpoint;
+        CREATE UNIQUE INDEX idx_pred_checkpoint
+          ON predictions(date, city, event, checkpoint)
+          WHERE checkpoint IN ('c1','c2','c3','outlook');
+        """)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(predictions)").fetchall()]
+    if "per_model_json" not in cols:
+        conn.execute("ALTER TABLE predictions ADD COLUMN per_model_json TEXT")
 
 
 def upsert_case(conn, date: str, city: str, event: str, *,
@@ -255,22 +301,24 @@ def case_by_key(conn, date: str, city: str, event: str) -> dict | None:
 
 _PRED_KEYS = ("id", "date", "city", "event", "checkpoint", "probability_pct",
               "quality_pct", "confidence", "rule_score", "sat_cloud_pct",
-              "trend", "llm_status", "reasoning", "risks", "created_at")
+              "trend", "llm_status", "reasoning", "risks", "per_model_json",
+              "created_at")
 
 
 def add_prediction(conn, date: str, city: str, event: str, checkpoint: str, *,
                    probability_pct: float, quality_pct: float,
                    confidence: str | None, rule_score: float | None,
                    sat_cloud_pct: float | None, trend: str | None,
-                   llm_status: str, reasoning: str | None, risks: str | None) -> int:
+                   llm_status: str, reasoning: str | None, risks: str | None,
+                   per_model_json: str | None = None) -> int:
     cur = conn.execute(
         """INSERT INTO predictions (date, city, event, checkpoint,
              probability_pct, quality_pct, confidence, rule_score,
-             sat_cloud_pct, trend, llm_status, reasoning, risks)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             sat_cloud_pct, trend, llm_status, reasoning, risks, per_model_json)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (date, city, event, checkpoint, probability_pct, quality_pct,
          confidence, rule_score, sat_cloud_pct, trend, llm_status,
-         reasoning, risks))
+         reasoning, risks, per_model_json))
     conn.commit()
     return cur.lastrowid
 

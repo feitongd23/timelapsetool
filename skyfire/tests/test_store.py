@@ -155,3 +155,65 @@ def test_pending_and_unnoted_queries():
     assert [x["id"] for x in store.closed_cases_without_llm_note(c)] == [cid]
     store.add_case_note(c, cid, "llm", "复盘")
     assert store.closed_cases_without_llm_note(c) == []
+
+
+_OLD_PREDICTIONS_SCHEMA = """
+CREATE TABLE predictions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL, city TEXT NOT NULL, event TEXT NOT NULL,
+  checkpoint TEXT NOT NULL CHECK(checkpoint IN ('c1','c2','c3','gated','manual')),
+  probability_pct REAL NOT NULL, quality_pct REAL NOT NULL,
+  confidence TEXT, rule_score REAL, sat_cloud_pct REAL, trend TEXT,
+  llm_status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(llm_status IN ('done','pending','skipped')),
+  reasoning TEXT, risks TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX idx_pred_checkpoint
+  ON predictions(date, city, event, checkpoint)
+  WHERE checkpoint IN ('c1','c2','c3');
+"""
+
+
+def test_predictions_migration_from_old_schema(tmp_path):
+    import sqlite3
+    db = tmp_path / "old.db"
+    raw = sqlite3.connect(db)
+    raw.executescript(_OLD_PREDICTIONS_SCHEMA)
+    raw.execute(
+        """INSERT INTO predictions (date, city, event, checkpoint,
+             probability_pct, quality_pct, llm_status)
+           VALUES ('2026-07-05','beijing','sunset_glow','c1',50,50,'done')""")
+    raw.commit(); raw.close()
+
+    conn = store.connect(db)
+    store.init_db(conn)          # 触发迁移
+    # 老数据保留
+    rows = store.predictions_for(conn, "2026-07-05", "beijing", "sunset_glow")
+    assert len(rows) == 1 and rows[0]["checkpoint"] == "c1"
+    # outlook 可写入,per_model_json 落库读回
+    store.add_prediction(conn, "2026-07-06", "beijing", "sunset_glow", "outlook",
+                         probability_pct=60, quality_pct=55, confidence="high",
+                         rule_score=5.5, sat_cloud_pct=None, trend=None,
+                         llm_status="pending", reasoning=None, risks=None,
+                         per_model_json='{"gfs_seamless": {"prob": 60}}')
+    row = store.latest_prediction(conn, "2026-07-06", "beijing", "sunset_glow")
+    assert row["checkpoint"] == "outlook"
+    assert row["per_model_json"] == '{"gfs_seamless": {"prob": 60}}'
+    # 幂等:重复 init_db 不报错不丢数据
+    store.init_db(conn)
+    assert len(store.predictions_for(conn, "2026-07-05", "beijing",
+                                     "sunset_glow")) == 1
+
+
+def test_outlook_unique_per_day(tmp_path):
+    import sqlite3
+    import pytest
+    conn = store.connect(tmp_path / "t.db")
+    store.init_db(conn)
+    kw = dict(probability_pct=60, quality_pct=55, confidence="high",
+              rule_score=5.5, sat_cloud_pct=None, trend=None,
+              llm_status="pending", reasoning=None, risks=None)
+    store.add_prediction(conn, "2026-07-06", "beijing", "sunset_glow", "outlook", **kw)
+    with pytest.raises(sqlite3.IntegrityError):
+        store.add_prediction(conn, "2026-07-06", "beijing", "sunset_glow", "outlook", **kw)
