@@ -29,7 +29,7 @@ from skyfire.push import push
 from skyfire.render import load_b13_region
 from skyfire.report import format_pct_report, format_report
 from skyfire.scoring.cloudsea import CloudSeaInputs, cloud_sea_score
-from skyfire.suntimes import sun_window
+from skyfire.suntimes import nearest_iso_hour, sun_window
 
 app = typer.Typer(help="火烧云/云海预测助手")
 
@@ -126,7 +126,7 @@ def cloudsea(
     best = 0.0
     for spot in c.spots:
         win = sun_window(spot.lat, spot.lon, c.timezone, day, "sunrise_glow")
-        iso_dawn = win.peak.strftime("%Y-%m-%dT%H:00")
+        iso_dawn = nearest_iso_hour(win.peak)
         try:
             forecasts = fetch_point_forecast(client, spot.lat, spot.lon, c.timezone,
                                              models=("gfs_seamless",))
@@ -213,7 +213,7 @@ def cloudmap(
     c = cities[city]
     day = _parse_date(date, date_type.today())
     win = sun_window(c.lat, c.lon, c.timezone, day, event)
-    iso_hour = win.peak.strftime("%Y-%m-%dT%H:00")
+    iso_hour = nearest_iso_hour(win.peak)
     pts = grid_points(DEFAULT_BBOX, DEFAULT_STEP)
     n_cols = len({lon for _, lon in pts})
     n_rows = len(pts) // n_cols
