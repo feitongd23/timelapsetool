@@ -234,3 +234,16 @@ def test_migrate_predictions_rejects_stranded_old_table(tmp_path):
     conn.commit()
     with pytest.raises(RuntimeError, match="predictions_old"):
         store._migrate_predictions(conn)
+
+
+def test_recent_predictions_orders_desc_and_limits(tmp_path):
+    conn = store.connect(tmp_path / "t.db")
+    store.init_db(conn)
+    kw = dict(probability_pct=50, quality_pct=50, confidence="high",
+              rule_score=5.0, sat_cloud_pct=None, trend=None,
+              llm_status="pending", reasoning=None, risks=None)
+    for cp in ("c1", "c2", "c3"):
+        store.add_prediction(conn, "2026-07-06", "beijing", "sunset_glow",
+                             cp, **kw)
+    rows = store.recent_predictions(conn, "beijing", limit=2)
+    assert [r["checkpoint"] for r in rows] == ["c3", "c2"]   # 最新在前

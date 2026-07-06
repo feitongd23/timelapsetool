@@ -432,3 +432,26 @@ def test_catchup_retro_notes_and_prediction_pending(tmp_path, monkeypatch):
     preds = store.predictions_for(conn, "2026-07-01", "beijing", "sunset_glow")
     assert preds[0]["llm_status"] == "skipped"     # 过期 → skipped
     assert store.pending_predictions(conn) == []
+
+
+def test_latest_prints_recent_predictions(tmp_path):
+    from skyfire import store
+    db = tmp_path / "t.db"
+    conn = store.connect(db)
+    store.init_db(conn)
+    store.add_prediction(conn, "2026-07-06", "beijing", "sunset_glow", "c2",
+                         probability_pct=28, quality_pct=30, confidence="high",
+                         rule_score=5.0, sat_cloud_pct=12.0, trend=None,
+                         llm_status="done", reasoning="近程低云堵", risks="雨险",
+                         per_model_json=None)
+    result = runner.invoke(app, ["latest", "--db", str(db)])
+    assert result.exit_code == 0
+    assert "2026-07-06" in result.output and "晚霞" in result.output
+    assert "[c2]" in result.output and "28%" in result.output
+    assert "近程低云堵" in result.output
+
+
+def test_latest_empty_db(tmp_path):
+    result = runner.invoke(app, ["latest", "--db", str(tmp_path / "t.db")])
+    assert result.exit_code == 0
+    assert "暂无预测记录" in result.output

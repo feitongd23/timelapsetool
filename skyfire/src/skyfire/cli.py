@@ -522,6 +522,29 @@ def checkpoint(
     typer.echo(body)
 
 
+@app.command()
+def latest(
+    city: str = typer.Option("beijing"),
+    db: Path = typer.Option(DEFAULT_DB),
+    limit: int = typer.Option(6, help="显示最近几条"),
+):
+    """查看最近的预测记录(纯读库,零 API 调用)。"""
+    conn = _open_db(db)
+    rows = store.recent_predictions(conn, city, limit=limit)
+    if not rows:
+        typer.echo("暂无预测记录")
+        return
+    for r in rows:
+        event_zh = "晚霞" if r["event"] == "sunset_glow" else "朝霞"
+        line = (f"{r['date']} {event_zh} [{r['checkpoint']}]"
+                f" 概率{r['probability_pct']:.0f}%"
+                f" 质量{r['quality_pct']:.0f}%"
+                f" ({r['llm_status']} {r['created_at']})")
+        typer.echo(line)
+        if r["llm_status"] == "done" and r["reasoning"]:
+            typer.echo(f"  解读: {r['reasoning']}")
+
+
 def _ensure_case_frames(conn, client, case_id: int, city, city_key: str,
                         event: str, day) -> int:
     """反馈闭环:该案例还没有卫星帧则回填(尽力),返回新增帧数。"""

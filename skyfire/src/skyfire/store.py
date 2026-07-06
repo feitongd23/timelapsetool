@@ -367,6 +367,13 @@ def pending_predictions(conn) -> list[dict]:
     return _pred_rows(rows)
 
 
+def recent_predictions(conn, city: str, limit: int = 6) -> list[dict]:
+    rows = conn.execute(
+        f"SELECT {','.join(_PRED_KEYS)} FROM predictions"
+        " WHERE city=? ORDER BY id DESC LIMIT ?", (city, limit)).fetchall()
+    return _pred_rows(rows)
+
+
 def set_prediction_llm(conn, pred_id: int, status: str,
                        reasoning: str | None = None, risks: str | None = None,
                        probability_pct: float | None = None,
