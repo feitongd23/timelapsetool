@@ -89,3 +89,69 @@ def format_pct_report(rec: dict) -> tuple[str, str]:
     else:
         lines.append("AI 解读暂缺,以上为基础数据")
     return title, "\n".join(lines)
+
+
+def _num(v) -> str:
+    return "—" if v is None else f"{v:.0f}"
+
+
+_MODEL_ABBR = {"ecmwf_ifs025": "EC", "gfs_seamless": "GFS",
+               "icon_seamless": "ICON", "cma_grapes_global": "CMA"}
+
+
+def _model_lines(rec: dict) -> list[str]:
+    lines = ["各模式(概率/质量 · 高中低云% · 降水):"]
+    raw_all = rec.get("per_model_raw") or {}
+    for m, (p, q) in rec["per_model_pct"].items():
+        name = _MODEL_ABBR.get(m, m.split("_")[0].upper())
+        parts = [f"{name} {p:.0f}/{q:.0f}"]
+        raw = raw_all.get(m)
+        if raw:
+            parts.append(f"高{_num(raw.get('cloud_high'))}"
+                         f" 中{_num(raw.get('cloud_mid'))}"
+                         f" 低{_num(raw.get('cloud_low'))}")
+            precip = raw.get("precipitation")
+            parts.append(f"雨{precip:.1f}mm" if precip and precip >= 0.1 else "无雨")
+        lines.append(" · ".join(parts))
+    return lines
+
+
+def _outlook_section(rec: dict) -> list[str]:
+    sunset = rec["event"] == "sunset_glow"
+    event_zh = "晚霞" if sunset else "朝霞"
+    when = "日落" if sunset else "日出"
+    best = "其后约15分钟" if sunset else "其前约15分钟"
+    lines = [f"明日{event_zh} {when} {rec['peak'].strftime('%H:%M')}"
+             f"(最佳观赏在{best})"]
+    lines.append(f"概率 {rec['probability_pct']:.0f}%"
+                 f"({_prob_word(rec['probability_pct'])})"
+                 f" · 质量 {rec['quality_pct']:.0f}%"
+                 f"({_qual_word(rec['quality_pct'])})")
+    lines.extend(_model_lines(rec))
+    aod = rec.get("aod")
+    aod_s = f"{aod}" if aod is not None else "—"
+    lines.append(f"空气(气溶胶AOD {aod_s}): {_aod_word(aod)}")
+    lines.append(f"可信度: {_CONF_PLAIN.get(rec['confidence'], rec['confidence'])}")
+    if rec.get("llm_status") == "done":
+        lines.append(f"解读: {rec['reasoning']}")
+        lines.append(f"风险: {rec['risks']}")
+    else:
+        lines.append("AI 解读暂缺,以上为基础数据")
+    return lines
+
+
+def format_outlook_report(rec_sunrise: dict | None,
+                          rec_sunset: dict | None) -> tuple[str, str]:
+    """每晚明日展望:朝霞+晚霞双节合推;任一边 None 标数据缺失(spec §4)。"""
+    some = rec_sunrise or rec_sunset
+    p_sr = f"{rec_sunrise['probability_pct']:.0f}%" if rec_sunrise else "—%"
+    p_ss = f"{rec_sunset['probability_pct']:.0f}%" if rec_sunset else "—%"
+    title = f"明日展望 朝霞{p_sr} 晚霞{p_ss} — {some['city_name']}"
+    lines: list[str] = []
+    for rec, label in ((rec_sunrise, "明日朝霞"), (rec_sunset, "明日晚霞")):
+        if rec is None:
+            lines.append(f"{label}: 数据缺失,稍后自动重试")
+        else:
+            lines.extend(_outlook_section(rec))
+        lines.append("")
+    return title, "\n".join(lines).rstrip()

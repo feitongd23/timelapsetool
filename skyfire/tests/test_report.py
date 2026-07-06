@@ -1,8 +1,11 @@
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from skyfire.engine import PredictionResult
 from skyfire.llm import LlmResult
-from skyfire.report import format_pct_report, format_report
+from skyfire.report import format_outlook_report, format_pct_report, format_report
+
+_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def _result(**kw):
@@ -62,3 +65,43 @@ def test_format_pct_report_pending():
            "city_name": "北京"}
     title, body = format_pct_report(rec)
     assert "朝霞" in title and "AI 解读暂缺" in body
+
+
+def _outlook_rec(event, prob, qual, hour, minute):
+    return {"probability_pct": prob, "quality_pct": qual, "confidence": "high",
+            "llm_status": "done", "reasoning": "高云画布可期", "risks": "低云",
+            "event": event, "rule_score": 5.5, "aod": 0.3,
+            "peak": datetime(2026, 7, 7, hour, minute, tzinfo=_TZ),
+            "city_name": "北京",
+            "per_model_pct": {"ecmwf_ifs025": (35, 40), "gfs_seamless": (20, 30)},
+            "per_model_raw": {
+                "ecmwf_ifs025": {"cloud_high": 80, "cloud_mid": 20,
+                                 "cloud_low": 10, "precipitation": 0.0},
+                "gfs_seamless": {"cloud_high": 100, "cloud_mid": 40,
+                                 "cloud_low": 30, "precipitation": 5.0}}}
+
+
+def test_format_outlook_report_two_sections():
+    sunrise = _outlook_rec("sunrise_glow", 35, 40, 4, 50)
+    sunset = _outlook_rec("sunset_glow", 60, 55, 19, 46)
+    title, body = format_outlook_report(sunrise, sunset)
+    assert title == "明日展望 朝霞35% 晚霞60% — 北京"
+    assert "明日朝霞 日出 04:50" in body and "明日晚霞 日落 19:46" in body
+    assert "EC 35/40 · 高80 中20 低10 · 无雨" in body
+    assert "GFS 20/30 · 高100 中40 低30 · 雨5.0mm" in body
+    assert "解读: 高云画布可期" in body
+
+
+def test_format_outlook_report_missing_side():
+    sunset = _outlook_rec("sunset_glow", 60, 55, 19, 46)
+    title, body = format_outlook_report(None, sunset)
+    assert "朝霞—%" in title and "晚霞60%" in title
+    assert "明日朝霞: 数据缺失,稍后自动重试" in body
+    assert "明日晚霞 日落 19:46" in body
+
+
+def test_format_outlook_report_raw_none_shows_dash():
+    sunset = _outlook_rec("sunset_glow", 60, 55, 19, 46)
+    sunset["per_model_raw"]["ecmwf_ifs025"]["cloud_high"] = None
+    _, body = format_outlook_report(None, sunset)
+    assert "EC 35/40 · 高— 中20 低10 · 无雨" in body
