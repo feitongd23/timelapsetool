@@ -80,6 +80,20 @@ def test_compute_prediction_raises_on_all_models_missing(tmp_path):
                            date(2026, 7, 3), run_llm=False)
 
 
+def test_compute_prediction_collects_per_model_raw(tmp_path):
+    from datetime import date
+    conn = store.connect(tmp_path / "t.db")
+    store.init_db(conn)
+    city = load_cities(CONFIG)["beijing"]
+    client = httpx.Client(transport=_fake_transport())
+    r = compute_prediction(conn, client, city, "beijing", "sunset_glow",
+                           date(2026, 7, 3), run_llm=False)
+    # fake transport:每模式 high=50 mid=15 low=10 precip=0
+    assert set(r.per_model_raw) == set(MODELS)
+    assert r.per_model_raw["gfs_seamless"] == {
+        "cloud_high": 50, "cloud_mid": 15, "cloud_low": 10, "precipitation": 0}
+
+
 def _fake_pr(index=5.0, confidence="high"):
     from datetime import datetime, timezone
     return PredictionResult(

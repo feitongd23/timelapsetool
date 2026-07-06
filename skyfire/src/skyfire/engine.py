@@ -3,7 +3,7 @@
 compute_prediction:算分 + 落库 + 可选 LLM,返回结构化结果供上层 echo/格式化/推送。
 HTTP 失败向上抛 httpx.HTTPError;全模式无数据抛 ValueError——由调用方决定如何呈现。
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -48,6 +48,8 @@ class PredictionResult:
     peak: datetime
     azimuth: float
     llm: LlmResult | None
+    # 各模式燃烧时刻原始预报(喂 LLM 看分歧;值可为 None)
+    per_model_raw: dict[str, dict] = field(default_factory=dict)
 
 
 def compute_prediction(conn, client: httpx.Client, city: City, city_key: str,
@@ -61,10 +63,16 @@ def compute_prediction(conn, client: httpx.Client, city: City, city_key: str,
     channel_empty = all(p.cloud_low is None and p.cloud_total is None for p in channel)
 
     per_model: dict[str, float] = {}
+    per_model_raw: dict[str, dict] = {}
     details = {}
     for fc in forecasts:
         h = fc.at(iso_hour)
-        if h is None or h.cloud_high is None:
+        if h is None:
+            continue
+        per_model_raw[fc.model] = {
+            "cloud_high": h.cloud_high, "cloud_mid": h.cloud_mid,
+            "cloud_low": h.cloud_low, "precipitation": h.precipitation}
+        if h.cloud_high is None:
             continue
         r = fire_cloud_score(FireCloudInputs(
             cloud_high=h.cloud_high, cloud_mid=h.cloud_mid or 0,
@@ -121,7 +129,7 @@ def compute_prediction(conn, client: httpx.Client, city: City, city_key: str,
         confidence=cons.confidence, spread=cons.spread, per_model=cons.per_model,
         blocked_points=first.blocked_points, channel_factor=first.channel_factor,
         aod=aod, channel_empty=channel_empty, peak=win.peak, azimuth=win.azimuth_deg,
-        llm=llm_result)
+        llm=llm_result, per_model_raw=per_model_raw)
 
 
 def observe_burn_clouds(client, peak_utc, event: str, lat: float, lon: float,
