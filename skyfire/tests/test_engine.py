@@ -102,6 +102,8 @@ def _fake_pr(index=5.0, confidence="high"):
         per_model={"gfs_seamless": index}, blocked_points=0, channel_factor=1.0,
         aod=0.3, channel_empty=False,
         peak=datetime(2026, 7, 6, 19, 40, tzinfo=timezone.utc), azimuth=295.0,
+        per_model_raw={"gfs_seamless": {"cloud_high": 80, "cloud_mid": 20,
+                                        "cloud_low": 10, "precipitation": 0.0}},
         llm=None)
 
 
@@ -157,3 +159,43 @@ def test_run_checkpoint_gated_skips_small_delta(monkeypatch):
     assert rec is None                                      # Δ=0 < 15pp,不落库
     assert len(store.predictions_for(conn, "2026-07-06", "beijing",
                                      "sunset_glow")) == 1
+
+
+def test_run_checkpoint_outlook_baseline_ignores_satellite(monkeypatch):
+    conn, city = _setup(monkeypatch, None)
+    rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
+                         date_type(2026, 7, 6), "outlook")
+    # 同 C1:外推 52 不参与 → rule 5.0 high → prob 50
+    assert rec["probability_pct"] == 50 and rec["quality_pct"] == 50
+    assert rec["checkpoint"] == "outlook"
+    assert store.has_checkpoint(conn, "2026-07-06", "beijing", "sunset_glow",
+                                "outlook")
+
+
+def test_run_checkpoint_payload_rec_and_db_carry_raw(monkeypatch):
+    captured = {}
+
+    def fake_predict(payload, similar, frames, model=None):
+        captured.update(payload)
+        return None
+
+    monkeypatch.setattr(engine_mod, "compute_prediction",
+                        lambda *a, **k: _fake_pr())
+    monkeypatch.setattr(engine_mod, "observe_burn_clouds",
+                        lambda *a, **k: (48.0, 52.0, "now=48%→burn=52%", []))
+    monkeypatch.setattr(engine_mod, "predict_pct", fake_predict)
+    conn = store.connect(":memory:")
+    store.init_db(conn)
+    city = City(key="beijing", name="北京", lat=39.9, lon=116.4,
+                timezone="Asia/Shanghai")
+    rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
+                         date_type(2026, 7, 6), "c2")
+    # LLM payload 看得到各模式原始数字
+    assert captured["per_model_raw"]["gfs_seamless"]["cloud_high"] == 80
+    # rec 携带原始数字(推送格式化用)
+    assert rec["per_model_raw"]["gfs_seamless"]["precipitation"] == 0.0
+    # per_model_json 落库:概率/质量 + 原始数字合体
+    import json
+    row = store.latest_prediction(conn, "2026-07-06", "beijing", "sunset_glow")
+    pmj = json.loads(row["per_model_json"])
+    assert pmj["gfs_seamless"]["prob"] == 65 and pmj["gfs_seamless"]["cloud_high"] == 80

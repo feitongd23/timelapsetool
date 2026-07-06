@@ -146,3 +146,8 @@ def test_predict_pct_omits_thinking_for_haiku():
     captured.clear()
     assert predict_pct({}, [], [], model=MODEL_DEEP, client=_Cap()) is not None
     assert captured.get("thinking") == {"type": "adaptive"}
+
+
+def test_predict_system_mentions_per_model_raw():
+    from skyfire.llm import _PREDICT_SYSTEM
+    assert "per_model_raw" in _PREDICT_SYSTEM
