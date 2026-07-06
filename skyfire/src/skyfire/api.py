@@ -34,6 +34,9 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path) -> FastAPI:
     app.state.cities = load_cities(config_path)
     app.state.wechat_path = wechat_path
     app.state.wx_client = httpx.Client(timeout=10)
+    init_conn = store.connect(db_path)
+    store.init_db(init_conn)
+    init_conn.close()
 
     def conn():
         c = store.connect(app.state.db_path)
@@ -42,7 +45,7 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path) -> FastAPI:
         finally:
             c.close()
 
-    def require_session(x_session: str = Header(None), c=Depends(conn)):
+    def require_session(x_session: str | None = Header(None), c=Depends(conn)):
         if not x_session or store.user_by_token(c, _hash(x_session)) is None:
             raise HTTPException(401, "未登录或会话失效")
 
@@ -51,10 +54,13 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path) -> FastAPI:
         cfg = load_wechat_config(app.state.wechat_path)
         if cfg is None:
             raise HTTPException(503, "微信凭证未配置(config/wechat.local.yaml)")
-        r = app.state.wx_client.get(_JSCODE_URL, params={
-            "appid": cfg["app_id"], "secret": cfg["app_secret"],
-            "js_code": body.code, "grant_type": "authorization_code"})
-        data = r.json()
+        try:
+            r = app.state.wx_client.get(_JSCODE_URL, params={
+                "appid": cfg["app_id"], "secret": cfg["app_secret"],
+                "js_code": body.code, "grant_type": "authorization_code"})
+            data = r.json()
+        except (httpx.HTTPError, ValueError) as e:
+            raise HTTPException(503, f"微信接口调用失败: {e.__class__.__name__}")
         openid = data.get("openid")
         if not openid:
             raise HTTPException(401, f"微信登录失败: {data.get('errmsg', '未知错误')}")

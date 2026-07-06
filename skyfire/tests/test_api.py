@@ -49,6 +49,25 @@ def test_login_wechat_error_401(tmp_path):
     assert r.status_code == 401
 
 
+def test_login_wechat_unreachable_503(tmp_path):
+    def boom(request):
+        raise httpx.ConnectTimeout("wx down")
+    app, _ = _make_app(tmp_path, httpx.MockTransport(boom))
+    r = TestClient(app).post("/v1/login", json={"code": "abc"})
+    assert r.status_code == 503
+    assert "微信接口调用失败" in r.json()["detail"]
+
+
+def test_create_app_initializes_fresh_db(tmp_path):
+    wechat = tmp_path / "wechat.local.yaml"
+    wechat.write_text("app_id: wx1\napp_secret: s1\n", encoding="utf-8")
+    app = create_app(db_path=tmp_path / "brand-new.db",   # 未 init 的新库
+                     config_path=CONFIG, wechat_path=wechat)
+    app.state.wx_client = httpx.Client(transport=_wx_transport())
+    r = TestClient(app).post("/v1/login", json={"code": "abc"})
+    assert r.status_code == 200            # 不再 no such table
+
+
 def test_login_missing_credentials_503(tmp_path):
     app, _ = _make_app(tmp_path, wechat_yaml=None)
     r = TestClient(app).post("/v1/login", json={"code": "abc"})
