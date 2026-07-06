@@ -286,6 +286,89 @@ def test_tick_skips_already_run_checkpoint(tmp_path, monkeypatch):
     assert result.exit_code == 0 and called == []   # 幂等:已跑过不重跑
 
 
+def _outlookable_rec(event, checkpoint, prob=50.0):
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo as _zi
+    return {"probability_pct": prob, "quality_pct": 50.0, "confidence": "high",
+            "llm_status": "pending", "reasoning": None, "risks": None,
+            "date": "2026-07-07", "event": event, "checkpoint": checkpoint,
+            "rule_score": 5.0, "sat_cloud_pct": None, "trend": None,
+            "aod": 0.3, "city_name": "北京",
+            "peak": _dt(2026, 7, 7, 4, 50, tzinfo=_zi("Asia/Shanghai")),
+            "per_model_pct": {"gfs_seamless": (50, 50)},
+            "per_model_raw": {"gfs_seamless": {"cloud_high": 50, "cloud_mid": 15,
+                                               "cloud_low": 10,
+                                               "precipitation": 0.0}}}
+
+
+def test_tick_sunrise_c1_runs_outlook_and_pushes_combined(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    pushed = []
+    monkeypatch.setattr(cli, "load_notify_config",
+                        lambda p: {"provider": "bark", "key": "k"})
+    monkeypatch.setattr(cli, "push", lambda t, b, cfg: pushed.append((t, b)) or True)
+    monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev:
+                        "c1" if ev == "sunrise_glow" else None)
+    calls = []
+
+    def fake_run(conn, client, c, key, event, day, cp, **kw):
+        calls.append((event, cp))
+        return _outlookable_rec(event, cp)
+
+    monkeypatch.setattr(cli, "run_checkpoint", fake_run)
+    result = runner.invoke(app, ["tick", "--db", str(tmp_path / "t.db")])
+    assert result.exit_code == 0
+    assert ("sunrise_glow", "c1") in calls and ("sunset_glow", "outlook") in calls
+    assert len(pushed) == 1                       # 合成一条
+    assert pushed[0][0].startswith("明日展望")
+    assert "明日朝霞" in pushed[0][1] and "明日晚霞" in pushed[0][1]
+
+
+def test_tick_outlook_failure_still_pushes_sunrise(tmp_path, monkeypatch):
+    import httpx
+    import skyfire.cli as cli
+    pushed = []
+    monkeypatch.setattr(cli, "load_notify_config",
+                        lambda p: {"provider": "bark", "key": "k"})
+    monkeypatch.setattr(cli, "push", lambda t, b, cfg: pushed.append((t, b)) or True)
+    monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev:
+                        "c1" if ev == "sunrise_glow" else None)
+
+    def fake_run(conn, client, c, key, event, day, cp, **kw):
+        if cp == "outlook":
+            raise httpx.ConnectError("boom")
+        return _outlookable_rec(event, cp)
+
+    monkeypatch.setattr(cli, "run_checkpoint", fake_run)
+    result = runner.invoke(app, ["tick", "--db", str(tmp_path / "t.db")])
+    assert result.exit_code == 0
+    assert len(pushed) == 1
+    assert "晚霞—%" in pushed[0][0]
+    assert "明日晚霞: 数据缺失" in pushed[0][1]
+
+
+def test_tick_sunset_c1_unchanged_single_push(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    pushed = []
+    monkeypatch.setattr(cli, "load_notify_config",
+                        lambda p: {"provider": "bark", "key": "k"})
+    monkeypatch.setattr(cli, "push", lambda t, b, cfg: pushed.append(t) or True)
+    monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev:
+                        "c1" if ev == "sunset_glow" else None)
+    calls = []
+
+    def fake_run(conn, client, c, key, event, day, cp, **kw):
+        calls.append((event, cp))
+        return _outlookable_rec(event, cp)
+
+    monkeypatch.setattr(cli, "run_checkpoint", fake_run)
+    result = runner.invoke(app, ["tick", "--db", str(tmp_path / "t.db")])
+    assert result.exit_code == 0
+    # 晚霞当天 11:00 的 C1 不触发展望,推送保持单事件格式
+    assert all(cp != "outlook" for _, cp in calls)
+    assert len(pushed) == 1 and not pushed[0].startswith("明日展望")
+
+
 def test_feedback_closes_case_saves_photo_and_triggers_retro(tmp_path, monkeypatch):
     import skyfire.cli as cli
     from skyfire import store

@@ -27,7 +27,7 @@ from skyfire.notifyconf import load_notify_config
 from skyfire.openmeteo import fetch_point_forecast
 from skyfire.push import push
 from skyfire.render import load_b13_region
-from skyfire.report import format_pct_report, format_report
+from skyfire.report import format_outlook_report, format_pct_report, format_report
 from skyfire.scoring.cloudsea import CloudSeaInputs, cloud_sea_score
 from skyfire.suntimes import nearest_iso_hour, sun_window
 
@@ -457,6 +457,25 @@ def tick(
                             break  # 该检查点已跑过:该 event 已处理,不看另一天
                         rec = run_checkpoint(conn, client, c, city_key, event,
                                              win.peak.date(), cp)
+                        # 朝霞 C1 时刻 = 每晚明日展望:同跑明日晚霞 outlook,
+                        # 合成一条推送(spec §2 双跑合推,用户拍板)
+                        if cp == "c1" and event == "sunrise_glow":
+                            rec_outlook = None
+                            if not store.has_checkpoint(conn, pred_date,
+                                                        city_key, "sunset_glow",
+                                                        "outlook"):
+                                try:
+                                    rec_outlook = run_checkpoint(
+                                        conn, client, c, city_key,
+                                        "sunset_glow", win.peak.date(),
+                                        "outlook")
+                                except (httpx.HTTPError, ValueError):
+                                    rec_outlook = None  # 缺一半照推,下轮补跑
+                            title, body = format_outlook_report(rec,
+                                                                rec_outlook)
+                            push(title, body, ncfg)
+                            typer.echo(f"✓ {city_key} outlook {title}")
+                            break
                     else:
                         # 检查点之间:c1 之后到峰值前,免费层门控
                         c1_done = store.has_checkpoint(conn, pred_date,
