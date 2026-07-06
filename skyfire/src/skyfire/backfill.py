@@ -50,7 +50,7 @@ from skyfire.himawari_hsd import fetch_case_frames, observer_cloudiness
 from skyfire.openmeteo import (fetch_aod_range, fetch_channel_profile_range,
                                fetch_point_forecast_range)
 from skyfire.scoring.firecloud import FireCloudInputs, fire_cloud_score
-from skyfire.suntimes import sun_window
+from skyfire.suntimes import nearest_iso_hour, sun_window
 
 
 @dataclass
@@ -70,7 +70,7 @@ def backfill_row(conn, client: httpx.Client, row: BackfillRow, city: City,
     day = date_type.fromisoformat(row.date)
     win = sun_window(city.lat, city.lon, city.timezone, day,
                      "sunrise_glow" if row.event == "cloud_sea" else row.event)
-    iso_hour = win.peak.strftime("%Y-%m-%dT%H:00")
+    iso_hour = nearest_iso_hour(win.peak)
 
     pts = channel_points(city.lat, city.lon, win.azimuth_deg)
     try:

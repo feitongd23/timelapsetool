@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from astral import Observer
@@ -30,3 +30,13 @@ def sun_window(lat: float, lon: float, tz: str, day: date, event: str) -> SunWin
         event=event, peak=peak, window_start=start, window_end=end,
         azimuth_deg=azimuth(obs, peak),
     )
+
+
+def nearest_iso_hour(dt: datetime) -> str:
+    """就近取整到小时的 ISO 串(04:47→05:00)。
+
+    预报按整点给数;此前用 strftime 截断,峰值 xx:30 之后取数偏差近一小时。
+    """
+    if dt.minute >= 30:
+        dt = dt + timedelta(hours=1)
+    return dt.strftime("%Y-%m-%dT%H:00")

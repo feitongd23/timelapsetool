@@ -29,7 +29,7 @@ from skyfire.percent import baseline_percent
 from skyfire.rag import factor_vector, similar_cases_from
 from skyfire.render import load_b13_region, render_annotated
 from skyfire.scoring.firecloud import FireCloudInputs, fire_cloud_score
-from skyfire.suntimes import sun_window
+from skyfire.suntimes import nearest_iso_hour, sun_window
 
 
 @dataclass
@@ -53,7 +53,7 @@ class PredictionResult:
 def compute_prediction(conn, client: httpx.Client, city: City, city_key: str,
                        event: str, day: date, run_llm: bool = True) -> PredictionResult:
     win = sun_window(city.lat, city.lon, city.timezone, day, event)
-    iso_hour = win.peak.strftime("%Y-%m-%dT%H:00")
+    iso_hour = nearest_iso_hour(win.peak)
     geo_pts = channel_points(city.lat, city.lon, win.azimuth_deg)
     forecasts = fetch_point_forecast(client, city.lat, city.lon, city.timezone)
     aod = fetch_aod_at(client, city.lat, city.lon, city.timezone, iso_hour)
