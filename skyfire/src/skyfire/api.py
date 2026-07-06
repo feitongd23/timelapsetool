@@ -3,8 +3,11 @@
 app 工厂可测;鉴权=微信登录换发的会话 token(X-Session 头,自用从宽)。
 """
 import hashlib
+import json
 import secrets
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -13,6 +16,8 @@ from pydantic import BaseModel
 
 from skyfire import store
 from skyfire.config import load_cities
+from skyfire.report import _prob_word, _qual_word
+from skyfire.suntimes import sun_window
 from skyfire.wechatconf import load_wechat_config
 
 _JSCODE_URL = "https://api.weixin.qq.com/sns/jscode2session"
@@ -24,6 +29,10 @@ class LoginBody(BaseModel):
 
 def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _now_local(tz: str) -> datetime:
+    return datetime.now(ZoneInfo(tz))
 
 
 def create_app(db_path: Path, config_path: Path, wechat_path: Path) -> FastAPI:
@@ -72,6 +81,51 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path) -> FastAPI:
     def summary(city: str = "beijing", c=Depends(conn)):
         if city not in app.state.cities:
             raise HTTPException(422, f"未知城市 {city!r}")
-        return {"city": city, "dates": []}      # Task 4 填充
+        ct = app.state.cities[city]
+        now = _now_local(ct.timezone)
+        dates = []
+        for offset, day_label in ((0, "今天"), (1, "明天")):
+            day = (now + timedelta(days=offset)).date()
+            events = []
+            for event in ("sunrise_glow", "sunset_glow"):
+                win = sun_window(ct.lat, ct.lon, ct.timezone, day, event)
+                rows = store.predictions_for(c, str(day), city, event)
+                latest = rows[-1] if rows else None
+                if latest is not None:
+                    latest = {
+                        "checkpoint": latest["checkpoint"],
+                        "probability_pct": latest["probability_pct"],
+                        "quality_pct": latest["quality_pct"],
+                        "prob_word": _prob_word(latest["probability_pct"]),
+                        "qual_word": _qual_word(latest["quality_pct"]),
+                        "confidence": latest["confidence"],
+                        "llm_status": latest["llm_status"],
+                        "reasoning": latest["reasoning"],
+                        "risks": latest["risks"],
+                        "created_at": latest["created_at"],
+                    }
+                per_model = {}
+                if rows and rows[-1].get("per_model_json"):
+                    per_model = json.loads(rows[-1]["per_model_json"])
+                best = (f"{win.peak:%H:%M}-{win.peak + timedelta(minutes=15):%H:%M}"
+                        if event == "sunset_glow" else
+                        f"{win.peak - timedelta(minutes=15):%H:%M}-{win.peak:%H:%M}")
+                events.append({
+                    "event": event,
+                    "status": "ended" if now > win.peak else "upcoming",
+                    "peak": f"{win.peak:%H:%M}", "best_window": best,
+                    "latest": latest,
+                    "trajectory": [{"checkpoint": r["checkpoint"],
+                                    "probability_pct": r["probability_pct"],
+                                    "quality_pct": r["quality_pct"],
+                                    "created_at": r["created_at"]} for r in rows],
+                    "per_model": per_model,
+                })
+            dates.append({"date": str(day),
+                          "label": f"{day_label} {day.month}月{day.day}日",
+                          "events": events})
+        return {"city": city, "city_name": ct.name,
+                "updated_at": now.isoformat(timespec="seconds"),
+                "dates": dates}
 
     return app

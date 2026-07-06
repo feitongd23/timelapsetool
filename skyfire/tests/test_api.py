@@ -81,3 +81,51 @@ def test_protected_endpoint_requires_token(tmp_path):
     token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
     r = client.get("/v1/summary?city=beijing", headers={"X-Session": token})
     assert r.status_code == 200
+
+
+def _seed_predictions(db, date_s="2026-07-07"):
+    import json
+    conn = store.connect(db)
+    kw = dict(quality_pct=30, confidence="high", rule_score=4.0,
+              sat_cloud_pct=None, trend=None, llm_status="pending",
+              reasoning=None, risks=None)
+    store.add_prediction(conn, date_s, "beijing", "sunset_glow", "outlook",
+                         probability_pct=38, **kw)
+    pm = json.dumps({"gfs_seamless": {"prob": 55, "qual": 48, "cloud_high": 80,
+                                      "cloud_mid": 30, "cloud_low": 12,
+                                      "precipitation": 0.0}})
+    store.add_prediction(conn, date_s, "beijing", "sunset_glow", "c2",
+                         probability_pct=62, quality_pct=55, confidence="high",
+                         rule_score=5.5, sat_cloud_pct=40.0, trend="现在40%",
+                         llm_status="done", reasoning="画布成片", risks="低云",
+                         per_model_json=pm)
+    conn.close()
+
+
+def test_summary_shape_dates_events_status(tmp_path, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    import skyfire.api as api_mod
+    app, db = _make_app(tmp_path, _wx_transport())
+    _seed_predictions(db)
+    # 固定"现在"= 2026-07-07 12:00 北京(朝霞已过、晚霞未到)
+    monkeypatch.setattr(api_mod, "_now_local", lambda tz: datetime(
+        2026, 7, 7, 12, 0, tzinfo=ZoneInfo(tz)))
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    data = client.get("/v1/summary?city=beijing",
+                      headers={"X-Session": token}).json()
+    assert data["city_name"] == "北京" and len(data["dates"]) == 2
+    d0 = data["dates"][0]
+    assert d0["date"] == "2026-07-07" and d0["label"].startswith("今天")
+    assert [e["event"] for e in d0["events"]] == ["sunrise_glow", "sunset_glow"]
+    sunrise, sunset = d0["events"]
+    assert sunrise["status"] == "ended"            # 12:00 > 日出峰值
+    assert sunset["status"] == "upcoming"
+    assert sunset["latest"]["probability_pct"] == 62
+    assert sunset["latest"]["prob_word"] == "机会较大"  # _prob_word(62): report.py 现行口径 <80 档
+    assert [t["checkpoint"] for t in sunset["trajectory"]] == ["outlook", "c2"]
+    assert sunset["per_model"]["gfs_seamless"]["cloud_high"] == 80
+    assert sunrise["latest"] is None               # 没喂朝霞数据
+    assert data["dates"][1]["label"].startswith("明天")
+    assert "peak" in sunset and "-" in sunset["best_window"]
