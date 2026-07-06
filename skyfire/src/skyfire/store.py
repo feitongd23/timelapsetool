@@ -110,47 +110,61 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_predictions(conn: sqlite3.Connection) -> None:
-    """老库升级:CHECK 加 outlook 需重建表(SQLite 不能改 CHECK);幂等。"""
-    sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table'"
-                       " AND name='predictions'").fetchone()
-    if sql and "'outlook'" not in sql[0]:
-        conn.executescript("""
-        ALTER TABLE predictions RENAME TO predictions_old;
-        CREATE TABLE predictions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          date TEXT NOT NULL,
-          city TEXT NOT NULL,
-          event TEXT NOT NULL,
-          checkpoint TEXT NOT NULL CHECK(checkpoint IN ('c1','c2','c3','gated','manual','outlook')),
-          probability_pct REAL NOT NULL,
-          quality_pct REAL NOT NULL,
-          confidence TEXT,
-          rule_score REAL,
-          sat_cloud_pct REAL,
-          trend TEXT,
-          llm_status TEXT NOT NULL DEFAULT 'pending'
-            CHECK(llm_status IN ('done','pending','skipped')),
-          reasoning TEXT,
-          risks TEXT,
-          per_model_json TEXT,
-          created_at TEXT DEFAULT (datetime('now'))
-        );
-        INSERT INTO predictions (id, date, city, event, checkpoint,
-            probability_pct, quality_pct, confidence, rule_score, sat_cloud_pct,
-            trend, llm_status, reasoning, risks, created_at)
-          SELECT id, date, city, event, checkpoint, probability_pct, quality_pct,
-                 confidence, rule_score, sat_cloud_pct, trend, llm_status,
-                 reasoning, risks, created_at
-          FROM predictions_old;
-        DROP TABLE predictions_old;
-        DROP INDEX IF EXISTS idx_pred_checkpoint;
-        CREATE UNIQUE INDEX idx_pred_checkpoint
-          ON predictions(date, city, event, checkpoint)
-          WHERE checkpoint IN ('c1','c2','c3','outlook');
-        """)
-    cols = [r[1] for r in conn.execute("PRAGMA table_info(predictions)").fetchall()]
-    if "per_model_json" not in cols:
-        conn.execute("ALTER TABLE predictions ADD COLUMN per_model_json TEXT")
+    """老库升级:CHECK 加 outlook 需重建表(SQLite 不能改 CHECK);幂等。
+
+    BEGIN IMMEDIATE 抢写锁整体成败:崩溃全回滚,并发 init_db 阻塞等待,
+    避免半迁移把历史困在 predictions_old。
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if conn.execute("SELECT 1 FROM sqlite_master"
+                        " WHERE name='predictions_old'").fetchone():
+            raise RuntimeError("predictions_old 残留:上次迁移中断,请人工恢复")
+        row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table'"
+                           " AND name='predictions'").fetchone()
+        if row is None:                     # 表不存在:留给 SCHEMA 建,无事可做
+            conn.commit()
+            return
+        if "'outlook'" not in row[0]:
+            conn.execute("ALTER TABLE predictions RENAME TO predictions_old")
+            conn.execute("""CREATE TABLE predictions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              date TEXT NOT NULL,
+              city TEXT NOT NULL,
+              event TEXT NOT NULL,
+              checkpoint TEXT NOT NULL CHECK(checkpoint IN ('c1','c2','c3','gated','manual','outlook')),
+              probability_pct REAL NOT NULL,
+              quality_pct REAL NOT NULL,
+              confidence TEXT,
+              rule_score REAL,
+              sat_cloud_pct REAL,
+              trend TEXT,
+              llm_status TEXT NOT NULL DEFAULT 'pending'
+                CHECK(llm_status IN ('done','pending','skipped')),
+              reasoning TEXT,
+              risks TEXT,
+              per_model_json TEXT,
+              created_at TEXT DEFAULT (datetime('now'))
+            )""")
+            conn.execute("""INSERT INTO predictions (id, date, city, event, checkpoint,
+                probability_pct, quality_pct, confidence, rule_score, sat_cloud_pct,
+                trend, llm_status, reasoning, risks, created_at)
+              SELECT id, date, city, event, checkpoint, probability_pct, quality_pct,
+                     confidence, rule_score, sat_cloud_pct, trend, llm_status,
+                     reasoning, risks, created_at
+              FROM predictions_old""")
+            conn.execute("DROP TABLE predictions_old")
+            conn.execute("DROP INDEX IF EXISTS idx_pred_checkpoint")
+            conn.execute("""CREATE UNIQUE INDEX idx_pred_checkpoint
+              ON predictions(date, city, event, checkpoint)
+              WHERE checkpoint IN ('c1','c2','c3','outlook')""")
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(predictions)").fetchall()]
+        if "per_model_json" not in cols:
+            conn.execute("ALTER TABLE predictions ADD COLUMN per_model_json TEXT")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def upsert_case(conn, date: str, city: str, event: str, *,

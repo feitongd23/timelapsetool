@@ -217,3 +217,20 @@ def test_outlook_unique_per_day(tmp_path):
     store.add_prediction(conn, "2026-07-06", "beijing", "sunset_glow", "outlook", **kw)
     with pytest.raises(sqlite3.IntegrityError):
         store.add_prediction(conn, "2026-07-06", "beijing", "sunset_glow", "outlook", **kw)
+
+
+def test_migrate_predictions_noop_without_table(tmp_path):
+    import sqlite3
+    conn = sqlite3.connect(tmp_path / "empty.db")
+    store._migrate_predictions(conn)   # 表不存在:干净 no-op 不抛错
+
+
+def test_migrate_predictions_rejects_stranded_old_table(tmp_path):
+    import sqlite3
+    import pytest
+    conn = store.connect(tmp_path / "t.db")
+    store.init_db(conn)
+    conn.execute("CREATE TABLE predictions_old (id INTEGER)")
+    conn.commit()
+    with pytest.raises(RuntimeError, match="predictions_old"):
+        store._migrate_predictions(conn)
