@@ -96,7 +96,7 @@ def test_format_outlook_report_missing_side():
     sunset = _outlook_rec("sunset_glow", 60, 55, 19, 46)
     title, body = format_outlook_report(None, sunset)
     assert "朝霞—%" in title and "晚霞60%" in title
-    assert "明日朝霞: 数据缺失,稍后自动重试" in body
+    assert "明日朝霞: 数据缺失(后续检查点自动补上)" in body
     assert "明日晚霞 日落 19:46" in body
 
 

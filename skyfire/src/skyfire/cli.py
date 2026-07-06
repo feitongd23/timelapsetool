@@ -470,7 +470,7 @@ def tick(
                                         "sunset_glow", win.peak.date(),
                                         "outlook")
                                 except (httpx.HTTPError, ValueError):
-                                    rec_outlook = None  # 缺一半照推,下轮补跑
+                                    rec_outlook = None  # 缺一半照推;本晚不补跑,明日11:00晚霞C1自然补上
                             title, body = format_outlook_report(rec,
                                                                 rec_outlook)
                             push(title, body, ncfg)

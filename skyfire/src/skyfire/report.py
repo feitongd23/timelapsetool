@@ -150,7 +150,7 @@ def format_outlook_report(rec_sunrise: dict | None,
     lines: list[str] = []
     for rec, label in ((rec_sunrise, "明日朝霞"), (rec_sunset, "明日晚霞")):
         if rec is None:
-            lines.append(f"{label}: 数据缺失,稍后自动重试")
+            lines.append(f"{label}: 数据缺失(后续检查点自动补上)")
         else:
             lines.extend(_outlook_section(rec))
         lines.append("")
