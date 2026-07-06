@@ -21,10 +21,19 @@ Taro 小程序(微信) --HTTP--> FastAPI 只读 API(Mac 本机 uvicorn :8000)-->
 
 - 新目录 `photo-app/skyfire-miniapp/`(Taro 4 + React + TypeScript,独立 package.json;将来同码出 RN App)
 - API 新模块 `skyfire/src/skyfire/api.py`,新 CLI 命令 `skyfire serve [--host 0.0.0.0 --port 8000]`
-- 监听 0.0.0.0:真机同 WiFi 直连局域网 IP;CORS 全开(微信开发者工具模拟器走浏览器需要);v1 无鉴权(自用局域网,已知取舍)
+- 监听 0.0.0.0:真机同 WiFi 直连局域网 IP;CORS 全开(微信开发者工具模拟器走浏览器需要);鉴权 = 微信登录换发的会话 token(见 §2 login),自用阶段校验从宽
 - 依赖新增:fastapi、uvicorn(pyproject dependencies)
 
-## 2. API v1 契约(只读,两个端点)
+## 2. API v1 契约(两读一写,三个端点)
+
+### POST /v1/login
+
+微信一键登录(用户 2026-07-07 要求)。请求 `{"code": "<wx.login 临时code>"}`:
+
+- 后端持 AppID+AppSecret 调微信 `jscode2session` 换 openid(AppSecret 放 `config/wechat.local.yaml`,gitignored,同 notify.local.yaml 模式;凭证缺失 → 503 提示配置)
+- openid 落 users 表(已有,建于 Plan A);签发随机会话 token(内存+users 表存 hash,长期有效,自用不做过期)
+- 返回 `{"token": "...", "openid_suffix": "…后4位"}`
+- summary/heatmap 请求头带 `X-Session: <token>`;无效/缺失 → 401,前端静默重新 wx.login 续期。自用阶段校验从宽(token 存在即过),为 v2 反馈归属打底
 
 ### GET /v1/summary?city=beijing
 
@@ -81,6 +90,7 @@ Taro 小程序(微信) --HTTP--> FastAPI 只读 API(Mac 本机 uvicorn :8000)-->
 
 页面结构(浅色磨砂,已确认 mockup):
 
+0. **登录页**(首次启动/token 失效时):浅色磨砂全屏,产品名+一句话+**"微信一键登录"按钮**;点击 wx.login → POST /v1/login → token 存 storage → 进首页;之后每次启动静默续期,不再打扰
 1. **顶部**:城市(v1 固定北京)+ 更新时间;**日期下拉选择**(今天 7月7日 / 明天 7月8日);其下**朝霞/晚霞两个 tab**(固定只这两个)——已结束的 tab 标"已结束"角标,点开仍显示该事件末版预测(轨迹/模式/解读齐全),数字区淡化处理
 2. **Hero 卡**:概率大数字(46-48px)+ 定性词;质量副数字;下嵌轨迹曲线(展望→C1→门控→C2→C3,原生 canvas 手绘折线——最多几个点,不引图表库)+ 一句"昨晚 38% → 现在 62%"
 3. **各模式卡**:EC/GFS/ICON/CMA 四行,概率/质量 · 高中低云 · 降水(等宽字体)
@@ -99,18 +109,18 @@ Taro 小程序(微信) --HTTP--> FastAPI 只读 API(Mac 本机 uvicorn :8000)-->
 
 ## 5. 测试
 
-- API:pytest + FastAPI TestClient——summary 形状(3 events/轨迹排序/per_model 反序列化/无数据 latest:null)、heatmap 返回 PNG magic bytes+缓存命中(第二次调用不触发网格拉取,monkeypatch 计数)、参数校验 422、503 降级
+- API:pytest + FastAPI TestClient——login(jscode2session 用 httpx MockTransport 打桩:成功换 token/微信侧报错 401/凭证缺失 503)、鉴权(无 token 401/有效 token 放行)、summary 形状(2 dates×朝霞晚霞/status ended 判定/轨迹排序/per_model 反序列化/无数据 latest:null)、heatmap 返回 PNG magic bytes+缓存命中(第二次调用不触发网格拉取,monkeypatch 计数)、参数校验 422、503 降级
 - 热力图渲染:纯函数单测(小网格 → 插值上色 → 尺寸/无 NaN)
 - 小程序:开发者工具模拟器 + 真机各一轮手测清单(写进计划)
 - 验收 = 真机看到真数据首页 + 平滑热力图浮现
 
 ## 6. 不做(第二子项目/以后)
 
-- 反馈写接口(打分/照片/预报不准)+ 反馈两键 UI 接线
-- 鉴权、公网暴露、VPS/Tunnel 部署(挂起的部署形态问题)
+- 反馈写接口(打分/照片/预报不准)+ 反馈两键 UI 接线(登录身份已就绪,v2 直接归属到 openid)
+- 严格鉴权(token 过期/刷新/防重放)、公网暴露、VPS/Tunnel 部署(挂起的部署形态问题)
 - 热力图交互版(点格查值/缩放)、地图底图叠加
 - 历史案例页、多城市、App(RN)构建
 
 ## 7. 用户准备项(并行)
 
-- 装微信开发者工具;注册小程序 AppID(个人主体,免费;游客模式可先开发)
+- 装微信开发者工具;**注册小程序 AppID+获取 AppSecret(必须——一键登录的 jscode2session 不支持游客模式)**,AppSecret 填入 config/wechat.local.yaml(登录页之外的开发仍可先用游客模式并行)
