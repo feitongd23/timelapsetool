@@ -38,25 +38,22 @@ export default function Heatmaps({ event, date }: { event: string; date: string 
 
   return (
     <View className='glass-card'>
-      <View className='hm-titles'>
-        <Text className='card-title t-muted'>概率图</Text>
-        <Text className='card-title t-muted'>质量图</Text>
-      </View>
       {err ? (
         <Text className='t-red hm-err' onClick={() => setRetryTick(t => t + 1)}>{err},点我重试</Text>
       ) : (
-        <View className='hm-row'>
-          {[prob, quality].map((src, i) => (
-            <View key={i} className='hm-cell'>
+        <View>
+          {([['概率图', prob], ['质量图', quality]] as const).map(([title, src]) => (
+            <View key={title} className='hm-block'>
+              <Text className='card-title t-muted'>{title}</Text>
               {src
-                ? <Image src={src} mode='widthFix' className='hm-img'
+                ? <Image src={src} mode='widthFix' className='hm-map'
                          onClick={() => preview(src)} />
                 : <View className='hm-skeleton' />}
             </View>
           ))}
         </View>
       )}
-      <Text className='traj-note t-muted'>网格规则分平滑渲染 · 点图看大图 · ⊙=北京</Text>
+      <Text className='traj-note t-muted'>华北周边 · 点图看大图</Text>
     </View>
   )
 }

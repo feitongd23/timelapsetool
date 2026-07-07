@@ -19,7 +19,8 @@ from pydantic import BaseModel
 from skyfire import store
 from skyfire.config import load_cities
 from skyfire.gridmap import DEFAULT_BBOX, DEFAULT_STEP, fetch_cloud_grid, grid_points
-from skyfire.heatgrid import render_heatmap_png, score_grids
+from skyfire.heatgrid import score_grids
+from skyfire.heatmap_map import render_map_png
 from skyfire.report import _prob_word, _qual_word
 from skyfire.suntimes import nearest_iso_hour, sun_window
 from skyfire.wechatconf import load_wechat_config
@@ -184,9 +185,8 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path) -> FastAPI:
                               if exp < now_mono]:
                         _GRID_CACHE.pop(k, None)   # pop 防并发双清 KeyError
                     _GRID_CACHE[key] = (now_mono + _GRID_TTL, grids)
-        lon0, lat0, lon1, lat1 = DEFAULT_BBOX
-        marker = ((lat1 - ct.lat) / DEFAULT_STEP, (ct.lon - lon0) / DEFAULT_STEP)
-        png = render_heatmap_png(grids[kind], kind, marker_rc=marker)
+        png = render_map_png(grids[kind], kind, DEFAULT_BBOX,
+                             marker=(ct.name, ct.lat, ct.lon))
         return Response(png, media_type="image/png")
 
     def _compute_grids(c, ct, event, day) -> dict:
