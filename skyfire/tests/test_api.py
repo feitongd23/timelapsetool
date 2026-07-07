@@ -145,7 +145,7 @@ def test_heatmap_png_and_cache(tmp_path, monkeypatch):
     app, db = _make_app(tmp_path, _wx_transport())
     calls = []
     monkeypatch.setattr(api_mod, "fetch_cloud_grid", _stub_cloud_grid(calls))
-    api_mod._HEATMAP_CACHE.clear()
+    api_mod._GRID_CACHE.clear()
     client = TestClient(app)
     token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
     hdr = {"X-Session": token}
@@ -157,7 +157,7 @@ def test_heatmap_png_and_cache(tmp_path, monkeypatch):
     r2 = client.get(url, headers=hdr)
     assert r2.status_code == 200 and len(calls) == 1     # 缓存命中,不再拉网格
     client.get(url.replace("kind=prob", "kind=quality"), headers=hdr)
-    assert len(calls) == 2                                # kind 不同重新算
+    assert len(calls) == 1                                # prob/quality 共享网格,不重拉
 
 
 def test_heatmap_bad_kind_422(tmp_path):
@@ -174,13 +174,13 @@ def test_heatmap_cache_purges_expired_on_write(tmp_path, monkeypatch):
     import skyfire.api as api_mod
     app, _ = _make_app(tmp_path, _wx_transport())
     monkeypatch.setattr(api_mod, "fetch_cloud_grid", _stub_cloud_grid([]))
-    api_mod._HEATMAP_CACHE.clear()
-    api_mod._HEATMAP_CACHE[("stale",)] = (_t.monotonic() - 1, b"old")
+    api_mod._GRID_CACHE.clear()
+    api_mod._GRID_CACHE[("stale",)] = (_t.monotonic() - 1, {"prob": [], "quality": []})
     client = TestClient(app)
     token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
     client.get("/v1/heatmap?city=beijing&event=sunset_glow&date=2026-07-07"
                "&kind=prob", headers={"X-Session": token})
-    assert ("stale",) not in api_mod._HEATMAP_CACHE   # 写入时清扫
+    assert ("stale",) not in api_mod._GRID_CACHE   # 写入时清扫
 
 
 def test_heatmap_upstream_failure_503(tmp_path, monkeypatch):
@@ -192,9 +192,46 @@ def test_heatmap_upstream_failure_503(tmp_path, monkeypatch):
 
     app, _ = _make_app(tmp_path, _wx_transport())
     monkeypatch.setattr(api_mod, "fetch_cloud_grid", boom)
-    api_mod._HEATMAP_CACHE.clear()
+    api_mod._GRID_CACHE.clear()
     client = TestClient(app)
     token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
     r = client.get("/v1/heatmap?city=beijing&event=sunset_glow"
                    "&date=2026-07-07&kind=prob", headers={"X-Session": token})
     assert r.status_code == 503
+
+
+def test_heatmap_single_flight_dedupes_concurrent_cold_fetches(tmp_path, monkeypatch):
+    # 手机冷启动一次要多张同事件热力图:并发命中同一冷 key 只应拉一次网格,
+    # 否则同时打爆 Open-Meteo → 503(真机实测过)。
+    import threading
+    import time as _t
+    import skyfire.api as api_mod
+    app, _ = _make_app(tmp_path, _wx_transport())
+    calls = []
+
+    def slow_grid(client, pts, n_rows, n_cols, tz, iso_hour, date=None,
+                  model="gfs_seamless", with_precip=False):
+        calls.append(iso_hour)
+        _t.sleep(0.3)                       # 模拟慢网格拉取,放大并发窗口
+        mk = lambda v: [[v] * n_cols for _ in range(n_rows)]
+        return {"high": mk(60), "mid": mk(15), "low": mk(5), "precip": mk(0.0)}
+
+    monkeypatch.setattr(api_mod, "fetch_cloud_grid", slow_grid)
+    api_mod._GRID_CACHE.clear()
+    api_mod._GRID_LOCKS.clear()
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    hdr = {"X-Session": token}
+    results = {}
+
+    def hit(i, kind):
+        r = client.get(f"/v1/heatmap?city=beijing&event=sunset_glow"
+                       f"&date=2026-07-07&kind={kind}", headers=hdr)
+        results[i] = r.status_code
+
+    threads = [threading.Thread(target=hit, args=(i, "prob" if i % 2 else "quality"))
+               for i in range(8)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+    assert all(v == 200 for v in results.values()), results
+    assert len(calls) == 1                  # 单飞:8 个并发只拉了一次网格

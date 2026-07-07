@@ -101,8 +101,12 @@ CREATE TABLE IF NOT EXISTS model_skill (
 """
 
 
-def connect(path: Path | str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+def connect(path: Path | str, *,
+            check_same_thread: bool = True) -> sqlite3.Connection:
+    # check_same_thread=False:FastAPI 把同步依赖的连接在线程池线程间流转
+    # (setup/endpoint/teardown 可能不同线程),每请求独占一条连接、不并发共享,
+    # 故关掉线程检查是安全的;CLI/tick 单线程保持默认 True。
+    conn = sqlite3.connect(path, check_same_thread=check_same_thread)
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 

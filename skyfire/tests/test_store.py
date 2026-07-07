@@ -313,3 +313,46 @@ def test_scored_cases_with_snapshots_groups_latest_per_model(tmp_path):
     snaps = {s["model"]: s["payload"] for s in out[0]["snapshots"]}
     assert snaps["ecmwf_ifs025"]["cloud_high"] == 100   # 每模式取最新一份
     assert out[0]["actual_score"] == 7.5
+
+
+def test_connect_cross_thread_usable_when_flag_off(tmp_path):
+    # FastAPI 把每请求连接在线程池线程间流转:api.py 的 conn() 依赖
+    # 用 check_same_thread=False,连接必须能在别的线程里用(否则真机并发
+    # 报 sqlite3.ProgrammingError → 500 → 手机显示"登录失败")。
+    import threading
+    conn = store.connect(tmp_path / "t.db", check_same_thread=False)
+    store.init_db(conn)
+    store.set_user_token(conn, "openid-x", "hash-x")
+    result = {}
+
+    def use_in_other_thread():
+        try:
+            result["row"] = store.user_by_token(conn, "hash-x")
+        except Exception as e:  # noqa: BLE001
+            result["err"] = repr(e)
+
+    t = threading.Thread(target=use_in_other_thread)
+    t.start(); t.join()
+    conn.close()
+    assert "err" not in result, result.get("err")
+    assert result["row"]["openid"] == "openid-x"
+
+
+def test_connect_default_keeps_same_thread_guard(tmp_path):
+    # CLI/tick 单线程:默认仍开线程检查(不放松安全约束)
+    import threading
+    conn = store.connect(tmp_path / "t2.db")
+    store.init_db(conn)
+    result = {}
+
+    def use_in_other_thread():
+        try:
+            conn.execute("SELECT 1").fetchone()
+            result["ok"] = True
+        except Exception as e:  # noqa: BLE001
+            result["err"] = repr(e)
+
+    t = threading.Thread(target=use_in_other_thread)
+    t.start(); t.join()
+    conn.close()
+    assert "ProgrammingError" in result.get("err", ""), result
