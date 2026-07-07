@@ -487,3 +487,17 @@ def test_latest_empty_db(tmp_path):
     result = runner.invoke(app, ["latest", "--db", str(tmp_path / "t.db")])
     assert result.exit_code == 0
     assert "暂无预测记录" in result.output
+
+
+def test_serve_invokes_uvicorn(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run(app_obj, host, port):
+        captured.update(host=host, port=port, app=app_obj)
+
+    monkeypatch.setattr("uvicorn.run", fake_run)
+    result = runner.invoke(app, ["serve", "--db", str(tmp_path / "t.db"),
+                                 "--port", "8123"])
+    assert result.exit_code == 0
+    assert captured["port"] == 8123 and captured["host"] == "0.0.0.0"
+    assert captured["app"].title == "skyfire api"

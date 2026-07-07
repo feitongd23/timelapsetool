@@ -37,6 +37,7 @@ DEFAULT_CONFIG = Path(__file__).parent.parent.parent / "config" / "cities.yaml"
 DEFAULT_DB = Path(__file__).parent.parent.parent / "data" / "skyfire.db"
 DEFAULT_FRAMES = Path(__file__).parent.parent.parent / "data" / "frames"
 DEFAULT_NOTIFY = Path(__file__).parent.parent.parent / "config" / "notify.local.yaml"
+DEFAULT_WECHAT = Path(__file__).parent.parent.parent / "config" / "wechat.local.yaml"
 DEFAULT_GRIDMAPS = Path(__file__).parent.parent.parent / "data" / "gridmaps"
 DEFAULT_PHOTOS = Path(__file__).parent.parent.parent / "data" / "photos"
 
@@ -543,6 +544,24 @@ def latest(
         typer.echo(line)
         if r["llm_status"] == "done" and r["reasoning"]:
             typer.echo(f"  解读: {r['reasoning']}")
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("0.0.0.0", help="0.0.0.0=局域网可访问"),
+    port: int = typer.Option(8000),
+    config: Path = typer.Option(DEFAULT_CONFIG),
+    db: Path = typer.Option(DEFAULT_DB),
+    wechat_config: Path = typer.Option(DEFAULT_WECHAT),
+):
+    """起小程序只读 API(uvicorn;自用局域网,鉴权=微信登录token)。"""
+    import uvicorn
+
+    from skyfire.api import create_app
+    api = create_app(db_path=db, config_path=config, wechat_path=wechat_config)
+    typer.echo(f"skyfire api → http://{host}:{port}(开发者工具用 127.0.0.1,"
+               f"真机用本机局域网 IP)")
+    uvicorn.run(api, host=host, port=port)
 
 
 def _ensure_case_frames(conn, client, case_id: int, city, city_key: str,
