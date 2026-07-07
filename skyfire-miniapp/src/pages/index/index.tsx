@@ -4,7 +4,6 @@ import { Picker, Text, View } from '@tarojs/components'
 import { fetchSummary } from '../../api/client'
 import type { EventData, Summary } from '../../api/types'
 import Hero from '../../components/Hero'
-import Trajectory from '../../components/Trajectory'
 import ModelRows from '../../components/ModelRows'
 import Heatmaps from '../../components/Heatmaps'
 import Reading from '../../components/Reading'
@@ -73,9 +72,8 @@ export default function Index() {
       </View>
 
       <Hero ev={ev} />
-      <Trajectory points={ev.trajectory} />
-      <ModelRows perModel={ev.per_model} />
       <Heatmaps event={ev.event} date={dateData.date} />
+      <ModelRows perModel={ev.per_model} />
       <Reading latest={ev.latest} />
     </View>
   )
