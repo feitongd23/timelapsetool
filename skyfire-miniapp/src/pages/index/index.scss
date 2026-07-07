@@ -1,0 +1,27 @@
+.index-page { padding: 24rpx; }
+.center-page {
+  min-height: 60vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 24rpx;
+}
+.retry { font-size: 30rpx; }
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20rpx; padding: 0 8rpx;
+}
+.city { font-size: 34rpx; font-weight: 500; }
+.date-picker { font-size: 28rpx; }
+.tabs { display: flex; padding: 8rpx; gap: 8rpx; }
+.tab {
+  flex: 1; text-align: center; padding: 14rpx 0; border-radius: 20rpx;
+  color: #8a94a2; font-size: 28rpx; position: relative;
+}
+.tab-active { background: #fff; color: #1c2733; font-weight: 500; }
+.ended-badge {
+  font-size: 20rpx; color: #8a94a2; margin-left: 8rpx;
+}
+.hero-num-row { display: flex; align-items: baseline; }
+.hero-num { font-size: 96rpx; font-weight: 500; line-height: 1.1; }
+.hero-pct { font-size: 44rpx; margin-left: 6rpx; }
+.hero-words { display: block; margin-top: 10rpx; font-size: 26rpx; }
+.hero-meta { display: block; margin-top: 10rpx; font-size: 24rpx; }
+.hero-ended { opacity: 0.62; }
