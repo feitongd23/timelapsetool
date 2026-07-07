@@ -6,6 +6,8 @@ import type { EventData, Summary } from '../../api/types'
 import Hero from '../../components/Hero'
 import Trajectory from '../../components/Trajectory'
 import ModelRows from '../../components/ModelRows'
+import Heatmaps from '../../components/Heatmaps'
+import Reading from '../../components/Reading'
 import './index.scss'
 
 const EVENT_ZH = { sunrise_glow: '朝霞', sunset_glow: '晚霞' } as const
@@ -73,6 +75,8 @@ export default function Index() {
       <Hero ev={ev} />
       <Trajectory points={ev.trajectory} />
       <ModelRows perModel={ev.per_model} />
+      <Heatmaps event={ev.event} date={dateData.date} />
+      <Reading latest={ev.latest} />
     </View>
   )
 }

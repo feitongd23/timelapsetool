@@ -33,3 +33,14 @@
   font-size: 24rpx; line-height: 2.1;
 }
 .model-name { font-weight: 500; width: 90rpx; }
+.hm-titles { display: flex; justify-content: space-between; }
+.hm-row { display: flex; gap: 16rpx; }
+.hm-cell { flex: 1; }
+.hm-img { width: 100%; border-radius: 20rpx; }
+.hm-skeleton {
+  width: 100%; height: 220rpx; border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.55);
+}
+.hm-err { font-size: 24rpx; }
+.reading-text { display: block; font-size: 26rpx; line-height: 1.7; }
+.reading-risk { display: block; margin-top: 10rpx; font-size: 24rpx; }
