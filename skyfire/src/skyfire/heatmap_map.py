@@ -8,9 +8,16 @@ from io import BytesIO
 
 import numpy as np
 from PIL import Image, ImageDraw
+from scipy.ndimage import gaussian_filter
 
 from skyfire.geolines import load_geolines
 from skyfire.overlay import cjk_font
+
+# 空间平滑半径(格)。原始逐小时云量场在 50km 尺度是椒盐噪声(相邻格跳变~32),
+# 加甜区打分的硬拐点会碎成散点+甜甜圈;对分数场高斯平滑,把"单格精确值"噪声
+# 还原成"这一带成不成片"的区域信号(用户 2026-07-08 指出细碎问题)。纯可视化,
+# 不影响北京点预测(那条路用本地实际云量,与本地图网格无关)。
+_SMOOTH_SIGMA = 1.3
 
 # 华北主要城市(经纬度),落在默认框 110-122E/36-44N 内的会被标注
 _CITIES = [
@@ -63,8 +70,12 @@ def _project(lon, lat, bbox, mw, mh):
 
 
 def _fill_bands(values, kind, mw, mh):
-    """数值网格 → 分级填色 RGB(白底,低值留白),双三次放大到地图尺寸。"""
+    """数值网格 → 分级填色 RGB(白底,低值留白),双三次放大到地图尺寸。
+
+    先对分数场做高斯平滑,去掉逐格噪声,得到连续的区域favorability(见 _SMOOTH_SIGMA)。
+    """
     arr = np.clip(np.asarray(values, dtype=np.float32), 0, 100)
+    arr = gaussian_filter(arr, sigma=_SMOOTH_SIGMA, mode="nearest")
     small = Image.fromarray(arr.astype(np.uint8), mode="L")
     v = np.asarray(small.resize((mw, mh), Image.BICUBIC), dtype=np.float32)
     rgb = np.full((mh, mw, 3), 255, dtype=np.uint8)
