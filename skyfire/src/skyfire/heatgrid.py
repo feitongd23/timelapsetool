@@ -61,7 +61,8 @@ def render_heatmap_png(values: list[list[int]], kind: str,
     img = Image.fromarray(rgb.astype(np.uint8), mode="RGB")
     if marker_rc is not None:
         d = ImageDraw.Draw(img)
-        y, x = marker_rc[0] * _SCALE, marker_rc[1] * _SCALE
+        # 采样点 r 的中心在 (r+0.5)*_SCALE(resize 语义),不加 0.5 会偏西北半格
+        y, x = (marker_rc[0] + 0.5) * _SCALE, (marker_rc[1] + 0.5) * _SCALE
         d.ellipse([x - 7, y - 7, x + 7, y + 7], outline=(28, 39, 51), width=3)
         d.ellipse([x - 2, y - 2, x + 2, y + 2], fill=(28, 39, 51))
     buf = BytesIO()

@@ -174,7 +174,7 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path) -> FastAPI:
         png = render_heatmap_png(grids[kind], kind, marker_rc=marker)
         now_mono = time.monotonic()
         for k in [k for k, (exp, _) in _HEATMAP_CACHE.items() if exp < now_mono]:
-            del _HEATMAP_CACHE[k]
+            _HEATMAP_CACHE.pop(k, None)   # pop 防并发双清 KeyError
         _HEATMAP_CACHE[key] = (now_mono + _HEATMAP_TTL, png)
         return Response(png, media_type="image/png")
 

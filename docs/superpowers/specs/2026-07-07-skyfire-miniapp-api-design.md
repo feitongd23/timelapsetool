@@ -55,7 +55,7 @@ Taro 小程序(微信) --HTTP--> FastAPI 只读 API(Mac 本机 uvicorn :8000)-->
           "event": "sunset_glow", "status": "upcoming",
           "peak": "19:45", "best_window": "19:45-20:00",
           "latest": {"checkpoint": "c2", "probability_pct": 62, "quality_pct": 55,
-                      "prob_word": "值得留意", "qual_word": "中等",
+                      "prob_word": "机会较大", "qual_word": "中等",
                       "confidence": "high", "llm_status": "done",
                       "reasoning": "…", "risks": "…", "created_at": "…"},
           "trajectory": [{"checkpoint": "outlook", "probability_pct": 38,
