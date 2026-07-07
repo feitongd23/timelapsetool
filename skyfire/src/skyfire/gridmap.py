@@ -12,7 +12,10 @@ from skyfire.openmeteo import FORECAST_URL, HISTORICAL_FORECAST_URL
 
 LAYERS = ("high", "mid", "low")
 DEFAULT_BBOX = (110.0, 36.0, 122.0, 44.0)
-DEFAULT_STEP = 1.0
+# 0.5°≈56km/格:1.0°(111km)太粗,放大后是大色斑(用户 2026-07-08 反馈"马赛克");
+# 加密到 0.5° 后 17×25=425 点(~5 个已缓存请求),贴近 GFS/ICON ~25km 原生分辨率,
+# 再细收益递减(在插值已经很粗的模式数据)。marker 定位按 step 算,自动跟随。
+DEFAULT_STEP = 0.5
 CELL_PX = 26
 _CHUNK = 100          # 单请求坐标上限(保守)
 
