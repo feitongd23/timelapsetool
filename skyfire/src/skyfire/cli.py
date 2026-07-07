@@ -669,7 +669,12 @@ def feedback(
     photo_saved = None
     if photo is not None:
         photos_dir.mkdir(parents=True, exist_ok=True)
-        photo_saved = photos_dir / f"{city}_{date}_{event}{photo.suffix}"
+        stem = f"{city}_{date}_{event}"
+        photo_saved = photos_dir / f"{stem}{photo.suffix}"
+        n = 2
+        while photo_saved.exists():  # 同案例多张实拍:编号避免互相覆盖
+            photo_saved = photos_dir / f"{stem}_{n}{photo.suffix}"
+            n += 1
         shutil.copy(photo, photo_saved)
         conn.execute("INSERT INTO photos (case_id, score, path) VALUES (?,?,?)",
                      (cid, score, str(photo_saved)))

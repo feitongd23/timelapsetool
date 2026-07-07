@@ -501,3 +501,28 @@ def test_serve_invokes_uvicorn(monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert captured["port"] == 8123 and captured["host"] == "0.0.0.0"
     assert captured["app"].title == "skyfire api"
+
+
+def test_feedback_multiple_photos_same_case_do_not_overwrite(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    from skyfire import store
+    db = tmp_path / "t.db"
+    conn = store.connect(db); store.init_db(conn)
+    store.upsert_case(conn, "2026-07-07", "beijing", "sunset_glow",
+                      rule_score=5.0, confidence="high", source="auto")
+    monkeypatch.setattr(cli, "explain", lambda card, paths: "复盘")
+    monkeypatch.setattr(cli, "_ensure_case_frames", lambda *a, **k: 0)
+    for name in ("summer_palace.jpg", "olympic_tower.jpg", "cbd.jpg"):
+        p = tmp_path / name; p.write_bytes(name.encode())
+        result = runner.invoke(cli.app, [
+            "feedback", "--date", "2026-07-07", "--photo", str(p),
+            "--db", str(db), "--photos-dir", str(tmp_path / "photos")])
+        assert result.exit_code == 0
+    saved = sorted(f.name for f in (tmp_path / "photos").glob("*"))
+    assert saved == ["beijing_2026-07-07_sunset_glow.jpg",
+                     "beijing_2026-07-07_sunset_glow_2.jpg",
+                     "beijing_2026-07-07_sunset_glow_3.jpg"]
+    case = store.case_by_key(conn, "2026-07-07", "beijing", "sunset_glow")
+    rows = conn.execute("SELECT path FROM photos WHERE case_id=?",
+                        (case["id"],)).fetchall()
+    assert len(rows) == 3 and len({r[0] for r in rows}) == 3  # 三条路径互不相同
