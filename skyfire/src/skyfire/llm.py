@@ -178,11 +178,14 @@ def explain(card_md: str, frame_paths: list[Path], client=None) -> str | None:
             import anthropic
             client = anthropic.Anthropic()
         content: list[dict] = [{"type": "text", "text": card_md}]
+        media = {".png": "image/png", ".jpg": "image/jpeg",
+                 ".jpeg": "image/jpeg", ".webp": "image/webp"}
         for p in frame_paths[:6]:
             data = base64.standard_b64encode(Path(p).read_bytes()).decode()
-            content.append({"type": "image",
-                            "source": {"type": "base64", "media_type": "image/png",
-                                       "data": data}})
+            content.append({"type": "image", "source": {
+                "type": "base64",
+                "media_type": media.get(Path(p).suffix.lower(), "image/png"),
+                "data": data}})
         resp = client.messages.create(
             model=MODEL, max_tokens=2000, thinking={"type": "adaptive"},
             system=_EXPLAIN_SYSTEM,

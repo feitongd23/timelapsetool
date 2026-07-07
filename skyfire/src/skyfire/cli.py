@@ -694,11 +694,14 @@ def feedback(
                                                              city, event))
     if wrong and score is None:
         card += "\n\n(用户反馈:预报不准,实际得分未知)"
-    paths = [Path(f["path"]) for f in store.get_frames(conn, cid)
-             if Path(f["path"]).exists()]
-    if photo_saved is not None:
-        paths.append(photo_saved)
-    result = explain(card, paths)
+    # 实拍照片(含本案例历史已存的)排在卫星帧前:explain 只取前 6 张,
+    # 实拍是 ground truth 不能被帧挤掉
+    photo_paths = [Path(p) for (p,) in conn.execute(
+        "SELECT path FROM photos WHERE case_id=?", (cid,)).fetchall()
+        if Path(p).exists()]
+    frame_paths = [Path(f["path"]) for f in store.get_frames(conn, cid)
+                   if Path(f["path"]).exists()]
+    result = explain(card, photo_paths + frame_paths)
     if result is None:
         typer.echo("AI 复盘待补(无凭证或调用失败),稍后 skyfire catchup 补跑")
         return

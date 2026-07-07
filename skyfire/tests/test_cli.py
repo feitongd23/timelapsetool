@@ -526,3 +526,28 @@ def test_feedback_multiple_photos_same_case_do_not_overwrite(tmp_path, monkeypat
     rows = conn.execute("SELECT path FROM photos WHERE case_id=?",
                         (case["id"],)).fetchall()
     assert len(rows) == 3 and len({r[0] for r in rows}) == 3  # 三条路径互不相同
+
+
+def test_feedback_review_puts_photos_before_frames(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    from skyfire import store
+    db = tmp_path / "t.db"
+    conn = store.connect(db); store.init_db(conn)
+    cid = store.upsert_case(conn, "2026-07-07", "beijing", "sunset_glow",
+                            rule_score=5.0, confidence="high", source="auto")
+    frame = tmp_path / "frame.png"; frame.write_bytes(b"png")
+    conn.execute("INSERT INTO satellite_frames (case_id, ts, channel, path)"
+                 " VALUES (?,?,?,?)", (cid, "2026-07-07T11:20", "B13",
+                                       str(frame)))
+    conn.commit()
+    captured = {}
+    monkeypatch.setattr(cli, "explain",
+                        lambda card, paths: captured.setdefault("paths", paths) and "复盘" or "复盘")
+    monkeypatch.setattr(cli, "_ensure_case_frames", lambda *a, **k: 0)
+    photo = tmp_path / "shot.jpg"; photo.write_bytes(b"jpg")
+    result = runner.invoke(cli.app, [
+        "feedback", "--date", "2026-07-07", "--photo", str(photo),
+        "--db", str(db), "--photos-dir", str(tmp_path / "photos")])
+    assert result.exit_code == 0
+    paths = captured["paths"]
+    assert paths[0].suffix == ".jpg" and paths[-1].suffix == ".png"  # 实拍在前
