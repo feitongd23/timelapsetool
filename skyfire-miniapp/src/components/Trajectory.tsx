@@ -6,7 +6,7 @@ import type { TrajectoryPoint } from '../api/types'
 const CP_ZH: Record<string, string> = {
   outlook: '展望', c1: 'C1', gated: '门控', c2: 'C2', c3: 'C3', manual: '手动'
 }
-const W = 640, H = 150, PAD = 26
+const PAD = 26
 
 export default function Trajectory({ points }: { points: TrajectoryPoint[] }) {
   const idRef = useRef(`traj-${Math.random().toString(36).slice(2, 8)}`)
@@ -16,13 +16,16 @@ export default function Trajectory({ points }: { points: TrajectoryPoint[] }) {
     q.select(`#${idRef.current}`).fields({ node: true, size: true }).exec(res => {
       const node = res?.[0]?.node
       if (!node) return
+      const cssW = res[0].width || 320
+      const cssH = res[0].height || 150
       const dpr = Taro.getSystemInfoSync().pixelRatio || 2
-      node.width = W * dpr / 2; node.height = H * dpr / 2
+      node.width = cssW * dpr
+      node.height = cssH * dpr
       const ctx = node.getContext('2d')
-      ctx.scale(dpr / 2, dpr / 2)
-      ctx.clearRect(0, 0, W, H)
-      const xs = points.map((_, i) => PAD + (W - 2 * PAD) * i / (points.length - 1))
-      const ys = points.map(p => H - PAD - (H - 2 * PAD) * p.probability_pct / 100)
+      ctx.scale(dpr, dpr)
+      ctx.clearRect(0, 0, cssW, cssH)
+      const xs = points.map((_, i) => PAD + (cssW - 2 * PAD) * i / (points.length - 1))
+      const ys = points.map(p => cssH - PAD - (cssH - 2 * PAD) * p.probability_pct / 100)
       ctx.strokeStyle = '#e8963c'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'
       ctx.beginPath()
       xs.forEach((x, i) => i === 0 ? ctx.moveTo(x, ys[i]) : ctx.lineTo(x, ys[i]))
@@ -34,7 +37,7 @@ export default function Trajectory({ points }: { points: TrajectoryPoint[] }) {
         ctx.fill()
       })
       ctx.fillStyle = '#8a94a2'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'
-      xs.forEach((x, i) => ctx.fillText(CP_ZH[points[i].checkpoint] || points[i].checkpoint, x, H - 8))
+      xs.forEach((x, i) => ctx.fillText(CP_ZH[points[i].checkpoint] || points[i].checkpoint, x, cssH - 8))
     })
   }, [points])
 
