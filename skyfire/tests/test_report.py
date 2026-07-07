@@ -108,3 +108,89 @@ def test_format_outlook_report_raw_none_shows_dash():
     sunset["per_model_raw"]["ecmwf_ifs025"]["cloud_high"] = None
     _, body = format_outlook_report(None, sunset)
     assert "EC 35/40 · 高— 中20 低10 · 无雨" in body
+
+
+def _pct_rec(**kw):
+    base = {"date": "2026-07-07", "event": "sunset_glow", "checkpoint": "gated",
+            "probability_pct": 52.0, "quality_pct": 40.0, "confidence": "medium",
+            "rule_score": 0.6, "sat_cloud_pct": 58.0, "trend": None,
+            "llm_status": "done", "reasoning": "满天高云", "risks": "低云",
+            "city_name": "北京"}
+    base.update(kw)
+    return base
+
+
+def test_format_pct_report_seq_level_and_delta():
+    rec = _pct_rec(seq=9, minutes_to_peak=42,
+                   prev={"probability_pct": 52.0, "quality_pct": 38.0,
+                         "checkpoint": "c3", "time_local": "19:05",
+                         "minutes_ago": 30})
+    title, body = format_pct_report(rec)
+    assert "第9报" in title and "[小烧]" in title       # 质量40 → 小烧
+    assert "⚡" not in title and "🔥" not in title       # Δ<15pp 非突变
+    assert "日落前第9次推送" in body and "距日落约42分钟" in body
+    assert "较上次19:05(30分钟前)" in body
+    assert "质量38%→40%(+2)" in body
+    assert "等级 小烧" in body
+
+
+def test_format_pct_report_major_jump_marks_title_and_body():
+    rec = _pct_rec(seq=9, minutes_to_peak=42,
+                   prev={"probability_pct": 22.0, "quality_pct": 18.0,
+                         "checkpoint": "gated", "time_local": "18:34",
+                         "minutes_ago": 31})
+    title, body = format_pct_report(rec)
+    assert title.startswith("⚡突变·")                   # 概率+30pp ≥ 15
+    assert "⚠️ 重大变化" in body and "概率22%→52%(+30)" in body
+
+
+def test_format_pct_report_major_jump_near_peak_uses_fire_marker():
+    rec = _pct_rec(seq=10, minutes_to_peak=12,
+                   prev={"probability_pct": 22.0, "quality_pct": 18.0,
+                         "checkpoint": "gated", "time_local": "19:05",
+                         "minutes_ago": 30})
+    title, _ = format_pct_report(rec)
+    assert title.startswith("🔥临近突变·")               # 距日落≤20分钟的跳变
+
+
+def test_format_pct_report_first_push_and_long_lead():
+    rec = _pct_rec(checkpoint="c1", seq=1, minutes_to_peak=527, prev=None)
+    title, body = format_pct_report(rec)
+    assert "第1报" in title
+    assert "日落前第1次推送 · 早间首报 · 距日落约8.8小时" in body
+    assert "较上次" not in body                          # 首报无对比行
+
+
+def test_format_pct_report_sunrise_wording_and_burn_levels():
+    rec = _pct_rec(event="sunrise_glow", checkpoint="c3", seq=4,
+                   minutes_to_peak=30, quality_pct=75.0, prev=None)
+    title, body = format_pct_report(rec)
+    assert "[中烧]" in title and "日出前第4次推送" in body
+
+
+def test_format_pct_report_without_new_fields_degrades_to_old_layout():
+    title, body = format_pct_report(_pct_rec())
+    assert "第" not in title and "[小烧]" in title       # 无 seq 只标等级
+    assert "次推送" not in body and "较上次" not in body
+
+
+def test_format_outlook_section_includes_burn_level():
+    sunset = _outlook_rec("sunset_glow", 60, 55, 19, 46)
+    _, body = format_outlook_report(None, sunset)
+    assert "等级 小烧" in body
+
+
+def test_format_pct_report_shows_generation_time():
+    from datetime import datetime as _dt
+    rec = _pct_rec(seq=9, minutes_to_peak=12,
+                   generated_at=_dt(2026, 7, 7, 19, 35, tzinfo=_TZ), prev=None)
+    _, body = format_pct_report(rec)
+    assert "日落前第9次推送(19:35生成)" in body
+
+
+def test_format_outlook_report_shows_generation_time():
+    from datetime import datetime as _dt
+    sunset = _outlook_rec("sunset_glow", 60, 55, 19, 46)
+    sunset["generated_at"] = _dt(2026, 7, 6, 20, 4, tzinfo=_TZ)
+    _, body = format_outlook_report(None, sunset)
+    assert "生成时间 20:04" in body

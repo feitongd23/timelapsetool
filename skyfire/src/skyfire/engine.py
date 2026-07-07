@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -28,6 +29,7 @@ from skyfire.llm import LlmResult, MODEL_DEEP, interpret, predict_pct
 from skyfire.openmeteo import fetch_aod_at, fetch_channel_profile, fetch_point_forecast
 from skyfire.percent import baseline_percent
 from skyfire.rag import factor_vector, similar_cases_from
+from skyfire.skill import weights_from_skill
 from skyfire.render import load_b13_region, render_annotated
 from skyfire.scoring.firecloud import FireCloudInputs, fire_cloud_score
 from skyfire.suntimes import nearest_iso_hour, sun_window
@@ -85,7 +87,11 @@ def compute_prediction(conn, client: httpx.Client, city: City, city_key: str,
     if not per_model:
         raise ValueError("所有模式数据缺失")
 
-    cons = consensus(per_model)
+    # 模式置信账本(skyfire modelskill 维护):样本攒够 → 按历史准确度加权
+    skill_rows = store.get_model_skill(conn)
+    weights = (weights_from_skill(skill_rows, list(per_model))
+               if skill_rows else None)
+    cons = consensus(per_model, weights=weights)
     first = next(iter(details.values()))
     case_id = store.upsert_case(conn, str(day), city_key, event,
                                 rule_score=cons.index, confidence=cons.confidence,
@@ -197,14 +203,16 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
     per_model_pct = {m: baseline_percent(s, r.confidence, *cloud_args)
                      for m, s in r.per_model.items()}
 
+    # 本场(date×city×event)已有预测 = 推送序号与"较上次"对比的依据;
+    # 必须在 add_prediction 之前查,否则拿到的是本次自己
+    prior = store.predictions_for(conn, str(day), city_key, event)
     if gate:
-        last = store.latest_prediction(conn, str(day), city_key, event)
+        last = prior[-1] if prior else None
         if not gate_exceeded(last["probability_pct"] if last else None, prob):
             return None
 
-    from datetime import datetime as _dt
-    hours_to_peak = round((peak_utc - _dt.now(timezone.utc)).total_seconds()
-                          / 3600, 1)
+    now_utc = datetime.now(timezone.utc)
+    hours_to_peak = round((peak_utc - now_utc).total_seconds() / 3600, 1)
     payload = {"date": str(day), "event": event, "checkpoint": checkpoint,
                "hours_to_peak": hours_to_peak,
                "rule_score": r.index, "confidence": r.confidence,
@@ -227,6 +235,23 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
         rec = dict(probability_pct=prob, quality_pct=qual,
                    confidence=r.confidence, llm_status="pending",
                    reasoning=None, risks=None)
+    prev = None
+    if prior:
+        p_last = prior[-1]
+        prev = {"probability_pct": p_last["probability_pct"],
+                "quality_pct": p_last["quality_pct"],
+                "checkpoint": p_last["checkpoint"],
+                "time_local": None, "minutes_ago": None}
+        try:
+            prev_utc = datetime.strptime(
+                p_last["created_at"], "%Y-%m-%d %H:%M:%S"
+            ).replace(tzinfo=timezone.utc)
+            prev["time_local"] = prev_utc.astimezone(
+                ZoneInfo(city.timezone)).strftime("%H:%M")
+            prev["minutes_ago"] = round(
+                (now_utc - prev_utc).total_seconds() / 60)
+        except (ValueError, TypeError):
+            pass  # created_at 异常:退化为只报数值差,不影响推送
     per_model_json = json.dumps(
         {m: {"prob": p, "qual": q, **r.per_model_raw.get(m, {})}
          for m, (p, q) in per_model_pct.items()}, ensure_ascii=False)
@@ -241,7 +266,11 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
             "event": event, "checkpoint": checkpoint, "rule_score": r.index,
             "sat_cloud_pct": sat_now, "trend": trend, "peak": r.peak,
             "per_model_pct": per_model_pct, "per_model_raw": r.per_model_raw,
-            "aod": r.aod, "city_name": city.name}
+            "aod": r.aod, "city_name": city.name,
+            "seq": len(prior) + 1,
+            "minutes_to_peak": round((peak_utc - now_utc).total_seconds() / 60),
+            "generated_at": now_utc.astimezone(ZoneInfo(city.timezone)),
+            "prev": prev}
 
 
 def _pick_model() -> str:

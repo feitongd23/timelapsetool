@@ -8,6 +8,7 @@
 import base64
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -108,7 +109,14 @@ _PREDICT_SYSTEM = (
     "不用专业缩写。"
     "免费层数据中的 per_model_raw 是各气象模式对燃烧时刻高/中/低云量%与降水mm"
     "的原始预报——用它判断模式间分歧;任一模式报降水时提高雨险警惕。"
-    "评分铁律:地平线附近一条橙色带+云剪影只是普通日落底色,不算烧(质量低于40);真正的烧=云底大面积被染成橙红,满分是整片云幕烧透。只输出 JSON:"
+    "质量刻度(事后判级的尺子,不是预测上限):地平线橙带+云剪影只是普通"
+    "日落底色(<40);40=云底局部真染色的门槛;60-79=大面积染色(中烧);"
+    "80+=大烧;满分=整片云幕烧透。形态到位就大胆给 60-85,不要习惯性压在"
+    "40 以下——2026-07-07 实际中大烧,事前每次都只给到 ≤40,就是把刻度"
+    "误当上限的教训。大烧高发形态:满天中高云幕(高云 80-100%)+西侧通道"
+    "低云稀少+卫星实测云量 30-70%,此时'云太多'不是利空,高云盖顶不挡"
+    "平射光。baseline 数字仅是规则参考,与实况/形态矛盾时以你的判断为准。"
+    "只输出 JSON:"
     '{"probability_pct": 0-100, "quality_pct": 0-100,'
     ' "reasoning": 两三句中文, "risks": 一句最大风险,'
     ' "confidence": "high|medium|low"}'
@@ -155,7 +163,11 @@ def predict_pct(payload: dict, similar: list[dict], frame_paths: list[Path],
                 "reasoning": str(d.get("reasoning", "")),
                 "risks": str(d.get("risks", "")),
                 "confidence": str(d.get("confidence", "medium"))}
-    except Exception:
+    except Exception as e:
+        # 仍按 spec 8 落基线不阻塞,但把原因写进 stderr(launchd 收进 tick.err);
+        # 7/7 中午 c1 静默失败落了 3%/3% 的误导推送,根因已不可考——不能再哑
+        print(f"predict_pct LLM 失败: {e.__class__.__name__}: {e}",
+              file=sys.stderr)
         return None
 
 

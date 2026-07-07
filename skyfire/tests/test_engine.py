@@ -145,15 +145,15 @@ def test_run_checkpoint_c3_uses_satellite_extrapolation(monkeypatch):
     conn, city = _setup(monkeypatch, None)
     rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
                          date_type(2026, 7, 6), "c3")
-    # C3 临近:外推 52% 落甜区 → prob 50+15=65
-    assert rec["probability_pct"] == 65 and rec["quality_pct"] == 50
-    assert rec["per_model_pct"] == {"gfs_seamless": (65, 50)}
+    # C3 临近:外推 52% 落甜区 → qual 50+10=60,prob 60+15=75
+    assert rec["probability_pct"] == 75 and rec["quality_pct"] == 60
+    assert rec["per_model_pct"] == {"gfs_seamless": (75, 60)}
 
 
 def test_run_checkpoint_gated_skips_small_delta(monkeypatch):
     conn, city = _setup(monkeypatch, None)
     run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
-                   date_type(2026, 7, 6), "c1")            # 落一版 prob=65
+                   date_type(2026, 7, 6), "c2")            # 落一版 prob=75(含云量修正)
     rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
                          date_type(2026, 7, 6), "gated", gate=True)
     assert rec is None                                      # Δ=0 < 15pp,不落库
@@ -198,4 +198,32 @@ def test_run_checkpoint_payload_rec_and_db_carry_raw(monkeypatch):
     import json
     row = store.latest_prediction(conn, "2026-07-06", "beijing", "sunset_glow")
     pmj = json.loads(row["per_model_json"])
-    assert pmj["gfs_seamless"]["prob"] == 65 and pmj["gfs_seamless"]["cloud_high"] == 80
+    assert pmj["gfs_seamless"]["prob"] == 75 and pmj["gfs_seamless"]["cloud_high"] == 80
+
+
+def test_run_checkpoint_injects_seq_and_prev(monkeypatch):
+    llm = {"probability_pct": 72.0, "quality_pct": 64.0, "reasoning": "通",
+           "risks": "低云", "confidence": "high"}
+    conn, city = _setup(monkeypatch, llm)
+    rec1 = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
+                          date_type(2026, 7, 6), "c1")
+    assert rec1["seq"] == 1 and rec1["prev"] is None
+    assert isinstance(rec1["minutes_to_peak"], int)
+    rec2 = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
+                          date_type(2026, 7, 6), "c2")
+    assert rec2["seq"] == 2
+    assert rec2["prev"]["probability_pct"] == 72.0
+    assert rec2["prev"]["quality_pct"] == 64.0
+    assert rec2["prev"]["checkpoint"] == "c1"
+    # created_at 由 sqlite datetime('now') 生成,应能解析出时间差/本地时刻
+    assert rec2["prev"]["minutes_ago"] is not None
+    assert rec2["prev"]["minutes_ago"] >= 0
+    assert rec2["prev"]["time_local"] is not None
+
+
+def test_run_checkpoint_injects_generated_at_local(monkeypatch):
+    conn, city = _setup(monkeypatch, None)
+    rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
+                         date_type(2026, 7, 6), "c1")
+    assert rec["generated_at"].tzinfo is not None
+    assert str(rec["generated_at"].tzinfo) == "Asia/Shanghai"
