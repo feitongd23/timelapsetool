@@ -935,6 +935,15 @@ cd /Users/feitong/photo-app && git add skyfire-miniapp/README.md && git commit -
 
 ---
 
+## 执行后偏差标注(2026-07-08,惯例同前两批)
+
+- Task 0:babel-preset-taro 4.0.9 缺 peer 依赖,补装 @babel/preset-react、@babel/preset-typescript、@babel/plugin-proposal-class-properties、@babel/plugin-proposal-object-rest-spread(devDependencies)。首个实现 agent 因基础设施 403 挂掉,协调者接手收尾。
+- **计划自带 bug ×3,审查抓出并已修**:
+  1. Task 2 `load()` 每次刷新用今天(dates[0])的状态重算 eventIdx,"明天"tab 上刷新会被无关状态切 tab → 改为仅首载 pickDefault(241e96e)。
+  2. Task 3 轨迹 Canvas 背衬用设计常量 `W*dpr/2` 而非 CSS 盒×dpr,真机纵向拉伸(圆点变椭圆)→ 改为 selectorQuery 实测 CSS 尺寸 ×dpr + ctx.scale(dpr,dpr)(9fb2888,微信官方模式,独立核查确认)。
+  3. Task 4 热力图错误卡"重试"是死按钮(只清 err 不重拉),且 fetchPng 401 不静默重登 → retryTick 进 useEffect 依赖 + 401 login() 重试一次(391e7fe)。
+- 携带备忘:summary 里 created_at(UTC 空格串)与 updated_at(北京 ISO 带+08:00)两种时间约定并存,Hero 的 +'Z' 解析正确但耦合脆弱,v2 建议 API 统一时间格式;previewImage 对 base64 data url 的真机行为在手测清单覆盖。
+
 ## Self-Review 记录
 
 - Spec §3 覆盖:登录页→Task 1,顶部日期下拉+tab+已结束→Task 2,hero+轨迹→Task 2/3,模式明细→Task 3,热力图懒加载+全屏→Task 4,解读卡→Task 4,下拉刷新→Task 2,服务未启动引导→Task 2,反馈两键 v1 隐藏→不实现(占位都不留,спec 如此)。§4 前端侧错误处理→Task 2(err 页)/Task 4(热力图重试)。陈旧提醒用 latest.created_at(API 终审携带项)→Task 2 Hero.staleHint。
