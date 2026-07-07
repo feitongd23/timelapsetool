@@ -169,6 +169,20 @@ def test_heatmap_bad_kind_422(tmp_path):
     assert r.status_code == 422
 
 
+def test_heatmap_cache_purges_expired_on_write(tmp_path, monkeypatch):
+    import time as _t
+    import skyfire.api as api_mod
+    app, _ = _make_app(tmp_path, _wx_transport())
+    monkeypatch.setattr(api_mod, "fetch_cloud_grid", _stub_cloud_grid([]))
+    api_mod._HEATMAP_CACHE.clear()
+    api_mod._HEATMAP_CACHE[("stale",)] = (_t.monotonic() - 1, b"old")
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    client.get("/v1/heatmap?city=beijing&event=sunset_glow&date=2026-07-07"
+               "&kind=prob", headers={"X-Session": token})
+    assert ("stale",) not in api_mod._HEATMAP_CACHE   # 写入时清扫
+
+
 def test_heatmap_upstream_failure_503(tmp_path, monkeypatch):
     import httpx as _hx
     import skyfire.api as api_mod

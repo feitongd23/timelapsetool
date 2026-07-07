@@ -149,6 +149,7 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path) -> FastAPI:
             day = datetime.strptime(date, "%Y-%m-%d").date()
         except ValueError:
             raise HTTPException(422, f"date 需为 YYYY-MM-DD,收到 {date!r}")
+        # 超出预报覆盖(~3天)的日期:网格全 None → 全零热力图,静默降级不 422
         key = (city, event, str(day), kind)
         hit = _HEATMAP_CACHE.get(key)
         if hit and time.monotonic() < hit[0]:
@@ -160,17 +161,21 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path) -> FastAPI:
         latest = store.latest_prediction(c, str(day), city, event)
         confidence = (latest or {}).get("confidence") or "medium"
         try:
-            cloud = fetch_cloud_grid(httpx.Client(timeout=30), pts, n_rows,
-                                     n_cols, ct.timezone,
-                                     nearest_iso_hour(win.peak),
-                                     with_precip=True)
+            with httpx.Client(timeout=30) as grid_client:
+                cloud = fetch_cloud_grid(grid_client, pts, n_rows,
+                                         n_cols, ct.timezone,
+                                         nearest_iso_hour(win.peak),
+                                         with_precip=True)
         except httpx.HTTPError as e:
             raise HTTPException(503, f"网格数据拉取失败: {e.__class__.__name__}")
         grids = score_grids(cloud, confidence)
         lon0, lat0, lon1, lat1 = DEFAULT_BBOX
         marker = ((lat1 - ct.lat) / DEFAULT_STEP, (ct.lon - lon0) / DEFAULT_STEP)
         png = render_heatmap_png(grids[kind], kind, marker_rc=marker)
-        _HEATMAP_CACHE[key] = (time.monotonic() + _HEATMAP_TTL, png)
+        now_mono = time.monotonic()
+        for k in [k for k, (exp, _) in _HEATMAP_CACHE.items() if exp < now_mono]:
+            del _HEATMAP_CACHE[k]
+        _HEATMAP_CACHE[key] = (now_mono + _HEATMAP_TTL, png)
         return Response(png, media_type="image/png")
 
     return app
