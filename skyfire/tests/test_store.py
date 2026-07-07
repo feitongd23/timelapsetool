@@ -281,3 +281,35 @@ def test_user_token_roundtrip(tmp_path):
     u = store.user_by_token(conn, "hash-b")
     assert u["openid"] == "openid-1"
     assert store.user_by_token(conn, "nope") is None
+
+
+def test_model_skill_roundtrip(tmp_path):
+    conn = _db(tmp_path)
+    store.replace_model_skill(conn, [
+        {"model": "ecmwf_ifs025", "n": 10, "mae": 18.2, "bias": 4.0},
+        {"model": "gfs_seamless", "n": 10, "mae": 25.0, "bias": -12.0}])
+    rows = store.get_model_skill(conn)
+    assert [r["model"] for r in rows] == ["ecmwf_ifs025", "gfs_seamless"]  # MAE 升序
+    assert rows[0]["mae"] == 18.2 and rows[1]["bias"] == -12.0
+    # 全量重写:旧行不残留
+    store.replace_model_skill(conn, [
+        {"model": "cma_grapes_global", "n": 3, "mae": 30.0, "bias": 0.0}])
+    assert [r["model"] for r in store.get_model_skill(conn)] == ["cma_grapes_global"]
+
+
+def test_scored_cases_with_snapshots_groups_latest_per_model(tmp_path):
+    conn = _db(tmp_path)
+    cid = store.upsert_case(conn, "2026-07-07", "beijing", "sunset_glow",
+                            rule_score=5.0, confidence="high", source="auto")
+    store.set_actual_score(conn, cid, 7.5)
+    store.add_snapshot(conn, cid, "ecmwf_ifs025", {"cloud_high": 50})
+    store.add_snapshot(conn, cid, "ecmwf_ifs025", {"cloud_high": 100})  # 更新版
+    store.add_snapshot(conn, cid, "gfs_seamless", {"cloud_high": 5})
+    # 未闭环案例不应出现
+    store.upsert_case(conn, "2026-07-08", "beijing", "sunset_glow",
+                      rule_score=4.0, confidence="high", source="auto")
+    out = store.scored_cases_with_snapshots(conn, "beijing")
+    assert len(out) == 1
+    snaps = {s["model"]: s["payload"] for s in out[0]["snapshots"]}
+    assert snaps["ecmwf_ifs025"]["cloud_high"] == 100   # 每模式取最新一份
+    assert out[0]["actual_score"] == 7.5

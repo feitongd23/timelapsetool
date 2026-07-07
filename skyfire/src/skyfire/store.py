@@ -91,6 +91,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_pred_checkpoint
   WHERE checkpoint IN ('c1','c2','c3','outlook');
 CREATE UNIQUE INDEX IF NOT EXISTS idx_frames_dedup
   ON satellite_frames(case_id, ts, channel);
+CREATE TABLE IF NOT EXISTS model_skill (
+  model TEXT PRIMARY KEY,
+  n INTEGER NOT NULL,
+  mae REAL NOT NULL,
+  bias REAL NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 
@@ -276,6 +283,45 @@ def cases_with_snapshot(conn, city: str, event: str, *, model: str) -> list[dict
     return [{"case_id": i, "date": d, "actual_score": a,
              "payload": json.loads(p), "note": n}
             for i, d, a, p, n in rows]
+
+
+def scored_cases_with_snapshots(conn, city: str) -> list[dict]:
+    """闭环案例 + 各模式最新快照(模式置信账本/回测重算用)。"""
+    cases = conn.execute(
+        """SELECT id, date, event, actual_score FROM cases
+           WHERE city=? AND actual_score IS NOT NULL ORDER BY date""",
+        (city,)).fetchall()
+    out = []
+    for cid, d, e, a in cases:
+        snaps = conn.execute(
+            """SELECT model, payload FROM forecast_snapshots
+               WHERE case_id=? AND id IN (
+                 SELECT MAX(id) FROM forecast_snapshots
+                 WHERE case_id=? GROUP BY model)""",
+            (cid, cid)).fetchall()
+        if snaps:
+            out.append({"date": d, "event": e, "actual_score": a,
+                        "snapshots": [{"model": m, "payload": json.loads(p)}
+                                      for m, p in snaps]})
+    return out
+
+
+def replace_model_skill(conn, rows: list[dict]) -> None:
+    """全量重写模式置信账本(modelskill 整表重算,增量无意义)。"""
+    conn.execute("DELETE FROM model_skill")
+    conn.executemany(
+        """INSERT INTO model_skill (model, n, mae, bias, updated_at)
+           VALUES (?,?,?,?, datetime('now'))""",
+        [(r["model"], r["n"], r["mae"], r["bias"]) for r in rows])
+    conn.commit()
+
+
+def get_model_skill(conn) -> list[dict]:
+    rows = conn.execute(
+        "SELECT model, n, mae, bias, updated_at FROM model_skill"
+        " ORDER BY mae").fetchall()
+    return [{"model": m, "n": n, "mae": mae, "bias": b, "updated_at": u}
+            for m, n, mae, b, u in rows]
 
 
 def was_pushed(conn, date: str, city: str, event: str) -> bool:

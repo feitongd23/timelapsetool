@@ -29,6 +29,8 @@ from skyfire.push import push
 from skyfire.render import load_b13_region
 from skyfire.report import format_outlook_report, format_pct_report, format_report
 from skyfire.scoring.cloudsea import CloudSeaInputs, cloud_sea_score
+from skyfire.skill import (MIN_N, per_model_errors, recomputed_consensus,
+                           skill_table, weights_from_skill)
 from skyfire.suntimes import nearest_iso_hour, sun_window
 
 app = typer.Typer(help="火烧云/云海预测助手")
@@ -165,9 +167,24 @@ def backtest(
     city: str = typer.Option("beijing"),
     db: Path = typer.Option(DEFAULT_DB),
     pct: bool = typer.Option(False, "--pct", help="百分数回测(质量%/概率% vs 实际,spec 里程碑 4)"),
+    recompute: bool = typer.Option(False, "--recompute",
+                                   help="用当前打分器从快照重算规则分再回测(打分器改动后验证用)"),
 ):
     """规则分 vs 实际打分的 Spearman 相关性(spec 9 首要验收)。"""
     conn = _open_db(db)
+    if recompute:
+        rows = recomputed_consensus(store.scored_cases_with_snapshots(conn, city))
+        if len(rows) < 3:
+            typer.echo(f"可重算案例不足({len(rows)} 条,需 ≥3)", err=True)
+            raise typer.Exit(1)
+        try:
+            rho = spearman([x["rule_score"] for x in rows],
+                           [x["actual_score"] for x in rows])
+        except ValueError:
+            typer.echo("无法计算相关性:重算分数无区分度", err=True)
+            raise typer.Exit(1)
+        typer.echo(f"重算回测(当前打分器): {len(rows)} 条, Spearman ρ = {rho:.3f}")
+        return
     if pct:
         rows = conn.execute(
             """SELECT p.quality_pct, p.probability_pct, c.actual_score
@@ -194,6 +211,39 @@ def backtest(
         typer.echo("无法计算相关性:所有分数相同(秩零方差),先积累更多有区分度的案例", err=True)
         raise typer.Exit(1)
     typer.echo(f"回测: {len(cases)} 条闭环案例, Spearman ρ = {rho:.3f}")
+
+
+@app.command()
+def modelskill(
+    city: str = typer.Option("beijing"),
+    db: Path = typer.Option(DEFAULT_DB),
+):
+    """四模式置信账本:按闭环案例重算各模式历史准确度,落 model_skill 表。
+
+    零 API 调用;打分器改动后重跑即可全量刷新。每模式样本 ≥8 后,
+    预测共识自动从中位数切换为按 1/(MAE+5) 加权平均。
+    """
+    conn = _open_db(db)
+    cases = store.scored_cases_with_snapshots(conn, city)
+    errors = per_model_errors(cases)
+    if not errors:
+        typer.echo("无可评估数据:需要闭环案例(actual_score)+ forecast_snapshots", err=True)
+        raise typer.Exit(1)
+    rows = skill_table(errors)
+    store.replace_model_skill(conn, rows)
+    typer.echo(f"模式置信账本(基于 {len(cases)} 条闭环案例;"
+               f"MAE=|该模式单独预测质量% - 实际得分×10| 的均值):")
+    for i, r in enumerate(rows, 1):
+        lean = "常报高" if r["bias"] > 3 else ("常报低" if r["bias"] < -3 else "无明显偏向")
+        typer.echo(f"  {i}. {r['model']}: 样本{r['n']}  MAE {r['mae']}"
+                   f"  偏差 {r['bias']:+.1f}({lean})")
+    weights = weights_from_skill(rows, [r["model"] for r in rows])
+    if weights is not None:
+        typer.echo("共识加权: 已启用(1/(MAE+5),最准的模式话语权最大)")
+    else:
+        least = min(r["n"] for r in rows)
+        typer.echo(f"共识加权: 未启用(需每模式 ≥{MIN_N} 样本,当前最少 {least});"
+                   f"启用前共识用中位数")
 
 
 @app.command()
