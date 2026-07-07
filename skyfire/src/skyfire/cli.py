@@ -524,8 +524,9 @@ def tick(
                                     rec_outlook = None  # 缺一半照推;本晚不补跑,明日11:00晚霞C1自然补上
                             title, body = format_outlook_report(rec,
                                                                 rec_outlook)
-                            push(title, body, ncfg)
-                            typer.echo(f"✓ {city_key} outlook {title}")
+                            ok = push(title, body, ncfg)
+                            mark = "✓" if ok else "✗ 推送失败"
+                            typer.echo(f"{mark} {city_key} outlook {title}")
                             break
                     else:
                         # 检查点之间:c1 之后到峰值前,免费层门控
@@ -539,8 +540,9 @@ def tick(
                     if rec is None:
                         continue
                     title, body = format_pct_report(rec)
-                    push(title, body, ncfg)
-                    typer.echo(f"✓ {city_key} {event} [{rec['checkpoint']}]"
+                    ok = push(title, body, ncfg)
+                    mark = "✓" if ok else "✗ 推送失败"
+                    typer.echo(f"{mark} {city_key} {event} [{rec['checkpoint']}]"
                                f" {title}")
                 except (httpx.HTTPError, ValueError):
                     continue  # 单城失败不影响其他(spec 8)

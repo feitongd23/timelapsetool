@@ -3,8 +3,6 @@
 支持 Bark 与 Server酱³,配置选一。任何失败(未知 provider/网络/服务端错误码)
 → 返回 False,绝不抛异常(spec 8:推送失败不阻塞预测)。
 """
-from urllib.parse import quote
-
 import httpx
 
 BARK_BASE = "https://api.day.app"
@@ -19,9 +17,11 @@ def push(title: str, body: str, config: dict, client: httpx.Client | None = None
         client = httpx.Client(timeout=15)
     try:
         if provider == "bark":
-            # safe='' 连 '/' 也编码:报告正文含 "7.5/10" 等,否则 Bark 会把 '/' 当路径段
-            resp = client.get(
-                f"{BARK_BASE}/{key}/{quote(title, safe='')}/{quote(body, safe='')}")
+            # POST 而非 GET:正文放 body 参数,避开 GET-URL 长度上限。
+            # 明日展望是最长推送(两段+四模式明细),URL 编码后 >4KB 会被
+            # Bark 服务器拒掉→静默漏推(2026-07-08 排查到的漏报根因)。
+            resp = client.post(f"{BARK_BASE}/{key}",
+                               json={"title": title, "body": body})
             resp.raise_for_status()
             return resp.json().get("code") == 200
         if provider == "serverchan":

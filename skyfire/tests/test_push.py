@@ -7,34 +7,39 @@ def _client(handler):
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def test_push_bark_hits_key_url_and_encodes():
+def test_push_bark_posts_title_body_json():
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
         seen["url"] = str(request.url)
+        seen["method"] = request.method
+        seen["json"] = _json.loads(request.content.decode())
         return httpx.Response(200, json={"code": 200, "message": "success"})
 
     ok = push("晚霞 7.5 分", "北京今晚值得出动", {"provider": "bark", "key": "ABC123"},
               client=_client(handler))
     assert ok is True
-    assert seen["url"].startswith("https://api.day.app/ABC123/")
-    # 中文经 URL 编码(不出现原始汉字)
-    assert "晚霞" not in seen["url"]
-    assert "%" in seen["url"]
+    # POST 到 /{key},正文放 body 参数(无 URL 长度限制)
+    assert seen["method"] == "POST"
+    assert seen["url"] == "https://api.day.app/ABC123"
+    assert seen["json"]["title"] == "晚霞 7.5 分"
+    assert seen["json"]["body"] == "北京今晚值得出动"
 
 
-def test_push_bark_encodes_slash_in_body():
+def test_push_bark_long_body_not_truncated():
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen["url"] = str(request.url)
+        import json as _json
+        seen["json"] = _json.loads(request.content.decode())
         return httpx.Response(200, json={"code": 200})
 
-    ok = push("晚霞 7.5/10", "指数 7.5/10 系数 0.82", {"provider": "bark", "key": "K"},
+    long_body = "明日展望两段四模式明细。" * 80    # ~960 字,GET-URL 编码后会超 4KB
+    ok = push("明日展望", long_body, {"provider": "bark", "key": "K"},
               client=_client(handler))
     assert ok is True
-    # body/title 里的 '/' 必须被编码(否则 Bark 当额外路径段):key 后只应剩两段
-    assert seen["url"].split("/K/", 1)[1].count("/") == 1
+    assert seen["json"]["body"] == long_body      # 完整送达,不因长度被截/拒
 
 
 def test_push_serverchan_posts_title_desp():
