@@ -14,28 +14,30 @@ export default function Index() {
   const [dateIdx, setDateIdx] = useState(0)
   const [eventIdx, setEventIdx] = useState(0)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (pickDefault = false) => {
     setErr('')
     try {
       const s = await fetchSummary()
       setSummary(s)
-      // 默认选中第一个未结束的事件
-      const evs = s.dates[0].events
-      const firstUpcoming = evs.findIndex(e => e.status === 'upcoming')
-      setEventIdx(firstUpcoming === -1 ? evs.length - 1 : firstUpcoming)
+      if (pickDefault) {
+        // 仅首载:默认选中今天第一个未结束的事件
+        const evs = s.dates[0].events
+        const firstUpcoming = evs.findIndex(e => e.status === 'upcoming')
+        setEventIdx(firstUpcoming === -1 ? evs.length - 1 : firstUpcoming)
+      }
     } catch (e: any) {
       setErr(e.message || '服务未启动?在 Mac 上运行 skyfire serve')
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load(true) }, [load])
   usePullDownRefresh(async () => { await load(); Taro.stopPullDownRefresh() })
 
   if (err) {
     return (
       <View className='center-page'>
         <Text className='t-secondary'>{err}</Text>
-        <Text className='retry t-amber' onClick={load}>点我重试</Text>
+        <Text className='retry t-amber' onClick={() => load(!summary)}>点我重试</Text>
       </View>
     )
   }
