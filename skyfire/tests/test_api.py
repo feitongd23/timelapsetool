@@ -25,7 +25,8 @@ def _make_app(tmp_path, wx_transport=None, wechat_yaml="app_id: wx1\napp_secret:
     wechat = tmp_path / "wechat.local.yaml"
     if wechat_yaml is not None:
         wechat.write_text(wechat_yaml, encoding="utf-8")
-    app = create_app(db_path=db, config_path=CONFIG, wechat_path=wechat)
+    app = create_app(db_path=db, config_path=CONFIG, wechat_path=wechat,
+                     maps_dir=tmp_path / "maps")
     if wx_transport is not None:
         app.state.wx_client = httpx.Client(transport=wx_transport)
     return app, db
@@ -131,33 +132,31 @@ def test_summary_shape_dates_events_status(tmp_path, monkeypatch):
     assert "peak" in sunset and "-" in sunset["best_window"]
 
 
-def _stub_cloud_grid(calls):
-    def fake(client, pts, n_rows, n_cols, tz, iso_hour, date=None,
-             model="gfs_seamless", with_precip=False):
-        calls.append(iso_hour)
-        mk = lambda v: [[v] * n_cols for _ in range(n_rows)]
-        return {"high": mk(60), "mid": mk(15), "low": mk(5), "precip": mk(0.0)}
-    return fake
-
-
-def test_heatmap_png_and_cache(tmp_path, monkeypatch):
-    import skyfire.api as api_mod
-    app, db = _make_app(tmp_path, _wx_transport())
-    calls = []
-    monkeypatch.setattr(api_mod, "fetch_cloud_grid", _stub_cloud_grid(calls))
-    api_mod._GRID_CACHE.clear()
+def test_heatmap_serves_precomputed_png(tmp_path):
+    # 地图=后台预生成存盘,API 直取(不实时算)
+    from skyfire.maps import map_path
+    app, _ = _make_app(tmp_path, _wx_transport())
+    maps_dir = app.state.maps_dir
+    p = map_path(maps_dir, "beijing", "2026-07-08", "sunset_glow", "prob")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(b"\x89PNG\r\n\x1a\nFAKE")
     client = TestClient(app)
     token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
-    hdr = {"X-Session": token}
-    url = "/v1/heatmap?city=beijing&event=sunset_glow&date=2026-07-07&kind=prob"
-    r = client.get(url, headers=hdr)
+    r = client.get("/v1/heatmap?city=beijing&event=sunset_glow"
+                   "&date=2026-07-08&kind=prob", headers={"X-Session": token})
     assert r.status_code == 200
     assert r.headers["content-type"] == "image/png"
     assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
-    r2 = client.get(url, headers=hdr)
-    assert r2.status_code == 200 and len(calls) == 1     # 缓存命中,不再拉网格
-    client.get(url.replace("kind=prob", "kind=quality"), headers=hdr)
-    assert len(calls) == 1                                # prob/quality 共享网格,不重拉
+
+
+def test_heatmap_missing_returns_404(tmp_path):
+    # 尚未生成(未到模式更新/超预报覆盖)→ 404,前端显示占位
+    app, _ = _make_app(tmp_path, _wx_transport())
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    r = client.get("/v1/heatmap?city=beijing&event=sunset_glow"
+                   "&date=2026-07-08&kind=prob", headers={"X-Session": token})
+    assert r.status_code == 404
 
 
 def test_heatmap_bad_kind_422(tmp_path):
@@ -167,71 +166,3 @@ def test_heatmap_bad_kind_422(tmp_path):
     r = client.get("/v1/heatmap?city=beijing&event=sunset_glow"
                    "&date=2026-07-07&kind=nope", headers={"X-Session": token})
     assert r.status_code == 422
-
-
-def test_heatmap_cache_purges_expired_on_write(tmp_path, monkeypatch):
-    import time as _t
-    import skyfire.api as api_mod
-    app, _ = _make_app(tmp_path, _wx_transport())
-    monkeypatch.setattr(api_mod, "fetch_cloud_grid", _stub_cloud_grid([]))
-    api_mod._GRID_CACHE.clear()
-    api_mod._GRID_CACHE[("stale",)] = (_t.monotonic() - 1, {"prob": [], "quality": []})
-    client = TestClient(app)
-    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
-    client.get("/v1/heatmap?city=beijing&event=sunset_glow&date=2026-07-07"
-               "&kind=prob", headers={"X-Session": token})
-    assert ("stale",) not in api_mod._GRID_CACHE   # 写入时清扫
-
-
-def test_heatmap_upstream_failure_503(tmp_path, monkeypatch):
-    import httpx as _hx
-    import skyfire.api as api_mod
-
-    def boom(*a, **k):
-        raise _hx.ConnectError("net down")
-
-    app, _ = _make_app(tmp_path, _wx_transport())
-    monkeypatch.setattr(api_mod, "fetch_cloud_grid", boom)
-    api_mod._GRID_CACHE.clear()
-    client = TestClient(app)
-    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
-    r = client.get("/v1/heatmap?city=beijing&event=sunset_glow"
-                   "&date=2026-07-07&kind=prob", headers={"X-Session": token})
-    assert r.status_code == 503
-
-
-def test_heatmap_single_flight_dedupes_concurrent_cold_fetches(tmp_path, monkeypatch):
-    # 手机冷启动一次要多张同事件热力图:并发命中同一冷 key 只应拉一次网格,
-    # 否则同时打爆 Open-Meteo → 503(真机实测过)。
-    import threading
-    import time as _t
-    import skyfire.api as api_mod
-    app, _ = _make_app(tmp_path, _wx_transport())
-    calls = []
-
-    def slow_grid(client, pts, n_rows, n_cols, tz, iso_hour, date=None,
-                  model="gfs_seamless", with_precip=False):
-        calls.append(iso_hour)
-        _t.sleep(0.3)                       # 模拟慢网格拉取,放大并发窗口
-        mk = lambda v: [[v] * n_cols for _ in range(n_rows)]
-        return {"high": mk(60), "mid": mk(15), "low": mk(5), "precip": mk(0.0)}
-
-    monkeypatch.setattr(api_mod, "fetch_cloud_grid", slow_grid)
-    api_mod._GRID_CACHE.clear()
-    api_mod._GRID_LOCKS.clear()
-    client = TestClient(app)
-    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
-    hdr = {"X-Session": token}
-    results = {}
-
-    def hit(i, kind):
-        r = client.get(f"/v1/heatmap?city=beijing&event=sunset_glow"
-                       f"&date=2026-07-07&kind={kind}", headers=hdr)
-        results[i] = r.status_code
-
-    threads = [threading.Thread(target=hit, args=(i, "prob" if i % 2 else "quality"))
-               for i in range(8)]
-    for t in threads: t.start()
-    for t in threads: t.join()
-    assert all(v == 200 for v in results.values()), results
-    assert len(calls) == 1                  # 单飞:8 个并发只拉了一次网格

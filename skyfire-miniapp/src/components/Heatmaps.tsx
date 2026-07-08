@@ -15,9 +15,12 @@ async function fetchPng(event: string, date: string, kind: string,
     await login()                     // 静默重登一次,与 authedGet 同语义
     return fetchPng(event, date, kind, true)
   }
+  if (res.statusCode === 404) return PENDING   // 后台还没生成(跟随模式更新)
   if (res.statusCode !== 200) throw new Error(`热力图加载失败(${res.statusCode})`)
   return 'data:image/png;base64,' + Taro.arrayBufferToBase64(res.data as ArrayBuffer)
 }
+
+const PENDING = 'pending'   // 哨兵:地图跟随模式更新,尚未生成
 
 export default function Heatmaps({ event, date }: { event: string; date: string }) {
   const [prob, setProb] = useState('')
@@ -34,7 +37,8 @@ export default function Heatmaps({ event, date }: { event: string; date: string 
     return () => { alive = false }
   }, [event, date, retryTick])
 
-  const preview = (src: string) => src && Taro.previewImage({ urls: [src] })
+  const preview = (src: string) =>
+    src && src !== PENDING && Taro.previewImage({ urls: [src] })
 
   return (
     <View className='glass-card'>
@@ -45,7 +49,11 @@ export default function Heatmaps({ event, date }: { event: string; date: string 
           {([['概率图', prob], ['质量图', quality]] as const).map(([title, src]) => (
             <View key={title} className='hm-block'>
               <Text className='card-title t-muted'>{title}</Text>
-              {src
+              {src === PENDING
+                ? <View className='hm-skeleton hm-pending'>
+                    <Text className='t-muted'>地图生成中 · 跟随模式更新</Text>
+                  </View>
+                : src
                 ? <Image src={src} mode='widthFix' className='hm-map'
                          onClick={() => preview(src)} />
                 : <View className='hm-skeleton' />}
@@ -53,7 +61,7 @@ export default function Heatmaps({ event, date }: { event: string; date: string 
           ))}
         </View>
       )}
-      <Text className='traj-note t-muted'>华北周边 · 点图看大图</Text>
+      <Text className='traj-note t-muted'>全国 · 点图看大图</Text>
     </View>
   )
 }

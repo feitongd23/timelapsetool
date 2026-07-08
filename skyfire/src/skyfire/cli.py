@@ -616,6 +616,28 @@ def serve(
     uvicorn.run(api, host=host, port=port)
 
 
+@app.command()
+def maps(
+    city: str = typer.Option("beijing"),
+    config: Path = typer.Option(DEFAULT_CONFIG),
+):
+    """预生成全国概率/质量地图(今天+明天×朝晚),存盘供 API 直取。
+
+    跟随 GFS/EC/ICON 模式更新由 tick 触发;此命令供手动刷新/首次填充。
+    顺序拉取全国网格(免费层限流,约每图几秒),失败的组跳过不中断。
+    """
+    from skyfire.maps import refresh_maps
+    cities = load_cities(config)
+    if city not in cities:
+        typer.echo(f"错误:未知城市 {city!r}", err=True)
+        raise typer.Exit(1)
+    today = date_type.today()
+    days = [today, today + timedelta(days=1)]
+    written = refresh_maps(_make_client(), cities[city], city, days)
+    typer.echo(f"✓ 已生成 {len(written)} 张全国地图 → data/maps/"
+               if written else "✗ 未生成(全部拉取失败,多半是限流,稍后重试)")
+
+
 def _ensure_case_frames(conn, client, case_id: int, city, city_key: str,
                         event: str, day) -> int:
     """反馈闭环:该案例还没有卫星帧则回填(尽力),返回新增帧数。"""

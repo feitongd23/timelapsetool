@@ -19,14 +19,19 @@ from skyfire.overlay import cjk_font
 # 不影响北京点预测(那条路用本地实际云量,与本地图网格无关)。
 _SMOOTH_SIGMA = 0.8
 
-# 华北主要城市(经纬度),落在默认框 110-122E/36-44N 内的会被标注
+# 全国主要城市(经纬度),落在渲染框内的会被标注(全国图用)
 _CITIES = [
-    ("北京", 39.90, 116.41), ("天津", 39.13, 117.20),
-    ("石家庄", 38.04, 114.51), ("太原", 37.87, 112.55),
-    ("济南", 36.67, 117.00), ("呼和浩特", 40.84, 111.75),
-    ("唐山", 39.63, 118.18), ("张家口", 40.82, 114.89),
-    ("大同", 40.09, 113.30), ("秦皇岛", 39.94, 119.60),
-    ("保定", 38.87, 115.46), ("沧州", 38.30, 116.84),
+    ("北京", 39.90, 116.41), ("天津", 39.13, 117.20), ("上海", 31.23, 121.47),
+    ("广州", 23.13, 113.26), ("深圳", 22.54, 114.06), ("成都", 30.57, 104.07),
+    ("重庆", 29.56, 106.55), ("西安", 34.34, 108.94), ("武汉", 30.59, 114.31),
+    ("南京", 32.06, 118.80), ("杭州", 30.27, 120.15), ("沈阳", 41.80, 123.43),
+    ("哈尔滨", 45.80, 126.53), ("郑州", 34.75, 113.62), ("济南", 36.67, 117.00),
+    ("长沙", 28.23, 112.94), ("南昌", 28.68, 115.86), ("福州", 26.07, 119.30),
+    ("昆明", 25.04, 102.71), ("贵阳", 26.65, 106.63), ("南宁", 22.82, 108.37),
+    ("太原", 37.87, 112.55), ("石家庄", 38.04, 114.51), ("呼和浩特", 40.84, 111.75),
+    ("兰州", 36.06, 103.83), ("银川", 38.49, 106.23), ("西宁", 36.62, 101.78),
+    ("合肥", 31.82, 117.23), ("海口", 20.04, 110.32), ("大连", 38.91, 121.61),
+    ("青岛", 36.07, 120.38), ("厦门", 24.48, 118.09),
 ]
 
 # 分级色带(0-100)。<10 留白=不烧;越高越浓。低值透明是 sunsetbot 干净感的来源。
@@ -51,10 +56,16 @@ _CITY_DOT = (232, 120, 60)
 _CITY_TXT = (40, 50, 62)
 _MARKER = (225, 55, 55)
 
-_PPD = 78            # 每纬度像素;经度按 cos(lat) 校正保持地理比例
-_ML, _MB = 8, 8      # 地图区左/下留白起点(轴标签在更外侧)
+_TARGET_PX = 880     # 地图长边目标像素;PPD 按框大小自适应(全国框自动缩小)
 _PAD_L, _PAD_B, _PAD_T, _PAD_R = 46, 34, 10, 12   # 画布四周边距(留给轴/图例)
 _LEGEND_H = 56
+
+
+def _ppd(bbox):
+    """按 bbox 反推每纬度像素,使地图长边≈_TARGET_PX(小框细、大框适配)。"""
+    span_lat = bbox[3] - bbox[1]
+    span_lon_eq = (bbox[2] - bbox[0]) * _cos_lat(bbox)
+    return _TARGET_PX / max(span_lat, span_lon_eq)
 
 
 def _cos_lat(bbox):
@@ -98,13 +109,18 @@ def _draw_geolines(draw, bbox, mw, mh):
                 draw.line([a, b], fill=color, width=width)
 
 
+def _grid_step(bbox):
+    return 5 if (bbox[2] - bbox[0]) > 20 else 2   # 全国框稀疏网格,华北框密
+
+
 def _draw_grid(draw, bbox, mw, mh, font):
     lon0, lat0, lon1, lat1 = bbox
-    for lon in range(int(np.ceil(lon0)), int(lon1) + 1, 2):
+    step = _grid_step(bbox)
+    for lon in range(int(np.ceil(lon0)), int(lon1) + 1, step):
         x, _ = _project(lon, lat0, bbox, mw, mh)
         for y in range(0, mh, 10):
             draw.line([(x, y), (x, y + 5)], fill=_GRID, width=1)
-    for lat in range(int(np.ceil(lat0)), int(lat1) + 1, 2):
+    for lat in range(int(np.ceil(lat0)), int(lat1) + 1, step):
         _, y = _project(lon0, lat, bbox, mw, mh)
         for x in range(0, mw, 10):
             draw.line([(x, y), (x + 5, y)], fill=_GRID, width=1)
@@ -131,8 +147,9 @@ def render_map_png(values, kind: str, bbox, *,
 
     kind: 'prob' | 'quality'。bbox=(lon0,lat0,lon1,lat1)。
     """
-    mh = round((bbox[3] - bbox[1]) * _PPD)
-    mw = round((bbox[2] - bbox[0]) * _PPD * _cos_lat(bbox))
+    ppd = _ppd(bbox)
+    mh = round((bbox[3] - bbox[1]) * ppd)
+    mw = round((bbox[2] - bbox[0]) * ppd * _cos_lat(bbox))
     W = _PAD_L + mw + _PAD_R
     H = _PAD_T + mh + _PAD_B + _LEGEND_H
 
@@ -150,10 +167,11 @@ def render_map_png(values, kind: str, bbox, *,
 
     dc = ImageDraw.Draw(canvas)
     lon0, lat0, lon1, lat1 = bbox
-    for lon in range(int(np.ceil(lon0)), int(lon1) + 1, 2):
+    step = _grid_step(bbox)
+    for lon in range(int(np.ceil(lon0)), int(lon1) + 1, step):
         x, _ = _project(lon, lat0, bbox, mw, mh)
         dc.text((_PAD_L + x - 8, _PAD_T + mh + 6), str(lon), fill=_AXIS, font=fsmall)
-    for lat in range(int(np.ceil(lat0)), int(lat1) + 1, 2):
+    for lat in range(int(np.ceil(lat0)), int(lat1) + 1, step):
         _, y = _project(lon0, lat, bbox, mw, mh)
         dc.text((6, _PAD_T + y - 8), str(lat), fill=_AXIS, font=fsmall)
 

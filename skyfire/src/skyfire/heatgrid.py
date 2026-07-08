@@ -2,13 +2,17 @@
 
 概率图暖色(米→琥珀→红)、质量图紫色系;双三次插值放大,无瓦片边界。
 """
+import math
 from io import BytesIO
 
 import numpy as np
 from PIL import Image, ImageDraw
 
+from skyfire.models import ChannelPoint
 from skyfire.percent import baseline_percent
 from skyfire.scoring.firecloud import FireCloudInputs, fire_cloud_score
+
+_CORRIDOR_KM = (100, 200, 300, 400)   # 通道采样距离(与点预测 channel_points 一致)
 
 _SCALE = 48                       # 13x9 格 → 624x432 px
 _STOPS = {
@@ -40,6 +44,62 @@ def score_grids(cloud: dict, confidence: str) -> dict[str, list[list[int]]]:
             total = min(100.0, (h or 0) + (m or 0) + (low or 0))
             pr, qu = baseline_percent(score, confidence, None, total)
             prob[r][c], quality[r][c] = pr, qu
+    return {"prob": prob, "quality": quality}
+
+
+def _sample_low(low, bbox, lon, lat):
+    """网格最近格的低云%(越界返回 None)。low 为行主序北→南、西→东。"""
+    lon0, lat0, lon1, lat1 = bbox
+    rows, cols = len(low), len(low[0])
+    if not (lon0 <= lon <= lon1 and lat0 <= lat <= lat1):
+        return None
+    c = round((lon - lon0) / (lon1 - lon0) * (cols - 1))
+    r = round((lat1 - lat) / (lat1 - lat0) * (rows - 1))
+    v = low[r][c]
+    return v if v is not None else None
+
+
+def _corridor_points(low, bbox, lon, lat, west: bool):
+    """从网格自身低云场,沿日照方向(晚霞朝西/朝霞朝东)采样透光通道点。"""
+    pts = []
+    for dkm in _CORRIDOR_KM:
+        dlon = dkm / (111.0 * max(0.2, math.cos(math.radians(lat))))
+        slon = lon - dlon if west else lon + dlon
+        cl = _sample_low(low, bbox, slon, lat)
+        if cl is not None:
+            pts.append(ChannelPoint(dist_km=dkm, cloud_low=cl, cloud_total=None))
+    return pts
+
+
+def score_grids_physics(cloud: dict, aod_grid, event: str, bbox,
+                        confidence: str) -> dict[str, list[list[int]]]:
+    """全物理逐格打分:画布(云高分层)× 透光通道 × 本地低云 × 气溶胶 × 降水。
+
+    比 score_grids 多算:①每格按日照方向从网格采样西/东侧低云→通道系数;
+    ②每格 AOD→气溶胶系数(aod_grid 缺则中性)。用户 2026-07-08 要求综合考量。
+    """
+    high, mid, low = cloud["high"], cloud["mid"], cloud["low"]
+    precip = cloud.get("precip")
+    lon0, lat0, lon1, lat1 = bbox
+    rows, cols = len(high), len(high[0])
+    west = event == "sunset_glow"
+    prob = [[0] * cols for _ in range(rows)]
+    quality = [[0] * cols for _ in range(rows)]
+    for r in range(rows):
+        lat = lat1 - (lat1 - lat0) * r / (rows - 1)
+        for c in range(cols):
+            h = high[r][c]
+            if h is None:
+                continue
+            lon = lon0 + (lon1 - lon0) * c / (cols - 1)
+            p = (precip[r][c] if precip else 0) or 0
+            aod = aod_grid[r][c] if aod_grid else None
+            score = fire_cloud_score(FireCloudInputs(
+                cloud_high=h, cloud_mid=mid[r][c] or 0, cloud_low=low[r][c] or 0,
+                precipitation=p, aod=aod,
+                channel=_corridor_points(low, bbox, lon, lat, west))).score
+            total = min(100.0, (h or 0) + (mid[r][c] or 0) + (low[r][c] or 0))
+            prob[r][c], quality[r][c] = baseline_percent(score, confidence, None, total)
     return {"prob": prob, "quality": quality}
 
 
