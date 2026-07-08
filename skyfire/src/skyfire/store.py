@@ -415,6 +415,14 @@ def latest_prediction(conn, date: str, city: str, event: str) -> dict | None:
     return rows[-1] if rows else None
 
 
+def prediction_by_id(conn, pred_id: int) -> dict | None:
+    """单条预测(走势点回溯历史报告用)。"""
+    row = conn.execute(
+        f"SELECT {','.join(_PRED_KEYS)} FROM predictions WHERE id=?",
+        (pred_id,)).fetchone()
+    return dict(zip(_PRED_KEYS, row)) if row else None
+
+
 def has_checkpoint(conn, date: str, city: str, event: str, checkpoint: str) -> bool:
     return conn.execute(
         "SELECT 1 FROM predictions WHERE date=? AND city=? AND event=? AND checkpoint=?",

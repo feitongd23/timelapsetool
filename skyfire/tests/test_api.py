@@ -211,3 +211,99 @@ def test_local_bad_coords_422(tmp_path, monkeypatch):
     r = client.get("/v1/local?event=sunset_glow&date=2026-07-08&lat=5&lon=10",
                    headers={"X-Session": token})
     assert r.status_code == 422
+
+
+def _ext_transport(embassy_ok=True):
+    """mock 外呼:Open-Meteo 天气/空气、美使馆、Nominatim。"""
+    def handler(request):
+        host = request.url.host
+        if "dosairnowdata" in host:
+            if not embassy_ok:
+                return httpx.Response(500)
+            return httpx.Response(200, json=[
+                {"stationName": "Beijing", "aqi": 62, "conc": 17.2,
+                 "localTimeStamp": "2026-07-09 19:00:00"}])
+        if "air-quality" in host:
+            return httpx.Response(200, json={"hourly": {
+                "time": ["2026-07-09T18:00", "2026-07-09T19:00"],
+                "pm2_5": [14.0, 16.0]}})
+        if "nominatim" in host:
+            return httpx.Response(200, json={"address": {
+                "suburb": "望京", "district": "朝阳区"}})
+        # 预报端点(逐小时天气)
+        times = [f"2026-07-09T{h:02d}:00" for h in range(24)] + \
+                [f"2026-07-10T{h:02d}:00" for h in range(24)]
+        n = len(times)
+        return httpx.Response(200, json={"hourly": {
+            "time": times, "temperature_2m": [30.4] * n,
+            "weather_code": [2] * n, "cloud_cover": [55] * n,
+            "precipitation": [0.0] * n}})
+    return httpx.MockTransport(handler)
+
+
+def test_hourly_endpoint_shapes_hours(tmp_path):
+    app, _ = _make_app(tmp_path, _wx_transport())
+    app.state.ext_client = httpx.Client(transport=_ext_transport())
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    r = client.get("/v1/hourly?lat=39.99&lon=116.47",
+                   headers={"X-Session": token})
+    assert r.status_code == 200
+    hours = r.json()["hours"]
+    assert len(hours) == 8
+    assert {"hour", "temp", "text", "cloud", "precip"} <= set(hours[0])
+    assert hours[0]["temp"] == 30 and hours[0]["text"] == "多云"
+
+
+def test_aqi_embassy_first_then_fallback(tmp_path):
+    app, _ = _make_app(tmp_path, _wx_transport())
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    hdr = {"X-Session": token}
+    # 使馆通 → 用使馆
+    app.state.ext_client = httpx.Client(transport=_ext_transport(embassy_ok=True))
+    d = client.get("/v1/aqi?lat=39.99&lon=116.47", headers=hdr).json()
+    assert d["aqi"] == 62 and d["source"] == "北京美使馆" and d["level"] == "良"
+    # 使馆挂 → Open-Meteo PM2.5 换算(16µg → AQI 59 良)
+    app.state.ext_cache.clear()
+    app.state.ext_client = httpx.Client(transport=_ext_transport(embassy_ok=False))
+    d = client.get("/v1/aqi?lat=39.99&lon=116.47", headers=hdr).json()
+    assert d["source"] == "CAMS" and d["level"] == "良" and 55 <= d["aqi"] <= 62
+
+
+def test_report_endpoint_returns_full_row(tmp_path):
+    app, db = _make_app(tmp_path, _wx_transport())
+    _seed_predictions(db)
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    hdr = {"X-Session": token}
+    conn = store.connect(db)
+    rid = store.predictions_for(conn, "2026-07-07", "beijing",
+                                "sunset_glow")[-1]["id"]
+    conn.close()
+    r = client.get(f"/v1/report?id={rid}", headers=hdr)
+    assert r.status_code == 200
+    d = r.json()
+    assert d["id"] == rid and d["reasoning"] == "画布成片"
+    assert d["level"] and d["per_model"]["gfs_seamless"]["cloud_high"] == 80
+    assert client.get("/v1/report?id=99999", headers=hdr).status_code == 404
+
+
+def test_satimg_serves_latest_frame(tmp_path):
+    live = tmp_path / "live"
+    live.mkdir()
+    (live / "live_20260709_1000.png").write_bytes(b"\x89PNG\r\n\x1a\nOLD")
+    (live / "live_20260709_1100.png").write_bytes(b"\x89PNG\r\n\x1a\nNEW")
+    db = tmp_path / "api.db"
+    conn = store.connect(db); store.init_db(conn); conn.close()
+    wechat = tmp_path / "wechat.local.yaml"
+    wechat.write_text("app_id: wx1\napp_secret: s1\n", encoding="utf-8")
+    app = create_app(db_path=db, config_path=CONFIG, wechat_path=wechat,
+                     maps_dir=tmp_path / "maps", live_dir=live)
+    app.state.wx_client = httpx.Client(transport=_wx_transport())
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    r = client.get("/v1/satimg", headers={"X-Session": token})
+    assert r.status_code == 200
+    assert r.content.endswith(b"NEW")               # 取最新帧
+    assert r.headers["x-sat-time"] == "19:00"       # UTC 11:00 → 北京 19:00
