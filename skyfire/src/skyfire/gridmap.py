@@ -74,7 +74,7 @@ def fetch_cloud_grid(client: httpx.Client, pts: list[tuple[float, float]],
         }
         if date is None:
             url = FORECAST_URL
-            params["forecast_days"] = 3
+            params["forecast_days"] = 2   # 只需今明两天;3→2 省 1/3 请求权重(免费层限流)
         else:
             url = HISTORICAL_FORECAST_URL
             params.update(start_date=date, end_date=date)
