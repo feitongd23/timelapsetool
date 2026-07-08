@@ -514,9 +514,6 @@ def tick(
     now = datetime.now(timezone.utc)
     for city_key, c in cities.items():
         now_local = now.astimezone(ZoneInfo(c.timezone))
-        nm = _maybe_refresh_maps(c, city_key)   # 跟随模式更新刷新全国地图
-        if nm:
-            typer.echo(f"✓ {city_key} 全国地图已刷新 {nm} 张")
         for event in ("sunset_glow", "sunrise_glow"):
             for day_offset in (0, 1):
                 day = (now_local + timedelta(days=day_offset)).date()
@@ -582,6 +579,10 @@ def tick(
                 except (httpx.HTTPError, ValueError):
                     continue  # 单城失败不影响其他(spec 8)
                 break  # 该 event 已按其中一天处理,不再看另一天
+        # 预测/推送优先用配额;地图(重)放最后,配额紧张时先保推送不被挤掉
+        nm = _maybe_refresh_maps(c, city_key)
+        if nm:
+            typer.echo(f"✓ {city_key} 全国地图已刷新 {nm} 张")
 
 
 @app.command()
