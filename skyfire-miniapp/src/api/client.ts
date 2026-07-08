@@ -1,8 +1,9 @@
 import Taro from '@tarojs/taro'
-import type { Summary } from './types'
+import type { LocalResult, Summary } from './types'
 
-// 开发者工具用 127.0.0.1;真机改成 Mac 局域网 IP(设置→Wi-Fi 查看)
-export const API_BASE = 'http://127.0.0.1:8000'
+// 真机与开发者工具都走 Mac 局域网 IP(2026-07-07,192.168.50.80);
+// 换了 WiFi 网段要同步改(ipconfig getifaddr en0 查)
+export const API_BASE = 'http://192.168.50.80:8000'
 
 const TOKEN_KEY = 'skyfire_token'
 
@@ -40,6 +41,12 @@ async function authedGet<T>(path: string, retried = false): Promise<T> {
 
 export function fetchSummary(city = 'beijing'): Promise<Summary> {
   return authedGet<Summary>(`/v1/summary?city=${city}`)
+}
+
+export function fetchLocal(event: string, date: string, lat: number,
+                          lon: number): Promise<LocalResult> {
+  return authedGet<LocalResult>(
+    `/v1/local?event=${event}&date=${date}&lat=${lat}&lon=${lon}`)
 }
 
 export function heatmapUrl(event: string, date: string,

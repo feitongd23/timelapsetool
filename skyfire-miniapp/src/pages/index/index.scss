@@ -66,3 +66,13 @@
 .hm-err { font-size: 24rpx; }
 .reading-text { display: block; font-size: 26rpx; line-height: 1.7; }
 .reading-risk { display: block; margin-top: 10rpx; font-size: 24rpx; }
+
+/* 定位卡:按用户 GPS 给位置专属质量/概率 */
+.loc-card { padding: 20rpx 24rpx; }
+.loc-cta { display: block; text-align: center; font-size: 26rpx; }
+.loc-row { display: flex; flex-direction: column; gap: 4rpx; }
+.loc-pin { font-size: 22rpx; color: #8a94a2; }
+.loc-val { font-size: 30rpx; font-weight: 500; }
+.loc-level { font-size: 28rpx; }
+.loc-delta { font-size: 22rpx; }
+.loc-prob { font-size: 24rpx; }

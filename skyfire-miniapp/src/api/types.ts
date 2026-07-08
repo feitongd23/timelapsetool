@@ -49,3 +49,14 @@ export interface Summary {
   updated_at: string
   dates: DateData[]
 }
+
+export interface LocalResult {
+  probability_pct: number
+  quality_pct: number
+  prob_word: string
+  qual_word: string
+  level: string
+  delta_quality: number
+  lat: number
+  lon: number
+}

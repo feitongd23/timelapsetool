@@ -166,3 +166,48 @@ def test_heatmap_bad_kind_422(tmp_path):
     r = client.get("/v1/heatmap?city=beijing&event=sunset_glow"
                    "&date=2026-07-07&kind=nope", headers={"X-Session": token})
     assert r.status_code == 422
+
+
+def _stub_location(monkeypatch, center_q, loc_q):
+    """打桩 score_location:中心与用户位置各返回给定质量(prob=qual+5)。"""
+    import skyfire.api as api_mod
+    calls = []
+
+    def fake(client, lat, lon, tz, event, day, skill_rows=None):
+        calls.append((round(lat, 3), round(lon, 3)))
+        q = loc_q if (abs(lat - 39.9042) > 0.01 or abs(lon - 116.4074) > 0.01) else center_q
+        return {"probability_pct": q + 5, "quality_pct": q,
+                "rule_score": q / 10, "confidence": "medium"}
+    monkeypatch.setattr(api_mod, "score_location", fake)
+    return calls
+
+
+def test_local_anchors_to_center_prediction(tmp_path, monkeypatch):
+    from skyfire import store
+    app, db = _make_app(tmp_path, _wx_transport())
+    # 中心已有 LLM 精修预测 质量60
+    conn = store.connect(db)
+    store.add_prediction(conn, "2026-07-08", "beijing", "sunset_glow", "c2",
+                         probability_pct=62, quality_pct=60, confidence="high",
+                         rule_score=5.5, sat_cloud_pct=None, trend=None,
+                         llm_status="done", reasoning="x", risks="y")
+    conn.close()
+    # 用户位置物理分比中心高10(50 vs 40)→ 锚定后 = 60 + 10 = 70
+    _stub_location(monkeypatch, center_q=40, loc_q=50)
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    r = client.get("/v1/local?event=sunset_glow&date=2026-07-08"
+                   "&lat=40.4&lon=116.8", headers={"X-Session": token})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["quality_pct"] == 70 and d["delta_quality"] == 10   # 中心60 + 位置差10
+    assert d["level"] == "中烧"
+
+
+def test_local_bad_coords_422(tmp_path, monkeypatch):
+    app, _ = _make_app(tmp_path, _wx_transport())
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    r = client.get("/v1/local?event=sunset_glow&date=2026-07-08&lat=5&lon=10",
+                   headers={"X-Session": token})
+    assert r.status_code == 422

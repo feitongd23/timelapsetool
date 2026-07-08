@@ -16,8 +16,9 @@ from pydantic import BaseModel
 
 from skyfire import store
 from skyfire.config import load_cities
+from skyfire.engine import score_location
 from skyfire.maps import DEFAULT_MAPS_DIR, map_path
-from skyfire.report import _prob_word, _qual_word
+from skyfire.report import _burn_level, _prob_word, _qual_word
 from skyfire.suntimes import sun_window
 from skyfire.wechatconf import load_wechat_config
 
@@ -34,6 +35,10 @@ def _hash(token: str) -> str:
 
 def _now_local(tz: str) -> datetime:
     return datetime.now(ZoneInfo(tz))
+
+
+def _clamp(v: float) -> int:
+    return int(round(max(0.0, min(100.0, v))))
 
 
 
@@ -154,5 +159,46 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path,
         if not p.exists():
             raise HTTPException(404, "地图生成中(跟随模式更新,稍后重试)")
         return Response(p.read_bytes(), media_type="image/png")
+
+    @app.get("/v1/local", dependencies=[Depends(require_session)])
+    def local(event: str, date: str, lat: float, lon: float,
+              city: str = "beijing", c=Depends(conn)):
+        """按用户 GPS 给位置专属概率/质量。
+
+        位置值 = 中心精修预测(LLM/卫星)+ 本地物理差(该点通道/云与中心之差),
+        故与首页大数字口径一致、只按所在地偏移(用户 2026-07-08)。
+        """
+        if city not in app.state.cities:
+            raise HTTPException(422, f"未知城市 {city!r}")
+        if event not in ("sunrise_glow", "sunset_glow"):
+            raise HTTPException(422, f"未知天象 {event!r}")
+        if not (15 <= lat <= 55 and 70 <= lon <= 140):
+            raise HTTPException(422, "经纬度超出范围")
+        try:
+            day = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(422, f"date 需为 YYYY-MM-DD,收到 {date!r}")
+        ct = app.state.cities[city]
+        skill = store.get_model_skill(c)
+        try:
+            with httpx.Client(timeout=20) as client:
+                loc = score_location(client, lat, lon, ct.timezone, event, day,
+                                     skill_rows=skill)
+                center = score_location(client, ct.lat, ct.lon, ct.timezone,
+                                        event, day, skill_rows=skill)
+        except (httpx.HTTPError, ValueError) as e:
+            raise HTTPException(503, f"定位打分失败: {e.__class__.__name__}")
+        latest = store.latest_prediction(c, str(day), city, event)
+        if latest and latest.get("llm_status") == "done":
+            base_q, base_p = latest["quality_pct"], latest["probability_pct"]
+        else:  # 无精修基准:直接用中心物理分作锚
+            base_q, base_p = center["quality_pct"], center["probability_pct"]
+        q = _clamp(base_q + (loc["quality_pct"] - center["quality_pct"]))
+        p = _clamp(base_p + (loc["probability_pct"] - center["probability_pct"]))
+        return {"probability_pct": p, "quality_pct": q,
+                "prob_word": _prob_word(p), "qual_word": _qual_word(q),
+                "level": _burn_level(q),
+                "delta_quality": q - base_q,   # 相对中心的位置偏移(±)
+                "lat": lat, "lon": lon}
 
     return app

@@ -139,6 +139,39 @@ def compute_prediction(conn, client: httpx.Client, city: City, city_key: str,
         llm=llm_result, per_model_raw=per_model_raw)
 
 
+def score_location(client: httpx.Client, lat: float, lon: float, tz: str,
+                   event: str, day: date, *, skill_rows=None) -> dict:
+    """任意坐标的火烧云物理分(不写库,供按用户定位给位置专属预测)。
+
+    画布(云高分层)× 透光通道(按该点日照方向采样)× 本地低云 × 气溶胶 × 降水
+    → 免费层概率/质量。位置影响主要经"该点西/东侧透光通道"体现(用户 2026-07-08)。
+    """
+    win = sun_window(lat, lon, tz, day, event)
+    iso = nearest_iso_hour(win.peak)
+    channel = fetch_channel_profile(
+        client, channel_points(lat, lon, win.azimuth_deg), tz, iso)
+    aod = fetch_aod_at(client, lat, lon, tz, iso)
+    per_model, totals = {}, []
+    for fc in fetch_point_forecast(client, lat, lon, tz):
+        h = fc.at(iso)
+        if h is None or h.cloud_high is None:
+            continue
+        per_model[fc.model] = fire_cloud_score(FireCloudInputs(
+            cloud_high=h.cloud_high, cloud_mid=h.cloud_mid or 0,
+            cloud_low=h.cloud_low or 0, precipitation=h.precipitation or 0,
+            aod=aod, channel=channel)).score
+        totals.append(min(100.0, (h.cloud_high or 0) + (h.cloud_mid or 0)
+                          + (h.cloud_low or 0)))
+    if not per_model:
+        raise ValueError("所有模式数据缺失")
+    weights = weights_from_skill(skill_rows, list(per_model)) if skill_rows else None
+    cons = consensus(per_model, weights=weights)
+    total = sum(totals) / len(totals) if totals else None
+    prob, qual = baseline_percent(cons.index, cons.confidence, None, total)
+    return {"probability_pct": prob, "quality_pct": qual,
+            "rule_score": round(cons.index, 1), "confidence": cons.confidence}
+
+
 def observe_burn_clouds(client, peak_utc, event: str, lat: float, lon: float,
                         frames_dir: Path,
                         ) -> tuple[float | None, float | None, str | None, list[Path]]:
