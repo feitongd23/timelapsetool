@@ -551,3 +551,57 @@ def test_feedback_review_puts_photos_before_frames(tmp_path, monkeypatch):
     assert result.exit_code == 0
     paths = captured["paths"]
     assert paths[0].suffix == ".jpg" and paths[-1].suffix == ".png"  # 实拍在前
+
+
+def _gated_setup(monkeypatch, tmp_path, pushed):
+    import skyfire.cli as cli
+    from skyfire import store
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    monkeypatch.setattr(cli, "load_notify_config",
+                        lambda p: {"provider": "bark", "key": "k"})
+    monkeypatch.setattr(cli, "push", lambda t, b, cfg: pushed.append(t) or True)
+    monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev: None)  # 无到点
+    future = _dt.now(_tz.utc) + _td(hours=3)
+
+    class _W:
+        peak = future
+    monkeypatch.setattr(cli, "sun_window", lambda *a, **k: _W())
+    db = tmp_path / "t.db"; conn = store.connect(db); store.init_db(conn)
+    pred_date = str(future.date())
+    for ev in ("sunset_glow", "sunrise_glow"):   # gated 前提:c1 已跑
+        store.add_prediction(conn, pred_date, "beijing", ev, "c1",
+                             probability_pct=20, quality_pct=22, confidence="low",
+                             rule_score=2.0, sat_cloud_pct=None, trend=None,
+                             llm_status="pending", reasoning=None, risks=None)
+    conn.close()
+    return db, pred_date
+
+
+def _gated_rec(pred_date, qual, prev_qual):
+    return {"probability_pct": qual + 5, "quality_pct": qual, "confidence": "low",
+            "llm_status": "pending", "reasoning": None, "risks": None,
+            "date": pred_date, "event": "sunset_glow", "checkpoint": "gated",
+            "rule_score": qual / 10, "sat_cloud_pct": None, "trend": None,
+            "city_name": "北京",
+            "prev": {"probability_pct": prev_qual, "quality_pct": prev_qual,
+                     "checkpoint": "c1", "time_local": None, "minutes_ago": None}}
+
+
+def test_tick_gated_same_level_suppressed(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    pushed = []
+    db, pd = _gated_setup(monkeypatch, tmp_path, pushed)
+    # 质量 22→38 都 <40(微烧),Δ概率 22→43 >15pp,旧规则会推,新规则同级不推
+    monkeypatch.setattr(cli, "run_checkpoint", lambda *a, **k: _gated_rec(pd, 38, 22))
+    result = runner.invoke(app, ["tick", "--db", str(db)])
+    assert result.exit_code == 0 and pushed == []   # 同级摆动不推
+
+
+def test_tick_gated_level_change_pushes(tmp_path, monkeypatch):
+    import skyfire.cli as cli
+    pushed = []
+    db, pd = _gated_setup(monkeypatch, tmp_path, pushed)
+    # 质量 22(微烧)→ 55(小烧):等级变了 → 推
+    monkeypatch.setattr(cli, "run_checkpoint", lambda *a, **k: _gated_rec(pd, 55, 22))
+    result = runner.invoke(app, ["tick", "--db", str(db)])
+    assert result.exit_code == 0 and len(pushed) >= 1

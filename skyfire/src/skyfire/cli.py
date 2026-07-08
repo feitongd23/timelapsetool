@@ -27,7 +27,8 @@ from skyfire.notifyconf import load_notify_config
 from skyfire.openmeteo import fetch_point_forecast
 from skyfire.push import push
 from skyfire.render import load_b13_region
-from skyfire.report import format_outlook_report, format_pct_report, format_report
+from skyfire.report import (_burn_level, format_outlook_report,
+                            format_pct_report, format_report)
 from skyfire.scoring.cloudsea import CloudSeaInputs, cloud_sea_score
 from skyfire.skill import (MIN_N, per_model_errors, recomputed_consensus,
                            skill_table, weights_from_skill)
@@ -539,6 +540,18 @@ def tick(
                                              win.peak.date(), "gated", gate=True)
                     if rec is None:
                         continue
+                    # 波动抑制(用户 2026-07-08:别推那么多,即使>15%):gated 门控
+                    # 只在烧云等级变化时推;同级内数值摆动只记录不推,避免刷屏。
+                    # 到点检查点(c1/c2/c3)与展望不受此限,照常推。
+                    if rec["checkpoint"] == "gated" and rec.get("prev") and \
+                            _burn_level(rec["quality_pct"]) == \
+                            _burn_level(rec["prev"]["quality_pct"]):
+                        typer.echo(
+                            f"· {city_key} {event} gated 同级摆动不推"
+                            f"(质量{rec['prev']['quality_pct']:.0f}→"
+                            f"{rec['quality_pct']:.0f} 仍属"
+                            f"{_burn_level(rec['quality_pct'])})")
+                        break
                     title, body = format_pct_report(rec)
                     ok = push(title, body, ncfg)
                     mark = "✓" if ok else "✗ 推送失败"
@@ -705,6 +718,19 @@ def feedback(
         conn.commit()
     typer.echo(f"✓ 已记录反馈: {date} {event}"
                + (f" 实际 {score} 分" if score is not None else " (预报不准)"))
+
+    # 反馈即刷新模型置信账本(用户 2026-07-08:用反馈图片给4模型建置信分,
+    # 准的占权重高)。样本累积到 skill.MIN_N 后,预测共识自动按 1/(MAE+5) 加权。
+    if score is not None:
+        rows = skill_table(per_model_errors(
+            store.scored_cases_with_snapshots(conn, city)))
+        if rows:
+            store.replace_model_skill(conn, rows)
+            active = weights_from_skill(rows, [r["model"] for r in rows]) is not None
+            typer.echo("✓ 模型置信账本已刷新(" + " ".join(
+                f"{r['model'].split('_')[0].upper()} MAE{r['mae']:.0f}" for r in rows)
+                + ")" + ("·加权已启用" if active
+                         else f"·满{MIN_N}样本后启用加权"))
 
     client = _make_client()
     n = _ensure_case_frames(conn, client, cid, c, city, event, day)
