@@ -191,6 +191,8 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path,
                             lambda: fetch_hourly(app.state.ext_client, lat, lon, tz))
         except httpx.HTTPError as e:
             raise HTTPException(503, f"天气拉取失败: {e.__class__.__name__}")
+        if not hours:   # 空结果(上游限流/异常窗口)不缓存,尽快自愈
+            app.state.ext_cache.pop(("hourly", key), None)
         return {"hours": hours}
 
     @app.get("/v1/aqi", dependencies=[Depends(require_session)])

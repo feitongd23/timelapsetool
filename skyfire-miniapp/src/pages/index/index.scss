@@ -1,78 +1,206 @@
-.index-page { padding: 24rpx; }
+/* v2 界面:莫兰迪液态玻璃(概念稿 v14 定稿)。
+   小程序 backdrop-filter 分机型,统一半透明白+阴影为底,支持磨砂的机型自然增强 */
+
+page { height: 100%; }
+.page {
+  height: 100vh; display: flex; flex-direction: column;
+  padding: 12rpx 28rpx 0; box-sizing: border-box; color: #2b242e;
+}
 .center-page {
   min-height: 60vh; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 24rpx;
 }
-.retry { font-size: 30rpx; }
-.topbar {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 20rpx; padding: 0 8rpx;
+.retry { font-size: 30rpx; color: #9c6b52; font-weight: 700; }
+.t-muted { color: #7d7684; font-size: 26rpx; }
+.t-secondary { color: #4f4754; font-size: 28rpx; }
+
+/* 玻璃基元 */
+.glass-card, .tagblock, .sstrip, .seg, .hr {
+  background: rgba(255, 255, 255, .42);
+  border: 1rpx solid rgba(255, 255, 255, .75);
+  box-shadow: 0 14rpx 40rpx -18rpx rgba(90, 60, 90, .25),
+              inset 0 2rpx 0 rgba(255, 255, 255, .85);
+  backdrop-filter: blur(30px) saturate(1.9);
+  -webkit-backdrop-filter: blur(30px) saturate(1.9);
 }
-.city { font-size: 34rpx; font-weight: 500; }
-.date-picker { font-size: 28rpx; }
-.tabs { display: flex; padding: 8rpx; gap: 8rpx; }
-.tab {
-  flex: 1; text-align: center; padding: 14rpx 0; border-radius: 20rpx;
-  color: #8a94a2; font-size: 28rpx; position: relative;
+.glass-card { border-radius: 28rpx; padding: 22rpx 26rpx; margin-top: 18rpx; }
+.card-title {
+  display: block; font-size: 24rpx; color: #5a5260;
+  font-weight: 800; margin-bottom: 12rpx;
 }
-.tab-active { background: #fff; color: #1c2733; font-weight: 500; }
-.ended-badge {
-  font-size: 20rpx; color: #8a94a2; margin-left: 8rpx;
+
+/* 顶行:定位(右侧留给系统胶囊) */
+.topline { display: flex; justify-content: space-between; padding-right: 180rpx; }
+.loc { display: flex; flex-direction: column; gap: 2rpx; }
+.pin-row { display: flex; align-items: center; gap: 8rpx; }
+.pin-icon {
+  width: 18rpx; height: 18rpx; border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg); border: 4rpx solid #2b242e; box-sizing: border-box;
 }
-.hero-num-row { display: flex; align-items: baseline; }
-.hero-num { font-size: 96rpx; font-weight: 500; line-height: 1.1; }
-.hero-pct { font-size: 44rpx; margin-left: 6rpx; }
-.hero-words { display: block; margin-top: 12rpx; font-size: 24rpx; }
-.hero-word { display: block; font-size: 30rpx; font-weight: 500; margin-top: 2rpx; }
-.hero-qual-val { display: block; margin-top: 16rpx; font-size: 30rpx; font-weight: 500; }
-.hero-qual-word { display: block; font-size: 24rpx; margin-top: 2rpx; }
-.hero-meta { display: block; margin-top: 16rpx; font-size: 24rpx; }
-.hero-ended { opacity: 0.62; }
-.card-title { display: block; font-size: 24rpx; margin-bottom: 12rpx; }
-.traj-canvas { width: 100%; height: 150px; }
-.traj-note { display: block; font-size: 22rpx; margin-top: 6rpx; }
-/* 各模式:概率/质量用 bar,云量三列对齐,横平竖直 */
-.mr { padding: 18rpx 0; border-bottom: 1rpx solid rgba(28, 39, 51, 0.06); }
-.mr:last-child { border-bottom: none; padding-bottom: 0; }
-.mr-head {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 10rpx;
+.pin-name { font-size: 36rpx; font-weight: 800; }
+.pin-arrow { font-size: 22rpx; color: #7d7684; font-weight: 700; }
+.pin-sub { font-size: 22rpx; color: #7d7684; font-weight: 600; }
+
+/* 双组 tab */
+.segrow { display: flex; gap: 14rpx; margin-top: 20rpx; }
+.seg { display: flex; flex: 1; border-radius: 22rpx; padding: 5rpx; }
+.seg-i {
+  flex: 1; text-align: center; font-size: 26rpx; padding: 10rpx 0;
+  border-radius: 17rpx; color: #7d7684; font-weight: 600;
 }
-.mr-name { font-size: 28rpx; font-weight: 600; }
-.mr-rain { font-size: 22rpx; }
-.mr-metric { display: flex; align-items: center; gap: 14rpx; margin: 8rpx 0; }
-.mr-label { font-size: 24rpx; width: 56rpx; flex-shrink: 0; }
-.mr-val { font-size: 24rpx; width: 72rpx; text-align: right; flex-shrink: 0; }
-.bar-track {
-  flex: 1; height: 14rpx; border-radius: 8rpx;
-  background: rgba(28, 39, 51, 0.07); overflow: hidden;
+.seg-i.on {
+  background: rgba(255, 255, 255, .92); color: #2b242e;
+  box-shadow: 0 2rpx 8rpx rgba(90, 60, 90, .16); font-weight: 700;
 }
-.bar-fill { height: 100%; border-radius: 8rpx; }
-.bar-prob { background: #e8963c; }
-.bar-qual { background: #7f77dd; }
-.mr-clouds { display: flex; margin-top: 10rpx; }
-.mr-cloud { flex: 1; font-size: 24rpx; }
+
+/* 双页 swiper */
+.pages { flex: 1; margin: 0 -28rpx; }
+.pagescroll { height: 100%; padding: 0 28rpx 30rpx; box-sizing: border-box; }
+
+/* 走势 */
+.wave { margin-top: 16rpx; }
+.wave-cap { display: block; font-size: 21rpx; color: #7d7684; font-weight: 700; }
+.wave-canvas { width: 100%; height: 84px; }
+
+/* HERO 双大数字 */
+.hero { padding-bottom: 20rpx; }
+.heronums { display: flex; align-items: flex-end; gap: 30rpx; margin-top: 4rpx; }
+.lbltop { display: block; font-size: 22rpx; font-weight: 700; color: #9d8791; }
+.lbl { display: block; font-size: 25rpx; font-weight: 700; color: #8d7480; }
+.num-big {
+  display: block; font-size: 160rpx; line-height: .95; font-weight: 800;
+  letter-spacing: -6rpx;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.unit-big { font-size: 46rpx; letter-spacing: 0; }
+.pcol { padding-bottom: 12rpx; }
+.num-small {
+  display: block; font-size: 78rpx; line-height: 1; font-weight: 800;
+  letter-spacing: -2rpx;
+}
+.unit-small { font-size: 28rpx; }
+.level { display: block; font-size: 42rpx; font-weight: 800; margin-top: 6rpx; }
+
+/* 突变/位置 半宽双面板 */
+.striprow { display: flex; gap: 14rpx; margin-top: 16rpx; }
+.sstrip {
+  flex: 1; border-radius: 24rpx; padding: 14rpx 16rpx;
+  display: flex; align-items: center; gap: 12rpx;
+}
+.stag {
+  flex-shrink: 0; font-size: 20rpx; font-weight: 800; color: #fff;
+  padding: 4rpx 14rpx; border-radius: 12rpx;
+}
+.stxt { font-size: 24rpx; font-weight: 700; color: #4f4754; }
+
+/* 生成时间两行 */
+.genline, .genline2 {
+  display: block; font-size: 24rpx; font-weight: 700; color: #6f6776;
+}
+.genline { margin-top: 16rpx; }
+.genline2 { margin-top: 4rpx; }
+
+/* 标签块:风险/空气/解读 */
+.tagblock {
+  margin-top: 16rpx; border-radius: 26rpx; padding: 18rpx 20rpx;
+  display: flex; gap: 16rpx; align-items: flex-start;
+}
+.tag {
+  flex-shrink: 0; font-size: 20rpx; font-weight: 800; color: #fff;
+  padding: 5rpx 15rpx; border-radius: 12rpx; margin-top: 2rpx;
+}
+.tbody { flex: 1; font-size: 24rpx; line-height: 1.55; font-weight: 600; }
+.tbd { flex: 1; }
+.tsrc { display: block; margin-top: 10rpx; font-size: 20rpx; font-weight: 700; color: #7d7684; }
+.tb-risk { background: rgba(240, 226, 228, .55); border-color: rgba(181, 106, 118, .4); }
+.tb-risk .tag { background: #b56a76; }
+.tb-risk .tbody { color: #8a4e5c; }
+.tb-air { background: rgba(240, 233, 218, .55); border-color: rgba(179, 152, 90, .45); }
+.tb-air .tag { background: #b3985a; }
+.tb-air .tbody { color: #77653a; }
+.tb-ai .tag { background: #8f84b0; }
+.tb-ai .tbody { color: #413a46; font-size: 25rpx; line-height: 1.6; }
+
+/* 本报信息:标题/项目名加粗,内容常规、更小 */
+.kv {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 12rpx 0; border-bottom: 1rpx solid rgba(43, 36, 46, .07);
+}
+.kv:last-child { border-bottom: none; padding-bottom: 4rpx; }
+.k { font-size: 22rpx; color: #5a5260; font-weight: 800; flex-shrink: 0; }
+.v { font-size: 23rpx; font-weight: 500; color: #4f4754; text-align: right; }
+
+/* 小时天气 */
+.hours { display: flex; gap: 10rpx; }
+.hr {
+  flex: 1; border-radius: 20rpx; padding: 14rpx 4rpx;
+  display: flex; flex-direction: column; align-items: center; gap: 8rpx;
+}
+.hr-t { font-size: 20rpx; font-weight: 800; color: #5a5260; }
+.hr-tp { font-size: 23rpx; font-weight: 600; color: #3f3844; }
+.wicon { position: relative; width: 34rpx; height: 30rpx; }
+.wsun {
+  width: 26rpx; height: 26rpx; border-radius: 50%; margin: 2rpx auto;
+  border: 3rpx solid #96795a;
+  box-shadow: 0 0 0 5rpx rgba(150, 121, 90, .18);
+}
+.wcloud {
+  width: 32rpx; height: 18rpx; border-radius: 12rpx; margin-top: 8rpx;
+  border: 3rpx solid #6f6776; border-bottom-width: 3rpx; box-sizing: border-box;
+}
+.wdrop {
+  position: absolute; bottom: -4rpx; left: 12rpx;
+  width: 3rpx; height: 8rpx; background: #7d88a3; border-radius: 2rpx;
+  transform: rotate(15deg);
+}
+
+/* 热力图/卫星图 */
 .hm-block { margin-bottom: 20rpx; }
 .hm-block:last-of-type { margin-bottom: 0; }
 .hm-map { width: 100%; border-radius: 16rpx; }
 .hm-skeleton {
   width: 100%; height: 620rpx; border-radius: 16rpx;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, .55);
 }
 .hm-pending {
-  display: flex; align-items: center; justify-content: center;
-  font-size: 26rpx;
+  display: flex; align-items: center; justify-content: center; font-size: 26rpx;
 }
-.hm-err { font-size: 24rpx; }
-.reading-text { display: block; font-size: 26rpx; line-height: 1.7; }
-.reading-risk { display: block; margin-top: 10rpx; font-size: 24rpx; }
+.hm-err { font-size: 24rpx; color: #8a4e5c; }
+.traj-note { display: block; font-size: 22rpx; margin-top: 6rpx; color: #7d7684; }
+.satimg { width: 100%; border-radius: 16rpx; }
+.sat-skeleton {
+  width: 100%; height: 400rpx; border-radius: 16rpx;
+  background: rgba(255, 255, 255, .55);
+}
+.hnote { display: block; font-size: 20rpx; color: #7d7684; font-weight: 600; margin-top: 10rpx; }
 
-/* 定位卡:按用户 GPS 给位置专属质量/概率 */
-.loc-card { padding: 20rpx 24rpx; }
-.loc-cta { display: block; text-align: center; font-size: 26rpx; }
-.loc-row { display: flex; flex-direction: column; gap: 4rpx; }
-.loc-pin { font-size: 22rpx; color: #8a94a2; }
-.loc-val { font-size: 30rpx; font-weight: 500; }
-.loc-level { font-size: 28rpx; }
-.loc-delta { font-size: 22rpx; }
-.loc-prob { font-size: 24rpx; }
+/* 各模式 */
+.mrb { padding: 16rpx 0 20rpx; border-bottom: 1rpx solid rgba(43, 36, 46, .08); }
+.mrb:last-child { border-bottom: none; padding-bottom: 6rpx; }
+.mrb-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10rpx; }
+.mrb-nm { font-size: 26rpx; font-weight: 800; }
+.mrb-rain { font-size: 21rpx; font-weight: 700; color: #7d7684; }
+.mrb-rain.wet { color: #a85c50; }
+.mrb-row { display: flex; align-items: center; gap: 14rpx; margin: 8rpx 0; }
+.mrb-bl { font-size: 21rpx; color: #7d7684; font-weight: 700; width: 56rpx; flex-shrink: 0; }
+.mrb-bar {
+  flex: 1; height: 12rpx; border-radius: 8rpx;
+  background: rgba(43, 36, 46, .08); overflow: hidden;
+}
+.mrb-fill { display: block; height: 100%; border-radius: 8rpx; }
+.mrb-bv { font-size: 22rpx; font-weight: 700; color: #4f4754; width: 68rpx; text-align: right; flex-shrink: 0; }
+.mr-clouds { display: flex; gap: 14rpx; margin-top: 12rpx; }
+.mr-cl { flex: 1; }
+.mr-clt { display: flex; justify-content: space-between; margin-bottom: 5rpx; }
+.mr-cll { font-size: 19rpx; font-weight: 700; color: #7d7684; }
+.mr-clv { font-size: 19rpx; font-weight: 700; color: #4f4754; }
+.mr-clb { height: 8rpx; border-radius: 6rpx; background: rgba(43, 36, 46, .08); overflow: hidden; }
+.mr-clbi { display: block; height: 100%; border-radius: 6rpx; background: #9f93b4; }
+.mr-clbi-tot { background: #6f6580; }
+
+/* 专业页头 + 右滑提示 */
+.p2head { margin-top: 16rpx; }
+.p2t { display: block; font-size: 34rpx; font-weight: 800; }
+.p2b { display: block; font-size: 22rpx; color: #7d7684; font-weight: 600; margin-top: 4rpx; }
+.swipehint { text-align: center; margin: 20rpx 0 10rpx; }
+.swipehint Text { font-size: 21rpx; color: #7d7684; font-weight: 700; }

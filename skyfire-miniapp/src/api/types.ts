@@ -12,6 +12,7 @@ export interface Latest {
 }
 
 export interface TrajectoryPoint {
+  id: number
   checkpoint: string
   probability_pct: number
   quality_pct: number
@@ -57,6 +58,42 @@ export interface LocalResult {
   qual_word: string
   level: string
   delta_quality: number
+  name: string
+  district: string
   lat: number
   lon: number
+}
+
+export interface HourItem {
+  hour: number
+  temp: number
+  text: string
+  cloud: number
+  precip: number
+}
+
+export interface Aqi {
+  aqi: number | null
+  level: string
+  pm25: number | null
+  source: string
+  time: string
+}
+
+export interface Report {
+  id: number
+  date: string
+  event: string
+  checkpoint: string
+  probability_pct: number
+  quality_pct: number
+  level: string
+  prob_word: string
+  qual_word: string
+  confidence: string
+  llm_status: string
+  reasoning: string | null
+  risks: string | null
+  created_at: string
+  per_model: Record<string, PerModel>
 }

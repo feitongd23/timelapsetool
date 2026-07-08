@@ -1,0 +1,9 @@
+@use '../index/index';
+.rpt { padding: 24rpx; }
+.rpt-title { display: block; font-size: 34rpx; font-weight: 800; }
+.rpt-sub { display: block; font-size: 24rpx; color: #7d7684; font-weight: 600; margin: 6rpx 0 20rpx; }
+.rpt-back {
+  margin: 30rpx 0 40rpx; text-align: center; padding: 18rpx;
+  border-radius: 20rpx; background: rgba(255,255,255,.55);
+  font-size: 28rpx; font-weight: 700; color: #4f4754;
+}

@@ -1,5 +1,5 @@
 import Taro from '@tarojs/taro'
-import type { LocalResult, Summary } from './types'
+import type { Aqi, HourItem, LocalResult, Report, Summary } from './types'
 
 // 真机与开发者工具都走 Mac 局域网 IP(2026-07-07,192.168.50.80);
 // 换了 WiFi 网段要同步改(ipconfig getifaddr en0 查)
@@ -52,4 +52,20 @@ export function fetchLocal(event: string, date: string, lat: number,
 export function heatmapUrl(event: string, date: string,
                            kind: 'prob' | 'quality', city = 'beijing'): string {
   return `${API_BASE}/v1/heatmap?city=${city}&event=${event}&date=${date}&kind=${kind}`
+}
+
+export function fetchHourly(lat: number, lon: number): Promise<{ hours: HourItem[] }> {
+  return authedGet(`/v1/hourly?lat=${lat}&lon=${lon}`)
+}
+
+export function fetchAqi(lat: number, lon: number): Promise<Aqi> {
+  return authedGet(`/v1/aqi?lat=${lat}&lon=${lon}`)
+}
+
+export function fetchReport(id: number): Promise<Report> {
+  return authedGet(`/v1/report?id=${id}`)
+}
+
+export function satimgUrl(): string {
+  return `${API_BASE}/v1/satimg`
 }

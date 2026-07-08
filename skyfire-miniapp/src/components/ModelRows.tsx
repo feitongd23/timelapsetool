@@ -1,57 +1,81 @@
 import { Text, View } from '@tarojs/components'
 import type { PerModel } from '../api/types'
 
+// 排布顺序按用户拍板:EC GFS ICON CMA;概率/质量 bar 之后展示总/高/中/低云量小 bar
+const ORDER = ['ecmwf_ifs025', 'gfs_seamless', 'icon_seamless', 'cma_grapes_global']
 const ABBR: Record<string, string> = {
   ecmwf_ifs025: 'EC', gfs_seamless: 'GFS', icon_seamless: 'ICON',
   cma_grapes_global: 'CMA'
 }
+const clamp = (v: number | null) =>
+  v === null || v === undefined ? 0 : Math.max(0, Math.min(100, v))
 const pct = (v: number | null) =>
   v === null || v === undefined ? '—' : `${Math.round(v)}%`
-const clamp = (v: number) => Math.max(0, Math.min(100, v))
 
-function Bar({ value, tone }: { value: number; tone: 'prob' | 'qual' }) {
+function CloudCell({ label, value, total }: {
+  label: string; value: number | null; total?: boolean
+}) {
   return (
-    <View className='bar-track'>
-      <View className={`bar-fill bar-${tone}`} style={{ width: `${clamp(value)}%` }} />
+    <View className='mr-cl'>
+      <View className='mr-clt'>
+        <Text className='mr-cll'>{label}</Text>
+        <Text className='mr-clv'>{pct(value)}</Text>
+      </View>
+      <View className='mr-clb'>
+        <View className={`mr-clbi ${total ? 'mr-clbi-tot' : ''}`}
+              style={{ width: `${clamp(value)}%` }} />
+      </View>
     </View>
   )
 }
 
-export default function ModelRows({ perModel }: { perModel: Record<string, PerModel> }) {
-  const entries = Object.entries(perModel)
+export default function ModelRows({ perModel, accent, deep }: {
+  perModel: Record<string, PerModel>
+  accent: string
+  deep: string
+}) {
+  const entries = ORDER.filter(m => perModel[m]).map(m => [m, perModel[m]] as const)
   if (!entries.length) return null
   return (
     <View className='glass-card'>
-      <Text className='card-title t-muted'>各模式</Text>
-      {entries.map(([m, v]) => (
-        <View key={m} className='mr'>
-          <View className='mr-head'>
-            <Text className='mr-name t-primary'>
-              {ABBR[m] || m.split('_')[0].toUpperCase()}
-            </Text>
-            <Text className={v.precipitation && v.precipitation >= 0.1
-              ? 'mr-rain t-red' : 'mr-rain t-muted'}>
-              {v.precipitation && v.precipitation >= 0.1
-                ? `雨 ${v.precipitation.toFixed(1)}mm` : '无雨'}
-            </Text>
+      <Text className='card-title'>各模式 · 概率 质量 与云量</Text>
+      {entries.map(([m, v]) => {
+        const total = Math.min(100,
+          (v.cloud_high || 0) + (v.cloud_mid || 0) + (v.cloud_low || 0))
+        const wet = v.precipitation !== null && v.precipitation >= 0.1
+        return (
+          <View key={m} className='mrb'>
+            <View className='mrb-head'>
+              <Text className='mrb-nm'>{ABBR[m]}</Text>
+              <Text className={wet ? 'mrb-rain wet' : 'mrb-rain'}>
+                {wet ? `雨 ${v.precipitation!.toFixed(1)}mm` : '无雨'}
+              </Text>
+            </View>
+            <View className='mrb-row'>
+              <Text className='mrb-bl'>概率</Text>
+              <View className='mrb-bar'>
+                <View className='mrb-fill' style={{
+                  width: `${clamp(v.prob)}%`, background: accent }} />
+              </View>
+              <Text className='mrb-bv'>{Math.round(v.prob)}%</Text>
+            </View>
+            <View className='mrb-row'>
+              <Text className='mrb-bl'>质量</Text>
+              <View className='mrb-bar'>
+                <View className='mrb-fill' style={{
+                  width: `${clamp(v.qual)}%`, background: deep }} />
+              </View>
+              <Text className='mrb-bv'>{Math.round(v.qual)}%</Text>
+            </View>
+            <View className='mr-clouds'>
+              <CloudCell label='总' value={total} total />
+              <CloudCell label='高' value={v.cloud_high} />
+              <CloudCell label='中' value={v.cloud_mid} />
+              <CloudCell label='低' value={v.cloud_low} />
+            </View>
           </View>
-          <View className='mr-metric'>
-            <Text className='mr-label t-muted'>概率</Text>
-            <Bar value={v.prob} tone='prob' />
-            <Text className='mr-val t-secondary'>{Math.round(v.prob)}%</Text>
-          </View>
-          <View className='mr-metric'>
-            <Text className='mr-label t-muted'>质量</Text>
-            <Bar value={v.qual} tone='qual' />
-            <Text className='mr-val t-amber'>{Math.round(v.qual)}%</Text>
-          </View>
-          <View className='mr-clouds'>
-            <Text className='mr-cloud t-secondary'>高 {pct(v.cloud_high)}</Text>
-            <Text className='mr-cloud t-secondary'>中 {pct(v.cloud_mid)}</Text>
-            <Text className='mr-cloud t-secondary'>低 {pct(v.cloud_low)}</Text>
-          </View>
-        </View>
-      ))}
+        )
+      })}
     </View>
   )
 }
