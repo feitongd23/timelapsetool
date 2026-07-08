@@ -209,6 +209,7 @@ def test_notify_pushes_and_marks(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "_make_client", lambda: None)
     monkeypatch.setattr(cli, "compute_prediction", _fake_compute)
     monkeypatch.setattr(cli, "push", _fake_push)
+    monkeypatch.setattr(cli, "_maybe_refresh_maps", lambda *a, **k: 0)
 
     ncfg = tmp_path / "notify.yaml"
     ncfg.write_text("provider: bark\nkey: K\n", encoding="utf-8")
@@ -248,6 +249,7 @@ def test_tick_runs_due_checkpoint_and_pushes(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "load_notify_config",
                         lambda p: {"provider": "bark", "key": "k"})
     monkeypatch.setattr(cli, "push", lambda t, b, cfg: pushed.append(t) or True)
+    monkeypatch.setattr(cli, "_maybe_refresh_maps", lambda *a, **k: 0)
     monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev:
                         "c1" if ev == "sunset_glow" else None)
     rec = {"probability_pct": 65.0, "quality_pct": 50.0, "confidence": "high",
@@ -270,6 +272,7 @@ def test_tick_skips_already_run_checkpoint(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "load_notify_config",
                         lambda p: {"provider": "bark", "key": "k"})
     monkeypatch.setattr(cli, "push", lambda t, b, cfg: True)
+    monkeypatch.setattr(cli, "_maybe_refresh_maps", lambda *a, **k: 0)
     monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev:
                         "c1" if ev == "sunset_glow" else None)
     called = []
@@ -307,6 +310,7 @@ def test_tick_sunrise_c1_runs_outlook_and_pushes_combined(tmp_path, monkeypatch)
     monkeypatch.setattr(cli, "load_notify_config",
                         lambda p: {"provider": "bark", "key": "k"})
     monkeypatch.setattr(cli, "push", lambda t, b, cfg: pushed.append((t, b)) or True)
+    monkeypatch.setattr(cli, "_maybe_refresh_maps", lambda *a, **k: 0)
     monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev:
                         "c1" if ev == "sunrise_glow" else None)
     calls = []
@@ -332,6 +336,7 @@ def test_tick_outlook_dedup_not_rerun(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "load_notify_config",
                         lambda p: {"provider": "bark", "key": "k"})
     monkeypatch.setattr(cli, "push", lambda t, b, cfg: pushed.append(t) or True)
+    monkeypatch.setattr(cli, "_maybe_refresh_maps", lambda *a, **k: 0)
     monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev:
                         "c1" if ev == "sunrise_glow" else None)
     calls = []
@@ -363,6 +368,7 @@ def test_tick_outlook_failure_still_pushes_sunrise(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "load_notify_config",
                         lambda p: {"provider": "bark", "key": "k"})
     monkeypatch.setattr(cli, "push", lambda t, b, cfg: pushed.append((t, b)) or True)
+    monkeypatch.setattr(cli, "_maybe_refresh_maps", lambda *a, **k: 0)
     monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev:
                         "c1" if ev == "sunrise_glow" else None)
 
@@ -385,6 +391,7 @@ def test_tick_sunset_c1_unchanged_single_push(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "load_notify_config",
                         lambda p: {"provider": "bark", "key": "k"})
     monkeypatch.setattr(cli, "push", lambda t, b, cfg: pushed.append(t) or True)
+    monkeypatch.setattr(cli, "_maybe_refresh_maps", lambda *a, **k: 0)
     monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev:
                         "c1" if ev == "sunset_glow" else None)
     calls = []
@@ -560,6 +567,7 @@ def _gated_setup(monkeypatch, tmp_path, pushed):
     monkeypatch.setattr(cli, "load_notify_config",
                         lambda p: {"provider": "bark", "key": "k"})
     monkeypatch.setattr(cli, "push", lambda t, b, cfg: pushed.append(t) or True)
+    monkeypatch.setattr(cli, "_maybe_refresh_maps", lambda *a, **k: 0)
     monkeypatch.setattr(cli, "due_checkpoint", lambda now, peak, ev: None)  # 无到点
     future = _dt.now(_tz.utc) + _td(hours=3)
 

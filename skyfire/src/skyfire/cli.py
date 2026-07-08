@@ -476,6 +476,25 @@ def notify(
     typer.echo(f"{'✓ 已推送' if ok else '✗ 推送失败(已记录预测)'}: {title}")
 
 
+def _maybe_refresh_maps(city, city_key: str, max_age_h: float = 3.0) -> int:
+    """全国地图新鲜度门控:超 max_age_h 或缺失才重生成(跟随模式更新,
+    一天几次;不赶时间的后台活)。best-effort,失败返回 0。"""
+    import time as _t
+
+    from skyfire.maps import DEFAULT_MAPS_DIR, map_path, refresh_maps
+    today = date_type.today()
+    probe = map_path(DEFAULT_MAPS_DIR, city_key, str(today),
+                     "sunset_glow", "quality")
+    if probe.exists() and (_t.time() - probe.stat().st_mtime) < max_age_h * 3600:
+        return 0
+    try:
+        written = refresh_maps(_make_client(), city, city_key,
+                               [today, today + timedelta(days=1)])
+    except (httpx.HTTPError, OSError):
+        return 0
+    return len(written)
+
+
 @app.command()
 def tick(
     config: Path = typer.Option(DEFAULT_CONFIG),
@@ -495,6 +514,9 @@ def tick(
     now = datetime.now(timezone.utc)
     for city_key, c in cities.items():
         now_local = now.astimezone(ZoneInfo(c.timezone))
+        nm = _maybe_refresh_maps(c, city_key)   # 跟随模式更新刷新全国地图
+        if nm:
+            typer.echo(f"✓ {city_key} 全国地图已刷新 {nm} 张")
         for event in ("sunset_glow", "sunrise_glow"):
             for day_offset in (0, 1):
                 day = (now_local + timedelta(days=day_offset)).date()

@@ -197,27 +197,16 @@ def _model_lines(rec: dict) -> list[str]:
 
 
 def _outlook_section(rec: dict) -> list[str]:
+    """明日展望单节:只给质量和概率(用户 2026-07-08:晚9点次日展望只要质量概率)。
+
+    去掉分模型明细/AOD/可信度/解读——那些留给次日到点检查点的详报。
+    """
     sunset = rec["event"] == "sunset_glow"
     event_zh = "晚霞" if sunset else "朝霞"
     when = "日落" if sunset else "日出"
-    best = "其后约15分钟" if sunset else "其前约15分钟"
-    lines = [f"明日{event_zh} {when} {rec['peak'].strftime('%H:%M')}"
-             f"(最佳观赏在{best})"]
-    lines.append(f"概率 {rec['probability_pct']:.0f}%"
-                 f"({_prob_word(rec['probability_pct'])})"
-                 f" · 质量 {rec['quality_pct']:.0f}%"
-                 f"({_qual_word(rec['quality_pct'])})"
-                 f" · 等级 {_burn_level(rec['quality_pct'])}")
-    lines.extend(_model_lines(rec))
-    aod = rec.get("aod")
-    aod_s = f"{aod}" if aod is not None else "—"
-    lines.append(f"空气(气溶胶AOD {aod_s}): {_aod_word(aod)}")
-    lines.append(f"可信度: {_CONF_PLAIN.get(rec['confidence'], rec['confidence'])}")
-    if rec.get("llm_status") == "done":
-        lines.append(f"解读: {rec['reasoning']}")
-        lines.append(f"风险: {rec['risks']}")
-    else:
-        lines.append("AI 解读暂缺,以上为基础数据")
+    lines = [f"明日{event_zh} {when} {rec['peak'].strftime('%H:%M')}"]
+    lines.append(f"概率 {rec['probability_pct']:.0f}% · "
+                 f"质量 {rec['quality_pct']:.0f}%({_burn_level(rec['quality_pct'])})")
     return lines
 
 

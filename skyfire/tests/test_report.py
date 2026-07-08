@@ -89,9 +89,9 @@ def test_format_outlook_report_two_sections():
     title, body = format_outlook_report(sunrise, sunset)
     assert title == "明日展望 朝霞35% 晚霞60% — 北京"
     assert "明日朝霞 日出 04:50" in body and "明日晚霞 日落 19:46" in body
-    assert "EC 35/40 · 高80 中20 低10 · 无雨" in body
-    assert "GFS 20/30 · 高100 中40 低30 · 雨5.0mm" in body
-    assert "解读: 高云画布可期" in body
+    # 简化:只给概率/质量/等级,不再有分模型明细/解读(用户 2026-07-08)
+    assert "概率 35% · 质量 40%" in body and "概率 60% · 质量 55%" in body
+    assert "EC 35/40" not in body and "解读" not in body
     assert "预测日期: 2026年7月7日" in body   # 无 date 键时从 peak 回退
 
 
@@ -101,13 +101,6 @@ def test_format_outlook_report_missing_side():
     assert "朝霞—%" in title and "晚霞60%" in title
     assert "明日朝霞: 数据缺失(后续检查点自动补上)" in body
     assert "明日晚霞 日落 19:46" in body
-
-
-def test_format_outlook_report_raw_none_shows_dash():
-    sunset = _outlook_rec("sunset_glow", 60, 55, 19, 46)
-    sunset["per_model_raw"]["ecmwf_ifs025"]["cloud_high"] = None
-    _, body = format_outlook_report(None, sunset)
-    assert "EC 35/40 · 高— 中20 低10 · 无雨" in body
 
 
 def _pct_rec(**kw):
@@ -177,7 +170,7 @@ def test_format_pct_report_without_new_fields_degrades_to_old_layout():
 def test_format_outlook_section_includes_burn_level():
     sunset = _outlook_rec("sunset_glow", 60, 55, 19, 46)
     _, body = format_outlook_report(None, sunset)
-    assert "等级 小烧" in body
+    assert "质量 55%(小烧)" in body   # 等级随质量括注(简化后口径)
 
 
 def test_format_pct_report_shows_generation_time():
