@@ -50,18 +50,24 @@ def canvas_score(cloud_high: float, cloud_mid: float,
 
 
 def channel_factor(channel: list[ChannelPoint]) -> tuple[float, int]:
-    """通道透光:100-400km 采样点,低云>60% 视为堵。
+    """通道透光:100-400km 采样点,低云>60% 或中云>70% 视为堵。
     半数以上堵 → 一票否决(0.1)。缺数据的点不计。
 
-    只看低云不看总云:高云盖顶不挡日落平射光(knowledge §3.2,与 llm
-    提示词口径一致)。旧判据 cloud_total>85 曾把纯高云通道误判为堵,
-    是 2026-07-07 中午 c1 3%/3% 误导推送的根因 #2。
+    高云盖顶不挡日落平射光(knowledge §3.2)——旧判据 cloud_total>85
+    曾把纯高云通道误判为堵(2026-07-07 根因 #2);但厚中云墙确实挡
+    (2026-07-09 0分实锤:300.4°光路 total 76-100% 全程闷盖、low 全 0,
+    "只看低云"判成畅通,用户目视西北连续乌云=中低云墙)。中云缺数据
+    (旧快照)时该点只按低云判,不虚构。
+    采样含 50km 近程点(规则 channel-directional-hard-gate 裁决:2026-07-05
+    案例 50km 低云满盖堵进光口却不在旧 100-400km 窗内)。
     """
-    scored = [p for p in channel if 100 <= p.dist_km <= 400
+    scored = [p for p in channel if 50 <= p.dist_km <= 400
               and p.cloud_low is not None]
     if not scored:
         return 1.0, 0
-    blocked = sum(1 for p in scored if p.cloud_low > 60)
+    blocked = sum(1 for p in scored
+                  if p.cloud_low > 60
+                  or (p.cloud_mid is not None and p.cloud_mid > 70))
     frac = blocked / len(scored)
     return max(0.1, round(1 - 1.8 * frac, 2)), blocked
 
@@ -76,8 +82,10 @@ def local_low_factor(cloud_low: float) -> float:
 
 
 def aerosol_factor(aod: float | None) -> float:
+    """缺失≠中性(2026-07-09 复盘:AOD 实况 1.4 从未进链,manual 版填 None
+    一路畅通拿 1.0)——缺数据按轻度浑浊 0.85 保守计,推送须标'空气数据缺失'。"""
     if aod is None:
-        return 1.0  # 缺数据不惩罚,置信度由上层降级
+        return 0.85
     if aod < 0.3:
         return 1.0
     if aod < 0.6:

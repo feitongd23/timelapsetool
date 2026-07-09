@@ -109,28 +109,44 @@ def fetch_aod_at(client: httpx.Client, lat: float, lon: float, tz: str, iso_hour
 
 def fetch_channel_profile(
     client: httpx.Client, points: list[GeoPoint], tz: str, iso_hour: str,
-    model: str = "gfs_seamless",
+    models: tuple[str, ...] = ("gfs_seamless", "ecmwf_ifs"),
 ) -> list[ChannelPoint]:
-    """通道剖面:多地点一次请求(逗号分隔),单模式(MVP 用 GFS)。"""
+    """通道剖面:多地点一次请求(逗号分隔),多模式最坏值合并。
+
+    2026-07-09 复盘:通道曾 GFS 独家,而 GFS 正是把中云报成 5% 的那家——
+    同源谎言无法互检。改为 GFS+EC 双模式,每点取各层最大值(保守),并加采
+    中云(中云墙挡平射光)。仍是单请求,配额当量不变量级。
+    """
     resp = client.get(FORECAST_URL, params={
         "latitude": ",".join(str(round(p.lat, 3)) for p in points),
         "longitude": ",".join(str(round(p.lon, 3)) for p in points),
-        "timezone": tz, "hourly": "cloud_cover,cloud_cover_low",
-        "models": model, "forecast_days": 3,
+        "timezone": tz,
+        "hourly": "cloud_cover,cloud_cover_low,cloud_cover_mid",
+        "models": ",".join(models), "forecast_days": 3,
     })
     resp.raise_for_status()
     data = resp.json()
     locations = data if isinstance(data, list) else [data]
+    suffixes = [f"_{m}" for m in models] if len(models) > 1 else [""]
+
+    def _worst(hourly: dict, var: str, idx: int) -> float | None:
+        vals = [hourly.get(f"{var}{s}", [None] * (idx + 1))[idx]
+                for s in suffixes]
+        vals = [v for v in vals if v is not None]
+        return max(vals) if vals else None
+
     profile = []
     for geo, loc in zip(points, locations):
         hourly = loc["hourly"]
-        low = total = None
+        low = total = mid = None
         for i, t in enumerate(hourly["time"]):
             if t == iso_hour:
-                total = hourly["cloud_cover"][i]
-                low = hourly["cloud_cover_low"][i]
+                total = _worst(hourly, "cloud_cover", i)
+                low = _worst(hourly, "cloud_cover_low", i)
+                mid = _worst(hourly, "cloud_cover_mid", i)
                 break
-        profile.append(ChannelPoint(dist_km=geo.dist_km, cloud_low=low, cloud_total=total))
+        profile.append(ChannelPoint(dist_km=geo.dist_km, cloud_low=low,
+                                    cloud_total=total, cloud_mid=mid))
     return profile
 
 

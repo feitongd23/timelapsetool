@@ -107,11 +107,18 @@ def _fake_pr(index=5.0, confidence="high"):
         llm=None)
 
 
+def _fake_meta(overcast=False):
+    return {"overcast": overcast, "max_bt": 296.0, "raw_pct": 48.0,
+            "upstream_overcast": False, "visible_attached": False,
+            "frame_time": "2026-07-06T10:00+00:00"}
+
+
 def _setup(monkeypatch, llm_result):
     monkeypatch.setattr(engine_mod, "compute_prediction",
                         lambda *a, **k: _fake_pr())
     monkeypatch.setattr(engine_mod, "observe_burn_clouds",
-                        lambda *a, **k: (48.0, 52.0, "now=48%→burn=52%", []))
+                        lambda *a, **k: (48.0, 52.0, "now=48%→burn=52%", [],
+                                         _fake_meta()))
     monkeypatch.setattr(engine_mod, "predict_pct", lambda *a, **k: llm_result)
     conn = store.connect(":memory:")
     store.init_db(conn)
@@ -182,7 +189,8 @@ def test_run_checkpoint_payload_rec_and_db_carry_raw(monkeypatch):
     monkeypatch.setattr(engine_mod, "compute_prediction",
                         lambda *a, **k: _fake_pr())
     monkeypatch.setattr(engine_mod, "observe_burn_clouds",
-                        lambda *a, **k: (48.0, 52.0, "now=48%→burn=52%", []))
+                        lambda *a, **k: (48.0, 52.0, "now=48%→burn=52%", [],
+                                         _fake_meta()))
     monkeypatch.setattr(engine_mod, "predict_pct", fake_predict)
     conn = store.connect(":memory:")
     store.init_db(conn)

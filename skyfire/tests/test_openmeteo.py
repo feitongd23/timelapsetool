@@ -60,17 +60,37 @@ def test_fetch_aod_at():
 
 
 def test_fetch_channel_profile():
-    # 多地点请求返回 list
+    # 多地点请求返回 list;默认 GFS+EC 双模式,每点取最坏值(2026-07-09:
+    # 通道曾 GFS 独家,报中云 5% 的那家垄断通道数据=同源谎言无法互检)
+    t = ["2026-07-03T19:00"]
     payload = [
-        {"hourly": {"time": ["2026-07-03T19:00"], "cloud_cover": [80], "cloud_cover_low": [70]}},
-        {"hourly": {"time": ["2026-07-03T19:00"], "cloud_cover": [20], "cloud_cover_low": [5]}},
+        {"hourly": {"time": t,
+                    "cloud_cover_gfs_seamless": [80], "cloud_cover_ecmwf_ifs": [95],
+                    "cloud_cover_low_gfs_seamless": [70], "cloud_cover_low_ecmwf_ifs": [10],
+                    "cloud_cover_mid_gfs_seamless": [5], "cloud_cover_mid_ecmwf_ifs": [75]}},
+        {"hourly": {"time": t,
+                    "cloud_cover_gfs_seamless": [20], "cloud_cover_ecmwf_ifs": [15],
+                    "cloud_cover_low_gfs_seamless": [5], "cloud_cover_low_ecmwf_ifs": [0],
+                    "cloud_cover_mid_gfs_seamless": [0], "cloud_cover_mid_ecmwf_ifs": [10]}},
     ]
     client = _client(payload)
     pts = [GeoPoint(40.0, 115.0, 100), GeoPoint(40.1, 114.0, 200)]
     profile = fetch_channel_profile(client, pts, "Asia/Shanghai", "2026-07-03T19:00")
     assert len(profile) == 2
-    assert profile[0].dist_km == 100 and profile[0].cloud_low == 70
-    assert profile[1].cloud_total == 20
+    assert profile[0].dist_km == 100 and profile[0].cloud_low == 70   # max(70,10)
+    assert profile[0].cloud_mid == 75                                 # max(5,75)
+    assert profile[0].cloud_total == 95
+    assert profile[1].cloud_total == 20 and profile[1].cloud_mid == 10
+
+
+def test_fetch_channel_profile_single_model_unsuffixed():
+    payload = [{"hourly": {"time": ["2026-07-03T19:00"], "cloud_cover": [80],
+                           "cloud_cover_low": [70], "cloud_cover_mid": [30]}}]
+    client = _client(payload)
+    profile = fetch_channel_profile(client, [GeoPoint(40.0, 115.0, 100)],
+                                    "Asia/Shanghai", "2026-07-03T19:00",
+                                    models=("gfs_seamless",))
+    assert profile[0].cloud_low == 70 and profile[0].cloud_mid == 30
 
 
 from skyfire.openmeteo import HISTORICAL_FORECAST_URL, fetch_point_forecast_range

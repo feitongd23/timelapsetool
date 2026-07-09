@@ -97,41 +97,102 @@ _EXPLAIN_SYSTEM = (
 MODEL_FAST = "claude-haiku-4-5-20251001"   # 日常检查点
 MODEL_DEEP = "claude-sonnet-5"             # 疑难升级(spec §4)
 
-_PREDICT_SYSTEM = (
-    "你是资深火烧云预报员。给你免费层数据(多模式预报/规则分/卫星实测与"
-    "外推云量/趋势)、相似历史案例及经验笔记、当天判读云图。判读口径:"
-    "透光通道是否被低云堵(高云盖顶不算堵)、云幕是否连贯成片的中高云带破口"
-    "(零碎小块不算画布)、临近时燃烧时刻云量以卫星实测/外推为准,但距燃烧"
-    "还有数小时时(看 hours_to_peak)短时外推代表不了届时云况,以预报趋势"
-    "为主;预报有降水时警惕:红外会低估暖顶雨云、雨系抵达会让当前实测失真,"
-    "正在降水否决、雨后初晴利好;空气与湿度压色。措辞面向大众:提及地点"
-    "一律用城市名(如'北京上空'),不要说'红点/十字/标记处'等图上记号,"
-    "不用专业缩写。"
-    "免费层数据中的 per_model_raw 是各气象模式对燃烧时刻高/中/低云量%与降水mm"
-    "的原始预报——用它判断模式间分歧;任一模式报降水时提高雨险警惕。"
-    "质量刻度(事后判级的尺子,不是预测上限):地平线橙带+云剪影只是普通"
-    "日落底色(<40);40=云底局部真染色的门槛;60-79=大面积染色(中烧);"
-    "80+=大烧;满分=整片云幕烧透。形态到位就大胆给 60-85,不要习惯性压在"
-    "40 以下——2026-07-07 实际中大烧,事前每次都只给到 ≤40,就是把刻度"
-    "误当上限的教训。大烧高发形态:满天中高云幕(高云 80-100%)+西侧通道"
-    "低云稀少+卫星实测云量 30-70%,此时'云太多'不是利空,高云盖顶不挡"
-    "平射光。**远期保守律(与上面的大胆律配对,缺一不可)**:大胆只适用于"
-    "'模式一致'或'临近且实况已印证';若 hours_to_peak>6 且关键层"
-    "(中云或低云)各模式极差>50 个百分点(如一半模式报中云≈75 闷盖、"
-    "另一半报≈5 净幕),这是硬分歧,谁对未定,概率必须给保守中低值"
-    "(不高于 baseline_prob+15),解读明确写'待临近实况确认'——"
-    "2026-07-09 早报把这种五五开分歧押成 58% 是反面教材。"
-    "baseline 数字仅是规则参考,与实况/形态矛盾时以你的判断为准。"
-    "只输出 JSON:"
-    '{"probability_pct": 0-100, "quality_pct": 0-100,'
-    ' "reasoning": 两三句中文, "risks": 一句最大风险,'
-    ' "confidence": "high|medium|low"}'
-)
+_RULEBOOK_PATH = Path(__file__).parent / "rules" / "rulebook.md"
+_rulebook_cache: str | None = None
+
+
+def _rulebook() -> str:
+    """规则表注入文本(2026-07-10 用户拍板:四类知识蒸馏成一张表,每次预测
+    强制全表过堂,不再靠 RAG 抽相似案例碰运气)。
+
+    注入时剔除"来源"行(出处审计留在文件里)与雾/彩虹两节(火烧云预测
+    用不上,省 token)。缺文件降级为空串。
+    """
+    global _rulebook_cache
+    if _rulebook_cache is None:
+        try:
+            full = _RULEBOOK_PATH.read_text(encoding="utf-8")
+        except OSError:
+            _rulebook_cache = ""
+            return _rulebook_cache
+        lines, skip = [], False
+        for ln in full.splitlines():
+            if ln.startswith("## "):
+                skip = ln[3:].strip() in ("平流雾云海", "彩虹")
+            if skip or ln.lstrip().startswith("来源:"):
+                continue
+            lines.append(ln)
+        _rulebook_cache = "\n".join(lines)
+    return _rulebook_cache
+
+
+# 强制逐因子表态的七项(漏一项=输出无效重来;规则 llm-factor-roll)
+FACTOR_KEYS = ("卫星实况", "画布", "透光通道", "气溶胶", "降水",
+               "模式分歧", "外推可信度")
+
+
+def _predict_system() -> str:
+    return (
+        "你是资深火烧云预报员。给你免费层数据(多模式预报/规则分/卫星实测与"
+        "外推云量/趋势/因子过堂表 factor_sheet/实况元信息 sat_meta)、相似历史"
+        "案例及经验笔记、当天判读云图(可能含红外与可见光两帧)。"
+        "下面是必须全表过堂的预测规则表——每条相关规则都要核对,与输入矛盾时"
+        "指出来;factor_sheet 里标'满盖修正/缺失/硬分歧/平流预警'的条目是"
+        "代码层已触发的硬规则,禁止用被修正前的原始数字推理:\n\n"
+        + _rulebook() +
+        "\n补充口径:免费层数据中的 per_model_raw 是各气象模式对燃烧时刻"
+        "高/中/低云量%与降水mm的原始预报——用它判断模式间分歧,任一模式报降水"
+        "时提高雨险警惕。措辞面向大众,提及地点一律用城市名(如'北京上空'),"
+        "不要说'红点/十字/标记处'等图上记号,不用专业缩写。"
+        "baseline 数字仅是规则参考,与实况/形态矛盾时以你的判断为准,"
+        "但对 factor_sheet 的硬规则结论(满盖修正后的云量、分歧仲裁后的"
+        "有效规则分)只能引用不能推翻。"
+        "只输出 JSON(factors 七项全部必填,每项一句中文,写明该因子今天"
+        "利好/利空/缺失及依据):"
+        '{"probability_pct": 0-100, "quality_pct": 0-100,'
+        ' "factors": {"卫星实况": 一句, "画布": 一句, "透光通道": 一句,'
+        ' "气溶胶": 一句, "降水": 一句, "模式分歧": 一句, "外推可信度": 一句},'
+        ' "scenario_alt": 模式硬分歧时另一情景一句否则空串,'
+        ' "rules_applied": [触发的规则id],'
+        ' "reasoning": 两三句中文, "risks": 一句最大风险,'
+        ' "confidence": "high|medium|low"}'
+    )
+
+
+def _validate_predict(d: dict) -> tuple[dict | None, str | None]:
+    """预测 JSON 的完备性校验:七因子必填非空(llm-factor-roll)。
+
+    返回 (结果, None) 或 (None, 缺陷说明) 供纠正重试。
+    """
+    try:
+        prob, qual = float(d["probability_pct"]), float(d["quality_pct"])
+    except (KeyError, TypeError, ValueError):
+        return None, "缺 probability_pct/quality_pct 数字"
+    if not (0 <= prob <= 100 and 0 <= qual <= 100):
+        return None, "百分数越界"
+    factors = d.get("factors")
+    if not isinstance(factors, dict):
+        return None, "缺 factors 对象(七因子必填)"
+    missing = [k for k in FACTOR_KEYS
+               if not str(factors.get(k, "")).strip()]
+    if missing:
+        return None, f"factors 缺项或为空: {','.join(missing)}"
+    return {"probability_pct": prob, "quality_pct": qual,
+            "factors": {k: str(factors[k]) for k in FACTOR_KEYS},
+            "scenario_alt": str(d.get("scenario_alt", "")),
+            "rules_applied": [str(x) for x in d.get("rules_applied", [])],
+            "reasoning": str(d.get("reasoning", "")),
+            "risks": str(d.get("risks", "")),
+            "confidence": str(d.get("confidence", "medium"))}, None
 
 
 def predict_pct(payload: dict, similar: list[dict], frame_paths: list[Path],
                 model: str = MODEL_FAST, client=None) -> dict | None:
-    """检查点预测:免费层+案例+云图 → 百分数 JSON。失败静默 None(spec 8)。"""
+    """检查点预测:免费层+案例+云图 → 百分数 JSON。失败静默 None(spec 8)。
+
+    输出必须逐因子表态(FACTOR_KEYS 七项),缺项给一次纠正重试——
+    "请考虑周全"是愿望,"字段必填否则重来"才是强制(2026-07-10 用户拍板)。
+    """
     try:
         if client is None:
             import anthropic
@@ -154,21 +215,32 @@ def predict_pct(payload: dict, similar: list[dict], frame_paths: list[Path],
         kwargs = {}
         if not model.startswith("claude-haiku"):
             kwargs["thinking"] = {"type": "adaptive"}  # Haiku 4.5 不支持 adaptive
-        resp = client.messages.create(
-            model=model, max_tokens=1500, system=_PREDICT_SYSTEM,
-            messages=[{"role": "user", "content": content}], **kwargs)
-        text = next((b.text for b in resp.content if b.type == "text"), "")
-        m = re.search(r"\{.*\}", text, re.DOTALL)
-        if not m:
-            return None
-        d = json.loads(m.group(0))
-        prob, qual = float(d["probability_pct"]), float(d["quality_pct"])
-        if not (0 <= prob <= 100 and 0 <= qual <= 100):
-            return None
-        return {"probability_pct": prob, "quality_pct": qual,
-                "reasoning": str(d.get("reasoning", "")),
-                "risks": str(d.get("risks", "")),
-                "confidence": str(d.get("confidence", "medium"))}
+        messages = [{"role": "user", "content": content}]
+        system = _predict_system()
+        for attempt in range(2):
+            resp = client.messages.create(
+                model=model, max_tokens=2000, system=system,
+                messages=messages, **kwargs)
+            text = next((b.text for b in resp.content if b.type == "text"), "")
+            m = re.search(r"\{.*\}", text, re.DOTALL)
+            if m:
+                try:
+                    d = json.loads(m.group(0))
+                except ValueError:
+                    d = {}
+                result, defect = _validate_predict(d)
+                if result is not None:
+                    return result
+            else:
+                defect = "没有输出 JSON"
+            if attempt == 0:
+                messages = messages + [
+                    {"role": "assistant", "content": text or "(空)"},
+                    {"role": "user", "content":
+                     f"输出无效: {defect}。重新输出完整 JSON,factors 七项"
+                     f"({'/'.join(FACTOR_KEYS)})每项一句都不能少。"}]
+        print(f"predict_pct 输出两次均不完备: {defect}", file=sys.stderr)
+        return None
     except Exception as e:
         # 仍按 spec 8 落基线不阻塞,但把原因写进 stderr(launchd 收进 tick.err);
         # 7/7 中午 c1 静默失败落了 3%/3% 的误导推送,根因已不可考——不能再哑

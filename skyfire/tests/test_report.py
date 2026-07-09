@@ -187,3 +187,23 @@ def test_format_outlook_report_shows_generation_time():
     sunset["generated_at"] = _dt(2026, 7, 6, 20, 4, tzinfo=_TZ)
     _, body = format_outlook_report(None, sunset)
     assert "生成时间 20:04" in body
+
+
+def test_factor_sheet_flagged_items_rendered():
+    """因子过堂:缺失/修正必须出现在推送正文(2026-07-10 缺失≠沉默)。"""
+    from datetime import datetime
+    rec = {"event": "sunset_glow", "city_name": "北京",
+           "probability_pct": 12.0, "quality_pct": 10.0,
+           "confidence": "low", "rule_score": 1.5,
+           "llm_status": "pending",
+           "factor_sheet": [
+               {"name": "卫星实况", "status": "满盖修正",
+                "note": "线性读数34%为暖顶假象,按92%满盖计"},
+               {"name": "气溶胶", "status": "缺失", "note": "按0.85保守系数计"},
+               {"name": "降水", "status": "正常", "note": "无"},
+           ]}
+    _, body = format_pct_report(rec)
+    assert "因子过堂:" in body
+    assert "卫星实况[满盖修正]" in body and "暖顶假象" in body
+    assert "气溶胶[缺失]" in body
+    assert "降水[正常]" not in body   # 正常项不占推送篇幅

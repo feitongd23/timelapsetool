@@ -96,7 +96,7 @@ def test_load_b13_region_returns_gray_and_center(tmp_path, monkeypatch):
     assert frame.gray[0, 0] == render_mod.bt_to_gray(
         __import__("numpy").array([[220.0]]))[0, 0]
     assert frame.center_px == (320, 240)
-    assert frame.km_px == 2.0
+    assert frame.km_px == 2.4   # 2026-07-09 复盘:北京纬度实测东西向≈2.4km/px
 
 
 def test_render_annotated_ir_is_rgb_with_overlay(tmp_path, monkeypatch):

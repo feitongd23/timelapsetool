@@ -32,3 +32,5 @@ class ChannelPoint:
     dist_km: float
     cloud_low: float | None
     cloud_total: float | None
+    # 2026-07-09 复盘:西北中云墙压死光路却因只采低云被判"畅通"——通道必须看中云
+    cloud_mid: float | None = None

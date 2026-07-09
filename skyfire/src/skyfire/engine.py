@@ -13,9 +13,9 @@ import httpx
 
 from skyfire import store
 from skyfire.checkpoints import gate_exceeded
-from skyfire.cloudiness import box_cloudiness
+from skyfire.cloudiness import box_cloudiness, box_stats
 from skyfire.config import City
-from skyfire.consensus import consensus
+from skyfire.consensus import consensus, detect_split
 from skyfire.drift import estimate_shift, projected_box_cloudiness
 from skyfire.geo import channel_points
 from skyfire.himawari_hsd import (
@@ -173,25 +173,36 @@ def score_location(client: httpx.Client, lat: float, lon: float, tz: str,
 
 
 def observe_burn_clouds(client, peak_utc, event: str, lat: float, lon: float,
-                        frames_dir: Path,
-                        ) -> tuple[float | None, float | None, str | None, list[Path]]:
-    """实况层:当前实测云量、外推到燃烧时刻云量、趋势文本、判读图路径。
+                        frames_dir: Path, azimuth_deg: float | None = None,
+                        ) -> tuple[float | None, float | None, str | None,
+                                   list[Path], dict | None]:
+    """实况层:当前实测云量、外推到燃烧时刻云量、趋势文本、判读图、实况元信息。
 
-    尽力语义:卫星缺 → (None, None, None, [])。
+    2026-07-09 0分复盘落下的三道强制检查(教训必须活在代码里):
+    ①满盖检测——窗内最暖亮温低于当季晴地表下限=无一晴像元=满盖,线性读数
+      按 ≥92 处理(红外暖顶陷阱,2026-06-26 初见、07-09 定量实锤:满盖中云
+      被读成 34% 反拿甜区奖励);②判读图方位角用真值,不再硬编码 270/90
+      (07-09 线偏 30.4° 把 LLM 视线引向云洞而非光路乌云墙);③光路上游
+      100-300km 连续满盖时,外推结论标"云系压境",禁按"届时不变"呈现。
+    尽力语义:卫星缺 → (None, None, None, [], None)。
     """
     try:
         now = datetime.now(timezone.utc)
         ts1 = latest_slot(client, now)
         if ts1 is None:
-            return None, None, None, []
+            return None, None, None, [], None
         segs = segments_for(CROP_BBOX[1], CROP_BBOX[3],
                             (CROP_BBOX[0] + CROP_BBOX[2]) / 2)
         cache = Path(frames_dir) / "hsd_cache"
         dats1 = download_segments(client, ts1, "B13", segs, cache)
         if not dats1:
-            return None, None, None, []
+            return None, None, None, [], None
         f1 = load_b13_region(dats1, CROP_BBOX, lat, lon)
-        now_pct = box_cloudiness(f1.gray, f1.center_px, half=40)
+        month = peak_utc.astimezone(timezone.utc).month
+        stats = box_stats(f1.gray, f1.center_px, half=40, month=month)
+        if stats is None:
+            return None, None, None, [], None
+        now_pct = stats["pct"]
         ts0 = round_down_10min(ts1 - timedelta(minutes=10))
         dats0 = download_segments(client, ts0, "B13", segs, cache)
         frames_ahead = max(0.0, (peak_utc - ts1).total_seconds() / 600)
@@ -202,14 +213,77 @@ def observe_burn_clouds(client, peak_utc, event: str, lat: float, lon: float,
             shift = (0, 0)
         burn_pct = projected_box_cloudiness(f1.gray, f1.center_px, shift,
                                             round(frames_ahead), half=40)
+        az = azimuth_deg if azimuth_deg is not None else (
+            270.0 if event == "sunset_glow" else 90.0)
+        # 光路上游平流检查:100-300km 三点窗满盖 → 云系正压向光路
+        upstream_overcast = _upstream_overcast(f1, az, month)
         png = Path(frames_dir) / "live" / f"live_{ts1:%Y%m%d_%H%M}.png"
-        # azimuth 只用于 live 图标注,粗值即可(西/东);精确方位角由 compute_prediction 另算
         render_annotated(dats1, "B13", CROP_BBOX, png, lat=lat, lon=lon,
-                         azimuth_deg=270.0 if event == "sunset_glow" else 90.0)
-        trend = f"现在{now_pct:.0f}% → 届时约{burn_pct:.0f}%"
-        return round(now_pct, 1), round(burn_pct, 1), trend, [png]
+                         azimuth_deg=az)
+        frames = [png]
+        # 白昼加可见光帧交叉验证厚度(规则 sat-visible-check:红外棕色区在
+        # 可见光下大片亮白=厚中低云,一帧戳穿暖顶陷阱;2026-07-09 复盘——
+        # 可见光在码库里现成却从没接进 live 链)。尽力语义,失败只丢这一帧。
+        vis_attached = False
+        try:
+            from astral import Observer
+            from astral.sun import elevation
+            if elevation(Observer(lat, lon), ts1) > 10:
+                dats_vis = download_segments(client, ts1, "B03", segs, cache)
+                if dats_vis:
+                    vis_png = (Path(frames_dir) / "live"
+                               / f"live_{ts1:%Y%m%d_%H%M}_vis.png")
+                    render_annotated(dats_vis, "B03", CROP_BBOX, vis_png,
+                                     lat=lat, lon=lon, azimuth_deg=az)
+                    frames.append(vis_png)
+                    vis_attached = True
+        except Exception:
+            pass
+        overcast = stats["overcast"]
+        if stats["lid"]:
+            # 暖顶盖子才强制 92;冷卷云幕满盖是画布,线性读数(50-70%)本身合理
+            now_pct = max(now_pct, 92.0)
+            burn_pct = max(burn_pct, 92.0)
+            trend = (f"红外读数{stats['pct']:.0f}%,但窗内无晴像元且为暖顶"
+                     f"(最暖{stats['max_bt']:.0f}K 均温{stats['mean_bt']:.0f}K)"
+                     f"=中低云盖子,按{now_pct:.0f}%满盖处理")
+        elif overcast:
+            trend = (f"满盖冷云幕(最暖{stats['max_bt']:.0f}K):高云画布形态,"
+                     f"现在{now_pct:.0f}% → 届时约{burn_pct:.0f}%")
+        elif upstream_overcast and burn_pct <= now_pct + 5:
+            trend = (f"现在{now_pct:.0f}%,但光路上游100-300km连续云盖压境,"
+                     f"届时云量大概率上行,外推值{burn_pct:.0f}%仅供下限参考")
+        else:
+            trend = f"现在{now_pct:.0f}% → 届时约{burn_pct:.0f}%"
+        meta = {"overcast": overcast, "lid": stats["lid"],
+                "max_bt": stats["max_bt"], "mean_bt": stats["mean_bt"],
+                "raw_pct": stats["pct"], "upstream_overcast": upstream_overcast,
+                "visible_attached": vis_attached,
+                "frame_time": ts1.isoformat(timespec="minutes")}
+        return round(now_pct, 1), round(burn_pct, 1), trend, frames, meta
     except (httpx.HTTPError, OSError):
-        return None, None, None, []
+        return None, None, None, [], None
+
+
+def _upstream_overcast(frame, azimuth_deg: float, month: int) -> bool:
+    """光路上游 100/200/300km 三窗是否全满盖(平流压境预警)。
+
+    像素尺度按帧几何近似(北京纬度 B13 斜视:东西≈2.4km/px、南北≈3.2km/px,
+    2026-07-09 复盘实测;旧名义值 2.0 低估 20-60%)。
+    """
+    from skyfire.cloudiness import box_stats as _bs
+    import math
+    km_x, km_y = 2.4, 3.2
+    rad = math.radians(azimuth_deg)
+    cx, cy = frame.center_px
+    hits = 0
+    for dist in (100, 200, 300):
+        px = round(cx + math.sin(rad) * dist / km_x)
+        py = round(cy - math.cos(rad) * dist / km_y)
+        s = _bs(frame.gray, (px, py), half=20, month=month)
+        if s is not None and s["lid"]:   # 暖顶云墙压境才算;冷卷云幕是画布不预警
+            hits += 1
+    return hits == 3
 
 
 def run_checkpoint(conn, client, city: City, city_key: str, event: str,
@@ -224,17 +298,44 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
     r = compute_prediction(conn, client, city, city_key, event, day,
                            run_llm=False)
     peak_utc = r.peak.astimezone(timezone.utc)
-    sat_now, burn_pct, trend, live_frames = observe_burn_clouds(
-        client, peak_utc, event, city.lat, city.lon, frames_dir)
+    sat_now, burn_pct, trend, live_frames, sat_meta = observe_burn_clouds(
+        client, peak_utc, event, city.lat, city.lon, frames_dir,
+        azimuth_deg=r.azimuth)
     # C1/outlook 距燃烧数小时以上:短时外推冒充不了届时云况
     # (knowledge §3.2:远期信预报当底子,临近才信实测外推),
     # 基线只用预报驱动的规则分;C2/C3/gated 临近才引入卫星外推修正。
-    cloud_args = (None, None) if checkpoint in ("c1", "outlook") \
-        else (sat_now, burn_pct)
-    prob, qual = baseline_percent(r.index, r.confidence, *cloud_args)
+    near = checkpoint not in ("c1", "outlook")
+    cloud_args = (sat_now, burn_pct) if near else (None, None)
+
+    # 模式硬分歧仲裁(2026-07-09:median(0,0,6,6)=3.0 是幻影场景):
+    # 临近且实况可信时由卫星裁——满盖→悲观簇,画布实证→乐观簇;
+    # 远期/实况不可信 → 保守偏置 + 低置信,禁止拿中间值拍板。
+    split = detect_split(r.per_model)
+    eff_index, eff_conf, split_note = r.index, r.confidence, None
+    if split:
+        eff_conf = "low"
+        if near and sat_meta is not None:
+            if sat_meta.get("lid"):
+                eff_index = split["low"]
+                split_note = (f"模式两簇分歧{split['gap']:.0f},卫星满盖暖顶盖子"
+                              f"实证→取悲观簇{split['low']:.1f}")
+            elif sat_now is not None and 25 <= sat_now <= 75:
+                eff_index = split["high"]
+                split_note = (f"模式两簇分歧{split['gap']:.0f},卫星画布实证"
+                              f"→取乐观簇{split['high']:.1f}")
+        if split_note is None:
+            eff_index = round((split["low"] + (split["low"] + split["high"]) / 2)
+                              / 2, 1)
+            split_note = (f"模式两簇分歧{split['gap']:.0f}且实况未定"
+                          f"→保守偏置{eff_index:.1f},双情景待临近确认")
+    prob, qual = baseline_percent(eff_index, eff_conf, *cloud_args)
     # 各模式单独换算(用户要求推送分模型;也喂给 LLM 看模式间分歧)
-    per_model_pct = {m: baseline_percent(s, r.confidence, *cloud_args)
+    per_model_pct = {m: baseline_percent(s, eff_conf, *cloud_args)
                      for m, s in r.per_model.items()}
+
+    # 因子过堂表:每个已知致错因子必须留痕(缺失≠沉默;2026-07-10 用户拍板)
+    factors = _factor_sheet(r, checkpoint, sat_now, burn_pct, sat_meta,
+                            split_note, trend)
 
     # 本场(date×city×event)已有预测 = 推送序号与"较上次"对比的依据;
     # 必须在 add_prediction 之前查,否则拿到的是本次自己
@@ -249,12 +350,16 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
     payload = {"date": str(day), "event": event, "checkpoint": checkpoint,
                "hours_to_peak": hours_to_peak,
                "rule_score": r.index, "confidence": r.confidence,
+               "effective_rule_score": eff_index,
+               "effective_confidence": eff_conf,
                "per_model": r.per_model,
                "per_model_raw": r.per_model_raw,
                "per_model_pct": per_model_pct,
                "aod": r.aod,
                "sat_cloud_now": sat_now, "burn_cloud_projected": burn_pct,
-               "trend": trend, "baseline_prob": prob, "baseline_quality": qual}
+               "sat_meta": sat_meta,
+               "trend": trend, "baseline_prob": prob, "baseline_quality": qual,
+               "factor_sheet": factors}
     cases = store.cases_with_snapshot(conn, city_key, event, model="gfs_seamless")
     similar = similar_cases_from(cases, factor_vector(payload), k=3)
     llm_r = predict_pct(payload, similar, live_frames,
@@ -263,11 +368,14 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
         rec = dict(probability_pct=llm_r["probability_pct"],
                    quality_pct=llm_r["quality_pct"],
                    confidence=llm_r["confidence"], llm_status="done",
-                   reasoning=llm_r["reasoning"], risks=llm_r["risks"])
+                   reasoning=llm_r["reasoning"], risks=llm_r["risks"],
+                   llm_factors=llm_r.get("factors"),
+                   scenario_alt=llm_r.get("scenario_alt") or None)
     else:
         rec = dict(probability_pct=prob, quality_pct=qual,
-                   confidence=r.confidence, llm_status="pending",
-                   reasoning=None, risks=None)
+                   confidence=eff_conf, llm_status="pending",
+                   reasoning=None, risks=None, llm_factors=None,
+                   scenario_alt=None)
     prev = None
     if prior:
         p_last = prior[-1]
@@ -294,7 +402,11 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
         confidence=rec["confidence"], rule_score=r.index,
         sat_cloud_pct=sat_now, trend=trend, llm_status=rec["llm_status"],
         reasoning=rec["reasoning"], risks=rec["risks"],
-        per_model_json=per_model_json)
+        per_model_json=per_model_json,
+        factors_json=json.dumps(
+            {"sheet": factors, "llm": rec.get("llm_factors"),
+             "rules_applied": (llm_r or {}).get("rules_applied", [])},
+            ensure_ascii=False))
     return {**rec, "id": pred_id, "date": str(day), "city": city_key,
             "event": event, "checkpoint": checkpoint, "rule_score": r.index,
             "sat_cloud_pct": sat_now, "trend": trend, "peak": r.peak,
@@ -303,7 +415,60 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
             "seq": len(prior) + 1,
             "minutes_to_peak": round((peak_utc - now_utc).total_seconds() / 60),
             "generated_at": now_utc.astimezone(ZoneInfo(city.timezone)),
-            "prev": prev}
+            "prev": prev, "factor_sheet": factors}
+
+
+def _factor_sheet(r: PredictionResult, checkpoint: str,
+                  sat_now: float | None, burn_pct: float | None,
+                  sat_meta: dict | None, split_note: str | None,
+                  trend: str | None) -> list[dict]:
+    """因子过堂表:已知致错因子逐项留痕,缺失必须显式说代价(2026-07-10 拍板:
+    教训只有写成每次强制执行的代码才算学会;缺失≠中性≠沉默)。"""
+    f: list[dict] = []
+    # 卫星实况
+    if sat_now is None:
+        f.append({"name": "卫星实况", "status": "缺失",
+                  "note": "无实况校验,临近判断可信度打折"})
+    elif sat_meta and sat_meta.get("lid"):
+        f.append({"name": "卫星实况", "status": "满盖修正",
+                  "note": f"线性读数{sat_meta['raw_pct']:.0f}%为暖顶假象,"
+                          f"按{sat_now:.0f}%满盖计(最暖{sat_meta['max_bt']:.0f}K)"})
+    elif sat_meta and sat_meta.get("overcast"):
+        f.append({"name": "卫星实况", "status": "冷幕满盖",
+                  "note": f"满盖但为冷云幕(高云画布形态),实测{sat_now:.0f}%不按闷盖处理"})
+    else:
+        f.append({"name": "卫星实况", "status": "正常",
+                  "note": f"实测{sat_now:.0f}% 外推{burn_pct:.0f}%"})
+    if sat_meta and sat_meta.get("upstream_overcast"):
+        f.append({"name": "平流预警", "status": "触发",
+                  "note": "光路上游100-300km连续云盖压境,外推值只当下限"})
+    # 气溶胶
+    if r.aod is None:
+        f.append({"name": "气溶胶", "status": "缺失",
+                  "note": "按0.85保守系数计,空气数据缺失"})
+    else:
+        f.append({"name": "气溶胶", "status": "正常", "note": f"AOD {r.aod}"})
+    # 通道(含中云墙)
+    if r.channel_empty:
+        f.append({"name": "透光通道", "status": "缺失",
+                  "note": "通道剖面无数据,置信度打折"})
+    else:
+        f.append({"name": "透光通道", "status": "正常",
+                  "note": f"{r.blocked_points}点受阻(低云>60或中云>70),"
+                          f"系数{r.channel_factor}"})
+    # 模式分歧
+    if split_note:
+        f.append({"name": "模式分歧", "status": "硬分歧", "note": split_note})
+    else:
+        f.append({"name": "模式分歧", "status": "正常",
+                  "note": f"极差{r.spread},{r.confidence}"})
+    # 外推纪律
+    if checkpoint in ("c1", "outlook"):
+        f.append({"name": "外推纪律", "status": "远期",
+                  "note": "距峰值数小时,实况外推不入基线,以预报为底"})
+    elif trend:
+        f.append({"name": "外推纪律", "status": "临近", "note": trend})
+    return f
 
 
 def _pick_model() -> str:

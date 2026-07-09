@@ -40,3 +40,16 @@ def test_partial_weights_fall_back_to_median():
     c = consensus({"ecmwf_ifs025": 8.0, "gfs_seamless": 2.0},
                   weights={"ecmwf_ifs025": 0.9})   # GFS 缺权重 → 不加权
     assert c.index == 5.0
+
+
+def test_detect_split_two_clusters():
+    """2v2 硬分歧(2026-07-09:median(0,0,6,6)=3.0 是无人预报的幻影场景)。"""
+    from skyfire.consensus import detect_split
+    s = detect_split({"ec": 0.0, "icon": 0.0, "gfs": 6.0, "cma": 6.0})
+    assert s == {"low": 0.0, "high": 6.0, "gap": 6.0}
+
+
+def test_detect_split_none_when_agreeing():
+    from skyfire.consensus import detect_split
+    assert detect_split({"a": 5.0, "b": 5.5, "c": 6.0, "d": 6.5}) is None
+    assert detect_split({"a": 0.0, "b": 6.0}) is None   # 样本<4 不判

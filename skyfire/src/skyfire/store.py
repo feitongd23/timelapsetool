@@ -175,6 +175,9 @@ def _migrate_predictions(conn: sqlite3.Connection) -> None:
         cols = [r[1] for r in conn.execute("PRAGMA table_info(predictions)").fetchall()]
         if "per_model_json" not in cols:
             conn.execute("ALTER TABLE predictions ADD COLUMN per_model_json TEXT")
+        if "factors_json" not in cols:
+            # 因子过堂表(2026-07-10:教训代码化,每版预测逐因子留痕可审计)
+            conn.execute("ALTER TABLE predictions ADD COLUMN factors_json TEXT")
         conn.commit()
     except Exception:
         conn.rollback()
@@ -385,16 +388,18 @@ def add_prediction(conn, date: str, city: str, event: str, checkpoint: str, *,
                    confidence: str | None, rule_score: float | None,
                    sat_cloud_pct: float | None, trend: str | None,
                    llm_status: str, reasoning: str | None, risks: str | None,
-                   per_model_json: str | None = None) -> int:
+                   per_model_json: str | None = None,
+                   factors_json: str | None = None) -> int:
     cur = _write(
         conn,
         """INSERT INTO predictions (date, city, event, checkpoint,
              probability_pct, quality_pct, confidence, rule_score,
-             sat_cloud_pct, trend, llm_status, reasoning, risks, per_model_json)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             sat_cloud_pct, trend, llm_status, reasoning, risks, per_model_json,
+             factors_json)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (date, city, event, checkpoint, probability_pct, quality_pct,
          confidence, rule_score, sat_cloud_pct, trend, llm_status,
-         reasoning, risks, per_model_json))
+         reasoning, risks, per_model_json, factors_json))
     return cur.lastrowid
 
 

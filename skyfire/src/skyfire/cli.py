@@ -484,13 +484,13 @@ def _maybe_refresh_maps(city, city_key: str, cooldown_h: float = 1.0) -> int:
     失败落冷却标记,cooldown_h 内不重试。best-effort,失败返回 0。"""
     import time as _t
 
-    from skyfire.gribmaps import refresh_grib_maps
+    from skyfire.gribmaps import refresh_grib_maps_bounded
     from skyfire.maps import DEFAULT_MAPS_DIR
     marker = Path(DEFAULT_MAPS_DIR) / ".last_fail"
     if marker.exists() and (_t.time() - marker.stat().st_mtime) < cooldown_h * 3600:
         return 0
     try:
-        written = refresh_grib_maps(city, city_key, DEFAULT_MAPS_DIR)
+        written = refresh_grib_maps_bounded(city, city_key, DEFAULT_MAPS_DIR)
     except Exception:
         written = {}
     n = sum(written.values())
@@ -673,7 +673,7 @@ def maps(
     数据 GRIB 直采(NOAA S3 / ECMWF 开放数据,零 Open-Meteo 配额),
     各模式跟随自家发布轮次更新;日常由 tick 触发,此命令供手动刷新/首次填充。
     """
-    from skyfire.gribmaps import refresh_grib_maps
+    from skyfire.gribmaps import refresh_grib_maps_bounded
     from skyfire.maps import DEFAULT_MAPS_DIR
     cities = load_cities(config)
     if city not in cities:
@@ -681,7 +681,7 @@ def maps(
         raise typer.Exit(1)
     if force:
         (Path(DEFAULT_MAPS_DIR) / "state.json").unlink(missing_ok=True)
-    written = refresh_grib_maps(cities[city], city, DEFAULT_MAPS_DIR)
+    written = refresh_grib_maps_bounded(cities[city], city, DEFAULT_MAPS_DIR)
     if not written:
         typer.echo("✗ 未生成(两模式轮次探测均失败,稍后重试)")
         raise typer.Exit(1)

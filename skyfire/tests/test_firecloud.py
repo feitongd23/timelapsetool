@@ -25,7 +25,9 @@ def test_clear_sky_scores_zero():
 def test_blocked_channel_is_veto():
     r = fire_cloud_score(_inputs(channel=BLOCKED_CHANNEL))
     assert r.score <= 1.5
-    assert r.blocked_points == 7  # 100-400km 内 7 个点全堵
+    # 50-400km 内 8 个点全堵(2026-07-10 起含 50km 近程点:
+    # 2026-07-05 案例近程低云满盖堵进光口却不在旧 100-400km 窗内)
+    assert r.blocked_points == 8
 
 
 def test_local_overcast_low_cloud_penalized():
@@ -77,3 +79,23 @@ def test_channel_ignores_high_cloud_cover():
 def test_channel_low_cloud_still_blocks():
     r = fire_cloud_score(_inputs(channel=BLOCKED_CHANNEL))
     assert r.channel_factor == 0.1
+
+
+def test_channel_factor_mid_wall_blocks():
+    """中云墙=堵(2026-07-09:300.4°光路 total 76-100% 却被判畅通)。"""
+    from skyfire.models import ChannelPoint
+    from skyfire.scoring.firecloud import channel_factor
+    wall = [ChannelPoint(dist_km=d, cloud_low=0, cloud_total=100, cloud_mid=85)
+            for d in (100, 150, 200, 250, 300, 350, 400)]
+    factor, blocked = channel_factor(wall)
+    assert blocked == 7 and factor == 0.1
+    # 旧快照无中云数据:该点只按低云判,不虚构
+    legacy = [ChannelPoint(dist_km=200, cloud_low=0, cloud_total=100)]
+    assert channel_factor(legacy) == (1.0, 0)
+
+
+def test_aerosol_missing_is_not_neutral():
+    """缺失≠中性(2026-07-09:aod=None 一路畅通拿 1.0)。"""
+    from skyfire.scoring.firecloud import aerosol_factor
+    assert aerosol_factor(None) == 0.85
+    assert aerosol_factor(1.41) == 0.3

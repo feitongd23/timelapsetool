@@ -219,6 +219,45 @@ def _ec_precip(c, run: datetime, step: int, td: str) -> np.ndarray | None:
 
 # ---------- 编排 ----------
 
+def _refresh_child(q, city_kw: dict, city_key: str, out_dir: str):
+    """子进程入口(spawn 可导入):跑真刷新,结果进队列。"""
+    from skyfire.config import City
+    try:
+        q.put(refresh_grib_maps(City(**city_kw), city_key, Path(out_dir)))
+    except Exception:
+        q.put(None)
+
+
+def refresh_grib_maps_bounded(city, city_key: str, out_dir,
+                              timeout_s: int = 900) -> dict[str, int]:
+    """带进程级硬超时的刷新。必须用这个入口对外服务:
+
+    下载库 multiurl 默认重试 500 次×120 秒——2026-07-09 夜一次 DNS 抖动把
+    tick 挂死数小时(launchd 不重入,晨间检查点链整段缺席)。库不透传重试
+    参数,进程硬超时是唯一可靠的保险;超时/异常返回 {}(调用方按失败冷却)。
+    """
+    from multiprocessing import get_context
+
+    ctx = get_context("spawn")
+    q = ctx.Queue()
+    kw = {"key": city.key, "name": city.name, "lat": city.lat,
+          "lon": city.lon, "timezone": city.timezone, "spots": []}
+    p = ctx.Process(target=_refresh_child, args=(q, kw, city_key, str(out_dir)),
+                    daemon=True)
+    p.start()
+    p.join(timeout_s)
+    if p.is_alive():
+        p.terminate()
+        p.join(10)
+        return {}
+    try:
+        r = q.get(timeout=5)
+    except Exception:
+        r = None
+    return r if r is not None else {}
+
+
+
 def _grid_to_lists(arr: np.ndarray | None, like: np.ndarray) -> list:
     if arr is None:
         arr = np.zeros_like(like)

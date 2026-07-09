@@ -119,5 +119,8 @@ def load_b13_region(dat_paths: list[Path], bbox: tuple,
     """nowcast 用:B13 裁剪数组 + 目标点像素坐标(接 cloudiness/drift)。"""
     data = _load_cropped(dat_paths, "B13", bbox)
     x, y = data.attrs["area"].get_xy_from_lonlat(lon, lat)
+    # 北京纬度 GEOS 斜视实测:东西≈2.4km/px、南北≈3.2km/px(2026-07-09 复盘;
+    # 旧名义值 2.0 低估 20-60%,走廊步长因此每步多迈)。此处取东西向近似,
+    # 精确几何(距离环/通道点)一律走 overlay.corridor_marks 的测地线计算。
     return HsdFrame(gray=bt_to_gray(data.values), center_px=(int(x), int(y)),
-                     km_px=2.0)
+                     km_px=2.4)

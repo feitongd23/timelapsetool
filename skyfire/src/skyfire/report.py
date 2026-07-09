@@ -163,8 +163,17 @@ def format_pct_report(rec: dict) -> tuple[str, str]:
                  f"{_CONF_PLAIN.get(rec['confidence'], rec['confidence'])}")
     lines.append(f"物理底分 {rec['rule_score']}/10"
                  f"(按云量·透光通道·降水等硬条件的打分)")
+    # 因子过堂表:每个已知致错因子留痕,缺失/修正必须可见(2026-07-10 拍板)
+    sheet = rec.get("factor_sheet") or []
+    flagged = [f for f in sheet if f.get("status") not in (None, "正常")]
+    if flagged:
+        lines.append("因子过堂:")
+        for f in flagged:
+            lines.append(f"· {f['name']}[{f['status']}] {f['note']}")
     if rec.get("llm_status") == "done":
         lines.append(f"解读: {rec['reasoning']}")
+        if rec.get("scenario_alt"):
+            lines.append(f"另一情景: {rec['scenario_alt']}")
         lines.append(f"风险: {rec['risks']}")
     else:
         lines.append("AI 解读暂缺,以上为基础数据")

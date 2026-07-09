@@ -17,6 +17,28 @@ class Consensus:
     confidence: str              # high / medium / low / degraded
 
 
+def detect_split(per_model: dict[str, float],
+                 gap: float = 4.0) -> dict | None:
+    """2v2 式硬分歧检测(2026-07-09 根因:median(0,0,6,6)=3.0 是四家谁都
+    没预报过的"半烧"幻影场景)。
+
+    排序后相邻极差 ≥gap(0-10 分制,默认 4=40pp)视为两簇硬分歧,返回
+    {"low": 悲观簇中位数, "high": 乐观簇中位数, "gap": 缺口}——由调用方
+    用卫星实况仲裁(满盖→悲观簇,画布实证→乐观簇;实况不可信→双情景+低置信,
+    禁止拿中间值拍板)。分歧不足或样本<4 返回 None。
+    """
+    if len(per_model) < 4:
+        return None
+    vals = sorted(per_model.values())
+    gaps = [(vals[i + 1] - vals[i], i) for i in range(len(vals) - 1)]
+    g, i = max(gaps)
+    if g < gap:
+        return None
+    lo, hi = vals[:i + 1], vals[i + 1:]
+    return {"low": round(median(lo), 1), "high": round(median(hi), 1),
+            "gap": round(g, 1)}
+
+
 def consensus(per_model: dict[str, float],
               weights: dict[str, float] | None = None) -> Consensus:
     values = list(per_model.values())
