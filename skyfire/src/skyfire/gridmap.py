@@ -26,8 +26,8 @@ _CHUNK = 100          # 单请求坐标上限(保守)
 _MAX_PARALLEL = 1     # 顺序拉(免费层并发限流严,后台任务不赶时间,稳优先)
 
 
-def _get_retry(client, url, params, tries=4):
-    """GET,遇 429 限流指数退避重试(免费层并发/分钟限流)。"""
+def _get_retry(client, url, params, tries=2):
+    """GET,遇 429 退避重试一次即止:日配额耗尽时多退避也无用,纯烧当量。"""
     for i in range(tries):
         resp = client.get(url, params=params)
         if resp.status_code == 429 and i < tries - 1:
