@@ -18,6 +18,9 @@ dependencies = [
     "satpy>=0.50",
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    "ecmwf-opendata>=0.3",   # EC 开放数据(全国图 GRIB 直采)
+    "cfgrib>=0.9",           # GRIB 解码(GFS/EC 双模式图)
+    "xarray>=2024.1",
 ]
 
 [project.optional-dependencies]

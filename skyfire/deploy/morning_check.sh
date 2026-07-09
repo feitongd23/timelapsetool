@@ -7,13 +7,9 @@ LOG=/tmp/skyfire.morningcheck.log
 DB=/Users/feitong/photo-app/skyfire/data/skyfire.db
 {
   echo "===== $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M') 晨检 ====="
-  TODAY_MAP=/Users/feitong/photo-app/skyfire/data/maps/beijing_$(TZ=Asia/Shanghai date +%F)_sunset_glow_quality.png
-  if [ -f "$TODAY_MAP" ]; then
-    echo "[地图] 今日已有,跳过(不烧配额)"
-  else
-    echo "[地图] 生成全国图:"
-    $BIN maps --city beijing 2>&1 | grep -vE "RuntimeWarning|return self.func" | tail -2
-  fi
+  # GRIB 直采零 Open-Meteo 配额,直接调用:有新轮次才重渲染,否则秒回
+  echo "[地图] EC+GFS 双模式刷新:"
+  $BIN maps --city beijing 2>&1 | grep -vE "RuntimeWarning|return self.func" | tail -2
   echo "[地图文件] $(ls /Users/feitong/photo-app/skyfire/data/maps/ 2>/dev/null | wc -l | tr -d ' ') 张"
   echo "[今日预测] 最近5条:"
   sqlite3 "$DB" "SELECT datetime(created_at,'+8 hours'), event, checkpoint, probability_pct||'/'||quality_pct FROM predictions WHERE date>=date('now') ORDER BY id DESC LIMIT 5" 2>/dev/null

@@ -149,9 +149,10 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path,
 
     @app.get("/v1/heatmap", dependencies=[Depends(require_session)])
     def heatmap(city: str = "beijing", event: str = "sunset_glow",
-                date: str = "", kind: str = "prob"):
+                date: str = "", kind: str = "prob", model: str = "ec"):
         """直取后台预生成的全国地图 PNG(不实时算,用户零等待)。
 
+        model=ec|gfs:GRIB 直采双模式图,各自跟随该模式发布轮次更新。
         未生成(尚未到模式更新/超出预报覆盖)→ 404,前端显示占位。
         """
         if city not in app.state.cities:
@@ -160,11 +161,16 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path,
             raise HTTPException(422, f"未知天象 {event!r}")
         if kind not in ("prob", "quality"):
             raise HTTPException(422, f"kind 需为 prob|quality,收到 {kind!r}")
+        if model not in ("ec", "gfs"):
+            raise HTTPException(422, f"model 需为 ec|gfs,收到 {model!r}")
         try:
             day = datetime.strptime(date, "%Y-%m-%d").date()
         except ValueError:
             raise HTTPException(422, f"date 需为 YYYY-MM-DD,收到 {date!r}")
-        p = map_path(app.state.maps_dir, city, str(day), event, kind)
+        p = map_path(app.state.maps_dir, city, str(day), event, kind, model)
+        if not p.exists():
+            # 双模式图未就绪时回退旧版合成图(平滑过渡,避免真机空窗)
+            p = map_path(app.state.maps_dir, city, str(day), event, kind)
         if not p.exists():
             raise HTTPException(404, "地图生成中(跟随模式更新,稍后重试)")
         return Response(p.read_bytes(), media_type="image/png")

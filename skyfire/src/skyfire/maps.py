@@ -19,8 +19,11 @@ EVENTS = ("sunrise_glow", "sunset_glow")
 KINDS = ("prob", "quality")
 
 
-def map_path(out_dir, city_key: str, date: str, event: str, kind: str) -> Path:
-    return Path(out_dir) / f"{city_key}_{date}_{event}_{kind}.png"
+def map_path(out_dir, city_key: str, date: str, event: str, kind: str,
+             model: str | None = None) -> Path:
+    """model=ec|gfs 为 GRIB 直采双模式图(2026-07-09 拍板);None 为旧版合成图。"""
+    tail = f"_{model}" if model else ""
+    return Path(out_dir) / f"{city_key}_{date}_{event}_{kind}{tail}.png"
 
 
 def refresh_maps(client: httpx.Client, city: City, city_key: str, days,

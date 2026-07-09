@@ -142,16 +142,19 @@ def _draw_cities(draw, bbox, mw, mh, font, marker):
 
 
 def render_map_png(values, kind: str, bbox, *,
-                   marker=("北京", 39.9042, 116.4074)) -> bytes:
+                   marker=("北京", 39.9042, 116.4074),
+                   title: str | None = None) -> bytes:
     """概率/质量数值网格 → sunsetbot 风格地图 PNG bytes。
 
     kind: 'prob' | 'quality'。bbox=(lon0,lat0,lon1,lat1)。
+    title: 图上方标注(模式名·轮次·预测对象),None 不留标题带。
     """
     ppd = _ppd(bbox)
     mh = round((bbox[3] - bbox[1]) * ppd)
     mw = round((bbox[2] - bbox[0]) * ppd * _cos_lat(bbox))
+    pad_t = _PAD_T + (26 if title else 0)
     W = _PAD_L + mw + _PAD_R
-    H = _PAD_T + mh + _PAD_B + _LEGEND_H
+    H = pad_t + mh + _PAD_B + _LEGEND_H
 
     canvas = Image.new("RGB", (W, H), (255, 255, 255))
     # 海域底色:整图先铺水色,再贴陆地填色图(陆地=白底+分级色)
@@ -163,17 +166,19 @@ def render_map_png(values, kind: str, bbox, *,
     _draw_cities(d, bbox, mw, mh, fsmall, marker)
     # 地图边框
     d.rectangle([0, 0, mw - 1, mh - 1], outline=_AXIS, width=1)
-    canvas.paste(map_img, (_PAD_L, _PAD_T))
+    canvas.paste(map_img, (_PAD_L, pad_t))
 
     dc = ImageDraw.Draw(canvas)
+    if title:
+        dc.text((_PAD_L, 8), title, fill=_CITY_TXT, font=cjk_font(15))
     lon0, lat0, lon1, lat1 = bbox
     step = _grid_step(bbox)
     for lon in range(int(np.ceil(lon0)), int(lon1) + 1, step):
         x, _ = _project(lon, lat0, bbox, mw, mh)
-        dc.text((_PAD_L + x - 8, _PAD_T + mh + 6), str(lon), fill=_AXIS, font=fsmall)
+        dc.text((_PAD_L + x - 8, pad_t + mh + 6), str(lon), fill=_AXIS, font=fsmall)
     for lat in range(int(np.ceil(lat0)), int(lat1) + 1, step):
         _, y = _project(lon0, lat, bbox, mw, mh)
-        dc.text((6, _PAD_T + y - 8), str(lat), fill=_AXIS, font=fsmall)
+        dc.text((6, pad_t + y - 8), str(lat), fill=_AXIS, font=fsmall)
 
     _draw_legend(dc, kind, _PAD_L, H - _LEGEND_H + 14, mw, fsmall)
     buf = BytesIO()

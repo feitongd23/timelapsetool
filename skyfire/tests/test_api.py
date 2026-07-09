@@ -168,6 +168,29 @@ def test_heatmap_bad_kind_422(tmp_path):
     assert r.status_code == 422
 
 
+def test_heatmap_model_param_serves_model_file(tmp_path):
+    # EC/GFS 双模式图(2026-07-09):model 参数选文件,缺时回退旧版合成图
+    from skyfire.maps import map_path
+    app, _ = _make_app(tmp_path, _wx_transport())
+    maps_dir = app.state.maps_dir
+    maps_dir.mkdir(parents=True, exist_ok=True)
+    map_path(maps_dir, "beijing", "2026-07-08", "sunset_glow", "prob",
+             "gfs").write_bytes(b"\x89PNG\r\n\x1a\nGFS!")
+    map_path(maps_dir, "beijing", "2026-07-08", "sunset_glow",
+             "prob").write_bytes(b"\x89PNG\r\n\x1a\nOLD!")
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    base = ("/v1/heatmap?city=beijing&event=sunset_glow"
+            "&date=2026-07-08&kind=prob")
+    r = client.get(base + "&model=gfs", headers={"X-Session": token})
+    assert r.status_code == 200 and r.content.endswith(b"GFS!")
+    # ec 文件不存在 → 回退旧版合成图(平滑过渡)
+    r = client.get(base + "&model=ec", headers={"X-Session": token})
+    assert r.status_code == 200 and r.content.endswith(b"OLD!")
+    r = client.get(base + "&model=nope", headers={"X-Session": token})
+    assert r.status_code == 422
+
+
 def _stub_location(monkeypatch, center_q, loc_q):
     """打桩 score_location:中心与用户位置各返回给定质量(prob=qual+5)。"""
     import skyfire.api as api_mod

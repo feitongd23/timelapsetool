@@ -476,34 +476,30 @@ def notify(
     typer.echo(f"{'✓ 已推送' if ok else '✗ 推送失败(已记录预测)'}: {title}")
 
 
-def _maybe_refresh_maps(city, city_key: str, max_age_h: float = 20.0,
-                        cooldown_h: float = 4.0) -> int:
-    """全国地图新鲜度门控。配额账本(2026-07-09 实锤):免费层按地点数计当量,
-    一次全国刷新≈4400当量≈半个日配额——图和点预报抢同一池子,图会把推送挤死。
-    故:每天至多一次(max_age 20h,晨检时段自然触发);失败落冷却标记,
-    cooldown_h 内不重试,不连环烧配额。best-effort,失败返回 0。"""
+def _maybe_refresh_maps(city, city_key: str, cooldown_h: float = 1.0) -> int:
+    """全国地图跟随模式轮次刷新(2026-07-09 拍板:EC+GFS 双图,GRIB 直采)。
+
+    数据走 NOAA S3 / ECMWF 开放数据,零 Open-Meteo 配额——不再与点预报抢池子。
+    refresh_grib_maps 自带轮次状态(state.json),没有新轮次时只探一次索引即返回;
+    失败落冷却标记,cooldown_h 内不重试。best-effort,失败返回 0。"""
     import time as _t
 
-    from skyfire.maps import DEFAULT_MAPS_DIR, map_path, refresh_maps
-    today = date_type.today()
-    probe = map_path(DEFAULT_MAPS_DIR, city_key, str(today),
-                     "sunset_glow", "quality")
-    if probe.exists() and (_t.time() - probe.stat().st_mtime) < max_age_h * 3600:
-        return 0
+    from skyfire.gribmaps import refresh_grib_maps
+    from skyfire.maps import DEFAULT_MAPS_DIR
     marker = Path(DEFAULT_MAPS_DIR) / ".last_fail"
     if marker.exists() and (_t.time() - marker.stat().st_mtime) < cooldown_h * 3600:
         return 0
     try:
-        written = refresh_maps(_make_client(), city, city_key,
-                               [today, today + timedelta(days=1)])
-    except (httpx.HTTPError, OSError):
-        written = []
-    if not written:
+        written = refresh_grib_maps(city, city_key, DEFAULT_MAPS_DIR)
+    except Exception:
+        written = {}
+    n = sum(written.values())
+    if written == {}:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.touch()
-        return 0
-    marker.unlink(missing_ok=True)
-    return len(written)
+    else:
+        marker.unlink(missing_ok=True)
+    return n
 
 
 @app.command()
@@ -670,22 +666,28 @@ def serve(
 def maps(
     city: str = typer.Option("beijing"),
     config: Path = typer.Option(DEFAULT_CONFIG),
+    force: bool = typer.Option(False, help="忽略轮次状态,强制重渲染两模式"),
 ):
-    """预生成全国概率/质量地图(今天+明天×朝晚),存盘供 API 直取。
+    """预生成 EC+GFS 双模式全国概率/质量地图(今天+明天×朝晚),存盘供 API 直取。
 
-    跟随 GFS/EC/ICON 模式更新由 tick 触发;此命令供手动刷新/首次填充。
-    顺序拉取全国网格(免费层限流,约每图几秒),失败的组跳过不中断。
+    数据 GRIB 直采(NOAA S3 / ECMWF 开放数据,零 Open-Meteo 配额),
+    各模式跟随自家发布轮次更新;日常由 tick 触发,此命令供手动刷新/首次填充。
     """
-    from skyfire.maps import refresh_maps
+    from skyfire.gribmaps import refresh_grib_maps
+    from skyfire.maps import DEFAULT_MAPS_DIR
     cities = load_cities(config)
     if city not in cities:
         typer.echo(f"错误:未知城市 {city!r}", err=True)
         raise typer.Exit(1)
-    today = date_type.today()
-    days = [today, today + timedelta(days=1)]
-    written = refresh_maps(_make_client(), cities[city], city, days)
-    typer.echo(f"✓ 已生成 {len(written)} 张全国地图 → data/maps/"
-               if written else "✗ 未生成(全部拉取失败,多半是限流,稍后重试)")
+    if force:
+        (Path(DEFAULT_MAPS_DIR) / "state.json").unlink(missing_ok=True)
+    written = refresh_grib_maps(cities[city], city, DEFAULT_MAPS_DIR)
+    if not written:
+        typer.echo("✗ 未生成(两模式轮次探测均失败,稍后重试)")
+        raise typer.Exit(1)
+    parts = [f"{m.upper()} {'新轮次 ' + str(n) + ' 张' if n else '无新轮次'}"
+             for m, n in sorted(written.items())]
+    typer.echo("✓ " + " · ".join(parts) + " → data/maps/")
 
 
 def _ensure_case_frames(conn, client, case_id: int, city, city_key: str,
