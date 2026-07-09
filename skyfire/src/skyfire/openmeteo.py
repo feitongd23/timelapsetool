@@ -1,12 +1,26 @@
 """Open-Meteo 数据采集:多模式点预报、AOD、通道剖面批量查询。"""
+import os
+
 import httpx
 
 from skyfire.geo import GeoPoint
 from skyfire.models import ChannelPoint, HourlyPoint, ModelForecast
 
-FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-HISTORICAL_FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
-AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
+# 商用 key(环境变量 OPEN_METEO_APIKEY):切 customer-* 域名并携带 key,
+# 配额100万当量/天;免费层约1万/天(全国图一刷≈4400)撑不住线上运行。
+# httpx 会把 params 合并进 URL 自带 query,故 key 直接埋在常量 URL 里即可。
+_KEY = os.environ.get("OPEN_METEO_APIKEY", "")
+
+
+def _u(host: str, path: str) -> str:
+    if _KEY:
+        return f"https://customer-{host}.open-meteo.com{path}?apikey={_KEY}"
+    return f"https://{host}.open-meteo.com{path}"
+
+
+FORECAST_URL = _u("api", "/v1/forecast")
+HISTORICAL_FORECAST_URL = _u("historical-forecast-api", "/v1/forecast")
+AIR_QUALITY_URL = _u("air-quality-api", "/v1/air-quality")
 
 MODELS = ("ecmwf_ifs025", "gfs_seamless", "icon_seamless", "cma_grapes_global")
 

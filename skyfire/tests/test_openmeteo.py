@@ -129,3 +129,16 @@ def test_fetch_aod_range_returns_value_or_none():
     client = httpx.Client(transport=httpx.MockTransport(handler_err))
     assert fetch_aod_range(client, 39.9, 116.4, "Asia/Shanghai",
                            "2020-09-01T18:00", "2020-09-01") is None
+
+
+def test_apikey_switches_to_customer_hosts(monkeypatch):
+    # 商用 key 存在 → customer-* 域名 + key 埋进 URL;无 key → 免费域名
+    import importlib
+    import skyfire.openmeteo as om
+    monkeypatch.setenv("OPEN_METEO_APIKEY", "k123")
+    importlib.reload(om)
+    assert om.FORECAST_URL == "https://customer-api.open-meteo.com/v1/forecast?apikey=k123"
+    assert "customer-air-quality-api" in om.AIR_QUALITY_URL
+    monkeypatch.delenv("OPEN_METEO_APIKEY")
+    importlib.reload(om)
+    assert om.FORECAST_URL == "https://api.open-meteo.com/v1/forecast"
