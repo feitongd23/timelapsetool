@@ -476,9 +476,12 @@ def notify(
     typer.echo(f"{'✓ 已推送' if ok else '✗ 推送失败(已记录预测)'}: {title}")
 
 
-def _maybe_refresh_maps(city, city_key: str, max_age_h: float = 3.0) -> int:
-    """全国地图新鲜度门控:超 max_age_h 或缺失才重生成(跟随模式更新,
-    一天几次;不赶时间的后台活)。best-effort,失败返回 0。"""
+def _maybe_refresh_maps(city, city_key: str, max_age_h: float = 20.0,
+                        cooldown_h: float = 4.0) -> int:
+    """全国地图新鲜度门控。配额账本(2026-07-09 实锤):免费层按地点数计当量,
+    一次全国刷新≈4400当量≈半个日配额——图和点预报抢同一池子,图会把推送挤死。
+    故:每天至多一次(max_age 20h,晨检时段自然触发);失败落冷却标记,
+    cooldown_h 内不重试,不连环烧配额。best-effort,失败返回 0。"""
     import time as _t
 
     from skyfire.maps import DEFAULT_MAPS_DIR, map_path, refresh_maps
@@ -487,11 +490,19 @@ def _maybe_refresh_maps(city, city_key: str, max_age_h: float = 3.0) -> int:
                      "sunset_glow", "quality")
     if probe.exists() and (_t.time() - probe.stat().st_mtime) < max_age_h * 3600:
         return 0
+    marker = Path(DEFAULT_MAPS_DIR) / ".last_fail"
+    if marker.exists() and (_t.time() - marker.stat().st_mtime) < cooldown_h * 3600:
+        return 0
     try:
         written = refresh_maps(_make_client(), city, city_key,
                                [today, today + timedelta(days=1)])
     except (httpx.HTTPError, OSError):
+        written = []
+    if not written:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
         return 0
+    marker.unlink(missing_ok=True)
     return len(written)
 
 
@@ -576,7 +587,10 @@ def tick(
                     mark = "✓" if ok else "✗ 推送失败"
                     typer.echo(f"{mark} {city_key} {event} [{rec['checkpoint']}]"
                                f" {title}")
-                except (httpx.HTTPError, ValueError):
+                except (httpx.HTTPError, ValueError) as e:
+                    # 拉取失败不再静默:429 连环漏报(7/8晚+7/9晨)要在日志可见
+                    typer.echo(f"✗ {city_key} {event} 数据拉取失败 "
+                               f"{e.__class__.__name__}: {e}", err=True)
                     continue  # 单城失败不影响其他(spec 8)
                 break  # 该 event 已按其中一天处理,不再看另一天
         # 预测/推送优先用配额;地图(重)放最后,配额紧张时先保推送不被挤掉
