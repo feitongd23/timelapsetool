@@ -175,7 +175,7 @@ def _num(v) -> str:
     return "—" if v is None else f"{v:.0f}"
 
 
-_MODEL_ABBR = {"ecmwf_ifs025": "EC", "gfs_seamless": "GFS",
+_MODEL_ABBR = {"ecmwf_ifs": "EC", "ecmwf_ifs025": "EC", "gfs_seamless": "GFS",
                "icon_seamless": "ICON", "cma_grapes_global": "CMA"}
 
 

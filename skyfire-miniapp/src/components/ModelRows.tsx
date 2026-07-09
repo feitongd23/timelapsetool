@@ -2,10 +2,10 @@ import { Text, View } from '@tarojs/components'
 import type { PerModel } from '../api/types'
 
 // 排布顺序按用户拍板:EC GFS ICON CMA;概率/质量 bar 之后展示总/高/中/低云量小 bar
-const ORDER = ['ecmwf_ifs025', 'gfs_seamless', 'icon_seamless', 'cma_grapes_global']
+const ORDER = ['ecmwf_ifs', 'ecmwf_ifs025', 'gfs_seamless', 'icon_seamless', 'cma_grapes_global']
 const ABBR: Record<string, string> = {
-  ecmwf_ifs025: 'EC', gfs_seamless: 'GFS', icon_seamless: 'ICON',
-  cma_grapes_global: 'CMA'
+  ecmwf_ifs: 'EC', ecmwf_ifs025: 'EC', gfs_seamless: 'GFS',
+  icon_seamless: 'ICON', cma_grapes_global: 'CMA'
 }
 const clamp = (v: number | null) =>
   v === null || v === undefined ? 0 : Math.max(0, Math.min(100, v))

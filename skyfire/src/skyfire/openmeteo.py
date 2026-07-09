@@ -22,7 +22,9 @@ FORECAST_URL = _u("api", "/v1/forecast")
 HISTORICAL_FORECAST_URL = _u("historical-forecast-api", "/v1/forecast")
 AIR_QUALITY_URL = _u("air-quality-api", "/v1/air-quality")
 
-MODELS = ("ecmwf_ifs025", "gfs_seamless", "icon_seamless", "cma_grapes_global")
+# EC 用 IFS HRES 9km(ecmwf_ifs,2025-10 起 CC-BY 开放,与 Windy 展示同源同分辨率;
+# 分层云量齐全且比 0.25° 版早约 45 分钟入库)。历史快照/回测仍存 ecmwf_ifs025 名。
+MODELS = ("ecmwf_ifs", "gfs_seamless", "icon_seamless", "cma_grapes_global")
 
 HOURLY_VARS = (
     "cloud_cover", "cloud_cover_low", "cloud_cover_mid", "cloud_cover_high",
