@@ -186,6 +186,18 @@ def render_map_png(values, kind: str, bbox, *,
         dc.text((6, pad_t + y - 8), str(lat), fill=_AXIS, font=fsmall)
 
     _draw_legend(dc, kind, _PAD_L, H - _LEGEND_H + 14, mw, fsmall)
+    # 全域最大值星标(2026-07-11 采纳 sunsetbot 做法:读图与对表的锚点)
+    arr_v = np.asarray(values, dtype=float)
+    if np.nanmax(arr_v) >= 10:
+        ri, ci = np.unravel_index(int(np.nanargmax(arr_v)), arr_v.shape)
+        vrows, vcols = arr_v.shape
+        mx = lon0 + (lon1 - lon0) * ci / max(1, vcols - 1)
+        my = lat1 - (lat1 - lat0) * ri / max(1, vrows - 1)
+        px, py = _project(mx, my, bbox, mw, mh)
+        dc.text((_PAD_L + px - 6, pad_t + py - 10), "★",
+                fill=(110, 58, 63), font=cjk_font(14))
+        dc.text((_PAD_L + px + 8, pad_t + py - 9),
+                f"{arr_v[ri, ci]:.0f}", fill=(110, 58, 63), font=fsmall)
     canvas = draw_watermark(canvas)   # afterglow·霞客 品牌水印(密铺半透明)
     buf = BytesIO()
     canvas.save(buf, format="PNG")
@@ -210,3 +222,7 @@ def _draw_legend(draw, kind, x0, y0, width, font):
         x += seg
     label = "概率 %" if kind == "prob" else "鲜艳度(质量)%"
     draw.text((x + 8, y0 + 2), label, fill=_CITY_TXT, font=font)
+    tiers = ("参考: <20渺茫 20-40不大 40-60留意 60-80较大 ≥80大概率"
+             if kind == "prob" else
+             "档位: <20不烧 20-40微烧 40-60小烧 60-80中烧 80-90大烧 ≥90爆烧")
+    draw.text((x0, y0 + 34), tiers, fill=_AXIS, font=font)

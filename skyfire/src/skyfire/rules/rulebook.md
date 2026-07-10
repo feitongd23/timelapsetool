@@ -268,6 +268,11 @@ sunsetbot/李召麒/北京市气象局官方成因/PlanIt云层距离/US10459119
 
 ## 系统与验证方法(2026-07-10 文献扩展)
 
+- system-adopt-competitors-2026-07-11 [hard·P0] sunsetbot/莉景学习采纳(实图对表:两家在呼市-西安-郑州-济南-青岛全线标≈0,与用户实况一致,我方修正前EC图为唯一离群):①逐格本地日落时刻已落码(gribmaps._column_times+_azimuth_grid,跨35经度日落差约140分钟,统一北京时刻是架构错,两家体系均无"统一钟点");②无云/雨区归零成图面白色底色(percent cloud<15向零收敛;两家共识:烧不起来一律坍缩为0,不画雨区图层不留白斜线);③图面补全域最大值星标+档位语义图例(sunsetbot蓝星做法);④sunsetbot成云判据=RH×液/固水凝物×温度(我方EC反演补水凝物交叉验证列为待研究——开放数据无云水场,tcc锚定为现行替代);⑤莉景"光追算法"=逐点3D光路一票否决,与我方F2/F3走廊强制化同构,互证方向正确。
+  来源: 学习工作流四路(sunsetbot当日实图×2已存档/map页方法论/莉景截图与创始人专栏); Wayback SPN代抓
+- system-daily-sunsetbot-compare [hard·P1] 每日对表通道(已验证可复用):sunsetbot地图为可构造静态URL /static/media/map/{GFS|EC}_中东_{YYYYMMDD}_{set|rise}_{初始场YYYYMMDDHH}z.jpg,本机直连被墙但可用 Wayback Save-Page-Now 代抓(curl https://web.archive.org/save/<url>,间隔≥30s,顺带永久存档);GFS晚霞最新报=当日00z,EC用前日12z保底。复盘时把我方图与其对表,分歧点入案例库。
+  来源: 学习工作流实测(2026-07-10两张实图经此通道取得)
+
 - system-glow-two-types-sky-vs-cloud [soft·文献] 霞分两类且预报路径不同:天空霞(无云幕,靠霾/气溶胶散射漫天红光,『预报日出日落时段有霾基本可判天空霞』)与云霞(火烧云,需云幕,按天气系统移动规律预报)。skyfire预测目标是云霞;复盘评分不得把无云幕的天空霞计为火烧云命中;霾+少云日可作『天空霞』低档提示而非火烧云概率。与高AOD压云霞不冲突(高AOD正是天空霞成因)。
   来源: 戴云伟(华风气象传媒),光明科普云2024-05-16 kepu.gmw.cn/2024-05/16/content_37332884.htm
 - system-visibility-independent-check [soft·文献] 地面能见度是独立于AOD的挡光核验因子,也是雾的直接观测:李召麒把『看能见度』列为预报必经步骤(北京看IAP 325m气象塔实拍),『光路上不能有雾霾、水汽、沙尘等挡光因素』;sunsetbot浑浊度口径也含『AOD/大气浑浊度(或者雾)』。现行体系只有AOD+RH,没有能见度观测这一路,可作aod-missing-not-neutral的第三兜底源。

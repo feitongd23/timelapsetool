@@ -20,7 +20,10 @@ def test_cloud_sweet_zone_bonus_and_cap():
     assert q_sweet == 66                       # 60×1.10
     assert p_sweet == 76                       # 66×1.0×1.15
     p_none, q_none = baseline_percent(6.0, "high", None, 8.0)
-    assert p_none == 20 and q_none == 20       # 没画布 → 双封顶 20
+    # 无云向零收敛(2026-07-11 采纳两家共识:烧不起来=白色底色)
+    assert p_none == 11 and q_none == 11       # 20×8/15
+    p_zero, q_zero = baseline_percent(6.0, "high", None, 0.0)
+    assert p_zero == 0 and q_zero == 0         # 万里无云=0
     p_full, q_full = baseline_percent(6.0, "high", None, 95.0)
     assert p_full == 20 and q_full == 45       # 满盖:质量×0.75,概率封顶
 

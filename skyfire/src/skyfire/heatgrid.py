@@ -111,11 +111,13 @@ def score_grids_physics(cloud: dict, aod_grid, event: str, bbox,
     quality = [[0] * cols for _ in range(rows)]
     for r in range(rows):
         lat = lat1 - (lat1 - lat0) * r / (rows - 1)
-        az = azimuth_by_row[r] if azimuth_by_row else default_az
+        az_row = azimuth_by_row[r] if azimuth_by_row else None
         for c in range(cols):
             h = high[r][c]
             if h is None:
                 continue
+            az = (az_row[c] if isinstance(az_row, (list, tuple))
+                  else az_row) if az_row is not None else default_az
             lon = lon0 + (lon1 - lon0) * c / (cols - 1)
             p = (precip[r][c] if precip else 0) or 0
             aod = aod_grid[r][c] if aod_grid else None

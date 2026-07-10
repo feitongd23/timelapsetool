@@ -247,24 +247,6 @@ def _ec_precip(c, run: datetime, step: int, td: str) -> np.ndarray | None:
 
 # ---------- 编排 ----------
 
-def _azimuths_by_row(n_rows: int, bbox, valid_utc: datetime) -> list[float]:
-    """逐纬度行的太阳方位角(2026-07-10:全国图通道曾正西/正东硬编码,
-    与判读图 270° 线同族病;方位角随纬度显著变化,按行取真值)。"""
-    from astral import Observer
-    from astral.sun import azimuth
-
-    lon_mid = (bbox[0] + bbox[2]) / 2
-    lat1, lat0 = bbox[3], bbox[1]
-    out = []
-    for r in range(n_rows):
-        lat = lat1 - (lat1 - lat0) * r / max(1, n_rows - 1)
-        try:
-            out.append(azimuth(Observer(lat, lon_mid), valid_utc))
-        except Exception:
-            out.append(270.0)
-    return out
-
-
 def _aod_grid_safe(client, city, n_rows: int, n_cols: int,
                    valid_utc: datetime):
     """AOD 粗网格(CAMS,air-quality 子域独立配额),失败返回 None(0.85 保守)。
@@ -339,6 +321,48 @@ def _burn_steps(city, day, event, run: datetime, step_quantum: int) -> int | Non
     return step if 0 < step <= 120 else None
 
 
+def _column_times(day, event, run: datetime, quantum: int,
+                  bbox, n_cols: int) -> tuple[list, list]:
+    """逐经度列的本地燃烧时刻与模式步长(2026-07-11 采纳清单 P0-1)。
+
+    全国统一北京日落时刻是架构错:跨 35 经度日落差约 140 分钟,东部各城
+    算的是天黑后、西部算的是日落前的云场。sunsetbot 按分区×事件出图、
+    莉景逐点 3D 光路,两家体系里都不存在"统一钟点"。
+    纬度对日落时刻的影响为次级(取框中纬),方位角在打分处逐格另算。
+    """
+    lat_mid = (bbox[1] + bbox[3]) / 2
+    steps, peaks = [], []
+    for c in range(n_cols):
+        lon = bbox[0] + (bbox[2] - bbox[0]) * c / max(1, n_cols - 1)
+        win = sun_window(lat_mid, lon, "Asia/Shanghai", day, event)
+        peak_utc = win.peak.astimezone(timezone.utc)
+        hours = (peak_utc - run).total_seconds() / 3600
+        step = round(hours / quantum) * quantum
+        steps.append(step if 0 < step <= 120 else None)
+        peaks.append(peak_utc)
+    return steps, peaks
+
+
+def _azimuth_grid(bbox, n_rows: int, n_cols: int, peaks: list) -> list:
+    """逐格太阳方位角:每格用其所在列的本地燃烧时刻(P0-1 配套)。"""
+    from astral import Observer
+    from astral.sun import azimuth
+
+    lat1, lat0 = bbox[3], bbox[1]
+    out = []
+    for r in range(n_rows):
+        lat = lat1 - (lat1 - lat0) * r / max(1, n_rows - 1)
+        row = []
+        for c in range(n_cols):
+            lon = bbox[0] + (bbox[2] - bbox[0]) * c / max(1, n_cols - 1)
+            try:
+                row.append(azimuth(Observer(lat, lon), peaks[c]))
+            except Exception:
+                row.append(270.0)
+        out.append(row)
+    return out
+
+
 def refresh_grib_maps(city, city_key: str, out_dir: Path,
                       state_path: Path | None = None,
                       client: httpx.Client | None = None) -> dict[str, int]:
@@ -374,36 +398,63 @@ def refresh_grib_maps(city, city_key: str, out_dir: Path,
                 continue
             n = 0
             quantum = 1 if model == "gfs" else 3
+            n_cols = int(round((CHINA_BBOX[2] - CHINA_BBOX[0]) / 0.25)) + 1
             for day in days:
                 for event in ("sunrise_glow", "sunset_glow"):
-                    step = _burn_steps(city, day, event, run, quantum)
-                    if step is None:
+                    # P0-1(2026-07-11 采纳):逐经度列本地燃烧时刻,
+                    # 取步长并集逐列合成云场——全国统一北京时刻是架构错
+                    col_steps, peaks = _column_times(day, event, run, quantum,
+                                                     CHINA_BBOX, n_cols)
+                    uniq = sorted({st for st in col_steps if st is not None})
+                    if not uniq:
                         continue
-                    cloud_np = (fetch_gfs_china(client, run, step)
-                                if model == "gfs" else fetch_ec_china(run, step))
-                    if cloud_np is None:
+                    fields = {}
+                    for st in uniq:
+                        f = (fetch_gfs_china(client, run, st)
+                             if model == "gfs" else fetch_ec_china(run, st))
+                        if f is not None:
+                            fields[st] = f
+                    if not fields:
                         continue
-                    like = cloud_np["high"]
-                    cloud = {k: _grid_to_lists(cloud_np.get(k), like)
+                    base = fields[min(fields)]
+                    comp = {k: (np.array(base[k], copy=True)
+                                if base.get(k) is not None else None)
+                            for k in ("high", "mid", "low", "precip")}
+                    n_actual = comp["high"].shape[1]
+                    # 实际网格列 → 经度列时刻表索引(测试用小网格同样成立)
+                    def _idx(ci):
+                        return round(ci * (n_cols - 1) / max(1, n_actual - 1))
+                    for ci in range(n_actual):
+                        st = col_steps[_idx(ci)]
+                        want = st if st in fields else min(
+                            fields, key=lambda u: abs(u - (st or uniq[0])))
+                        f = fields[want]
+                        for k, arr in comp.items():
+                            if arr is not None and f.get(k) is not None:
+                                arr[:, ci] = f[k][:, ci]
+                    peaks_actual = [peaks[_idx(ci)] for ci in range(n_actual)]
+                    like = comp["high"]
+                    cloud = {k: _grid_to_lists(comp.get(k), like)
                              for k in ("high", "mid", "low", "precip")}
-                    valid_utc = run + timedelta(hours=step)
-                    az_rows = _azimuths_by_row(len(like), CHINA_BBOX, valid_utc)
-                    # AOD 网格按时次缓存:两模式/同时次共用,别把配额和时间翻倍
-                    aod_key = valid_utc.strftime("%Y%m%d%H")
+                    az_grid = _azimuth_grid(CHINA_BBOX, like.shape[0],
+                                            n_actual, peaks_actual)
+                    # AOD 网格按中列时次缓存(AOD 场时间上平滑,取中列即可)
+                    valid_mid = peaks_actual[n_actual // 2]
+                    aod_key = valid_mid.strftime("%Y%m%d%H")
                     if aod_key not in aod_cache:
                         aod_cache[aod_key] = _aod_grid_safe(
-                            client, city, len(like), len(like[0]), valid_utc)
+                            client, city, len(like), len(like[0]), valid_mid)
                     aod_grid = aod_cache[aod_key]
                     # 分源降水判堵阈值(F5):EC降水=tp三小时差分平均,
                     # 对流边缘被稀释~2-3倍 → 阈值按源收紧;GFS=PRATE瞬时
                     rain_soft = 0.15 if model == "ec" else 0.3
                     grids = score_grids_physics(cloud, aod_grid, event,
                                                 CHINA_BBOX, "medium",
-                                                azimuth_by_row=az_rows,
+                                                azimuth_by_row=az_grid,
                                                 rain_soft=rain_soft)
                     event_zh = "朝霞" if event == "sunrise_glow" else "晚霞"
                     title = (f"{model.upper()} 轮次 {run:%m-%d %H}z · "
-                             f"预测 {day:%m-%d} {event_zh}")
+                             f"预测 {day:%m-%d} {event_zh} · 逐格本地日落时刻")
                     if model == "ec":
                         title += " · 云量由湿度场推算"
                     if aod_grid is None:

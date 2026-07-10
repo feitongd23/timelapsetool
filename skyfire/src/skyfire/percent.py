@@ -33,7 +33,9 @@ def baseline_percent(rule_score: float, confidence: str,
     gated = rule_score >= 4.0   # 正向修正门禁:硬门被触发过的分数不得复活
     if cloud is not None:
         if cloud < 15:
-            quality = min(quality, 20.0)
+            # 向零收敛而非停在 20 档(2026-07-11 采纳 sunsetbot/莉景共识:
+            # 无云=烧不起来=图面白色底色;旧 min(...,20) 让万里无云区留色)
+            quality = min(quality, 20.0) * max(0.0, cloud) / 15.0
         elif cloud < 30:
             quality *= 0.6 + (cloud - 15) / 15 * 0.4
         elif cloud <= 70 and gated:
