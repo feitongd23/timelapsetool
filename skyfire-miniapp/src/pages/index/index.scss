@@ -210,3 +210,33 @@ page { height: 100%; }
 .p2b { display: block; font-size: 22rpx; color: #7d7684; font-weight: 600; margin-top: 4rpx; }
 .swipehint { text-align: center; margin: 20rpx 0 10rpx; }
 .swipehint Text { font-size: 21rpx; color: #7d7684; font-weight: 700; }
+
+/* 彩虹罗盘:背对方位一眼可辨(2026-07-11) */
+.compass { position: relative; flex-shrink: 0; width: 108rpx; height: 108rpx;
+  border-radius: 50%; background: rgba(255,255,255,.55);
+  border: 2rpx solid rgba(106,150,181,.45); margin-left: 8rpx; }
+.cp-n { position: absolute; top: 2rpx; left: 50%; transform: translateX(-50%);
+  font-size: 18rpx; color: #6a96b5; font-weight: 700; }
+.cp-needle { position: absolute; left: 50%; top: 50%; width: 6rpx; height: 76rpx;
+  margin: -38rpx 0 0 -3rpx; border-radius: 4rpx; transform-origin: 50% 50%;
+  background: linear-gradient(180deg, #3f5e75 0%, #3f5e75 46%, rgba(106,150,181,.25) 54%, rgba(106,150,181,.25) 100%); }
+.cp-lbl { position: absolute; bottom: 4rpx; left: 50%; transform: translateX(-50%);
+  font-size: 18rpx; color: #3f5e75; font-weight: 700; }
+
+/* 云海机位胶囊 */
+.spots { display: flex; gap: 10rpx; margin-top: 8rpx; flex-wrap: wrap; }
+.spot { font-size: 21rpx; font-weight: 700; color: #3f6157;
+  background: rgba(255,255,255,.6); border: 2rpx solid rgba(110,160,146,.45);
+  border-radius: 999rpx; padding: 4rpx 16rpx; }
+
+/* 全国图:模式为基准的并排缩略图(2026-07-11) */
+.hm-modelrow { margin-top: 12rpx; }
+.hm-pair { display: flex; gap: 14rpx; margin-top: 8rpx; }
+.hm-thumb { flex: 1; min-width: 0; }
+.hm-tlabel { display: block; font-size: 22rpx; font-weight: 700;
+  color: #8d8398; margin-bottom: 6rpx; }
+.hm-timg { width: 100%; border-radius: 14rpx;
+  border: 2rpx solid rgba(0,0,0,.06); }
+.hm-tskeleton { height: 220rpx; border-radius: 14rpx;
+  background: rgba(255,255,255,.5); display: flex; align-items: center;
+  justify-content: center; }

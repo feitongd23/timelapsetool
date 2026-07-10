@@ -23,30 +23,55 @@ async function fetchPng(event: string, date: string, kind: string,
 
 const PENDING = 'pending'   // 哨兵:地图跟随模式更新,尚未生成
 
-// EC 与 GFS 双模式全国图(2026-07-09 拍板),各自跟随该模式发布轮次更新
-const SLOTS = [
-  ['EC 概率图', 'prob', 'ec'],
-  ['EC 质量图', 'quality', 'ec'],
-  ['GFS 概率图', 'prob', 'gfs'],
-  ['GFS 质量图', 'quality', 'gfs'],
-] as const
+// 以模式为基准并排:每个模式一行,概率/质量两张缩略图,点开全屏可左右翻
+// (用户 2026-07-11 拍板)
+const MODELS = [['EC', 'ec'], ['GFS', 'gfs']] as const
 
 export default function Heatmaps({ event, date }: { event: string; date: string }) {
-  const [srcs, setSrcs] = useState<string[]>([])
+  const [srcs, setSrcs] = useState<Record<string, string>>({})
   const [err, setErr] = useState('')
   const [retryTick, setRetryTick] = useState(0)
 
   useEffect(() => {
-    setSrcs([]); setErr('')
+    setSrcs({}); setErr('')
     let alive = true
-    Promise.all(SLOTS.map(([, kind, model]) => fetchPng(event, date, kind, model)))
-      .then(list => { if (alive) setSrcs(list) })
-      .catch(e => { if (alive) setErr(e.message) })
+    const jobs: Promise<void>[] = []
+    for (const [, model] of MODELS) {
+      for (const kind of ['prob', 'quality'] as const) {
+        jobs.push(fetchPng(event, date, kind, model).then(src => {
+          if (alive) setSrcs(prev => ({ ...prev, [`${model}-${kind}`]: src }))
+        }))
+      }
+    }
+    Promise.all(jobs).catch(e => { if (alive) setErr(e.message) })
     return () => { alive = false }
   }, [event, date, retryTick])
 
-  const preview = (src: string) =>
-    src && src !== PENDING && Taro.previewImage({ urls: [src] })
+  const preview = (model: string, kind: string) => {
+    const urls = ['prob', 'quality']
+      .map(k => srcs[`${model}-${k}`])
+      .filter(s => s && s !== PENDING)
+    const current = srcs[`${model}-${kind}`]
+    if (current && current !== PENDING) {
+      Taro.previewImage({ current, urls })
+    }
+  }
+
+  const thumb = (model: string, kind: string, label: string) => {
+    const src = srcs[`${model}-${kind}`] || ''
+    return (
+      <View className='hm-thumb' onClick={() => preview(model, kind)}>
+        <Text className='hm-tlabel'>{label}</Text>
+        {src === PENDING
+          ? <View className='hm-tskeleton hm-pending'>
+              <Text className='t-muted'>生成中</Text>
+            </View>
+          : src
+          ? <Image src={src} mode='widthFix' className='hm-timg' />
+          : <View className='hm-tskeleton' />}
+      </View>
+    )
+  }
 
   return (
     <View className='glass-card'>
@@ -54,25 +79,18 @@ export default function Heatmaps({ event, date }: { event: string; date: string 
         <Text className='t-red hm-err' onClick={() => setRetryTick(t => t + 1)}>{err},点我重试</Text>
       ) : (
         <View>
-          {SLOTS.map(([title], i) => {
-            const src = srcs[i] || ''
-            return (
-              <View key={title} className='hm-block'>
-                <Text className='card-title t-muted'>{title}</Text>
-                {src === PENDING
-                  ? <View className='hm-skeleton hm-pending'>
-                      <Text className='t-muted'>地图生成中 · 跟随模式更新</Text>
-                    </View>
-                  : src
-                  ? <Image src={src} mode='widthFix' className='hm-map'
-                           onClick={() => preview(src)} />
-                  : <View className='hm-skeleton' />}
+          {MODELS.map(([name, model]) => (
+            <View key={model} className='hm-modelrow'>
+              <Text className='card-title t-muted'>{name} 全国图</Text>
+              <View className='hm-pair'>
+                {thumb(model, 'prob', '概率')}
+                {thumb(model, 'quality', '质量')}
               </View>
-            )
-          })}
+            </View>
+          ))}
         </View>
       )}
-      <Text className='traj-note t-muted'>全国 · 双模式各随自家更新 · 点图看大图</Text>
+      <Text className='traj-note t-muted'>点缩略图全屏预览 · 左右滑切换概率/质量 · 各随自家轮次更新</Text>
     </View>
   )
 }

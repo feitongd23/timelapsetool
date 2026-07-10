@@ -549,6 +549,11 @@ def tick(
                                         "outlook")
                                 except (httpx.HTTPError, ValueError):
                                     rec_outlook = None  # 缺一半照推;本晚不补跑,明日11:00晚霞C1自然补上
+                            else:
+                                # 白天已静默补全(_maybe_fill_tomorrow):
+                                # 取库里那版合成推送,别显示"数据缺失"
+                                rec_outlook = _outlook_rec_from_store(
+                                    conn, c, city_key, pred_date)
                             title, body = format_outlook_report(rec,
                                                                 rec_outlook)
                             # 明晨云海一并展望(三道门引擎,2026-07-11 上线)
@@ -601,6 +606,9 @@ def tick(
                                f"{e.__class__.__name__}: {e}", err=True)
                     continue  # 单城失败不影响其他(spec 8)
                 break  # 该 event 已按其中一天处理,不再看另一天
+        # 明日双事件静默补全(2026-07-11 用户拍板:小程序"明天"tab 要有
+        # 完整的预测/风险/解读,不等晚 8 点展望)——11 点后跑一次,不推送
+        _maybe_fill_tomorrow(conn, c, city_key, now_local)
         # 彩虹雷达:晚窗内每 tick 评估,L3 触发即推(一天一次;
         # 事件级时效,错过窗口就没了——2026-07-11 用户拍板上线)
         _maybe_rainbow_push(conn, c, city_key, now_local, ncfg)
@@ -608,6 +616,41 @@ def tick(
         nm = _maybe_refresh_maps(c, city_key)
         if nm:
             typer.echo(f"✓ {city_key} 全国地图已刷新 {nm} 张")
+
+
+def _outlook_rec_from_store(conn, c, city_key: str, pred_date: str) -> dict | None:
+    """从库里取明日晚霞最新 outlook,拼成 format_outlook_report 可用的 rec。"""
+    rows = store.predictions_for(conn, pred_date, city_key, "sunset_glow")
+    rows = [r for r in rows if r["checkpoint"] == "outlook"]
+    if not rows:
+        return None
+    r = rows[-1]
+    from datetime import date as _d
+    day = _d.fromisoformat(pred_date)
+    win = sun_window(c.lat, c.lon, c.timezone, day, "sunset_glow")
+    return {"event": "sunset_glow", "date": pred_date, "peak": win.peak,
+            "probability_pct": r["probability_pct"],
+            "quality_pct": r["quality_pct"], "city_name": c.name}
+
+
+def _maybe_fill_tomorrow(conn, c, city_key: str, now_local) -> None:
+    """明日朝霞+晚霞各补一版 outlook(带 LLM 解读),供小程序"明天"tab。
+
+    静默:只落库不推送;每事件每天一次(outlook 唯一索引天然去重);
+    晚间 20:00 的正式展望照旧运行并推送。失败不吵(下个 tick 再试)。
+    """
+    if now_local.hour < 11:
+        return   # 等上午配额/轮次就绪,与晚霞 c1 同窗
+    tomorrow = now_local.date() + timedelta(days=1)
+    for event in ("sunrise_glow", "sunset_glow"):
+        if store.has_checkpoint(conn, str(tomorrow), city_key, event, "outlook"):
+            continue
+        try:
+            run_checkpoint(conn, _make_client(), c, city_key, event,
+                           tomorrow, "outlook")
+            typer.echo(f"· {city_key} 明日{event} outlook 已补全(未推送)")
+        except (httpx.HTTPError, ValueError):
+            return   # 配额/数据不济,别连环烧,下个 tick 再来
 
 
 def _maybe_rainbow_push(conn, c, city_key: str, now_local, ncfg) -> None:

@@ -41,6 +41,12 @@ function WeatherIcon({ text }: { text: string }) {
   return <View className='wicon'><View className='wcloud' /></View>
 }
 
+const SEA_SPOTS: Record<string, string[]> = {
+  '景山CBD档': ['景山', '国贸高层', '奥森瞭望塔'],
+  '香山档': ['香山', '百望山', '凤凰岭'],
+  '边缘档': ['妙峰山', '海坨山'],
+}
+
 export default function Index() {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [err, setErr] = useState('')
@@ -128,12 +134,20 @@ export default function Index() {
   const genT = l ? bjTime(l.created_at) : ''
   const isFinal = l && ['c2', 'c3', 'gated'].includes(l.checkpoint)
 
+  // 字号随烧况缩放:越大烧越大号(不烧0.86× → 爆烧1.18×)
+  const burnScale = displayQ >= 90 ? 1.18 : displayQ >= 80 ? 1.12
+    : displayQ >= 60 ? 1.06 : displayQ >= 40 ? 1.0
+    : displayQ >= 20 ? 0.93 : 0.86
   const numBlock = (label: string, v: number, big: boolean) => (
     <View className={big ? 'qcol' : 'pcol'}>
       {big && <Text className='lbltop'>你的位置 火烧云</Text>}
       <Text className='lbl'>{label}</Text>
       <Text className={big ? 'num-big' : 'num-small'}
-            style={big ? { backgroundImage: theme.numGrad } : { color: '#96796b' }}>
+            style={big
+              ? { backgroundImage: theme.numGrad,
+                  fontSize: `${Math.round(160 * burnScale)}rpx` }
+              : { color: '#96796b',
+                  fontSize: `${Math.round(78 * burnScale)}rpx` }}>
         {Math.round(v)}<Text className={big ? 'unit-big' : 'unit-small'}>%</Text>
       </Text>
     </View>
@@ -268,6 +282,14 @@ export default function Index() {
                         <Text className='tsrc'>{phen.rainbow.notes[0]}</Text>
                       )}
                     </View>
+                    {phen.rainbow.level >= 2 && phen.rainbow.antisolar_az !== null && (
+                      <View className='compass'>
+                        <Text className='cp-n'>北</Text>
+                        <View className='cp-needle'
+                              style={{ transform: `rotate(${Math.round(phen.rainbow.antisolar_az)}deg)` }} />
+                        <Text className='cp-lbl'>虹</Text>
+                      </View>
+                    )}
                   </View>
                 )}
 
@@ -280,6 +302,13 @@ export default function Index() {
                           ? `明晨概率 ${phen.cloudsea.prob}% · ${phen.cloudsea.tier} · 日出 ${phen.cloudsea.sunrise}`
                           : `明晨概率 ${phen.cloudsea.prob}% · 条件不足`}
                       </Text>
+                      {phen.cloudsea.prob >= 30 && SEA_SPOTS[phen.cloudsea.tier] && (
+                        <View className='spots'>
+                          {SEA_SPOTS[phen.cloudsea.tier].map(sp => (
+                            <Text key={sp} className='spot'>{sp}</Text>
+                          ))}
+                        </View>
+                      )}
                       {phen.cloudsea.notes.length > 0 && (
                         <Text className='tsrc'>{phen.cloudsea.notes[0]}</Text>
                       )}
