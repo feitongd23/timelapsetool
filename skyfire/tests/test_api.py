@@ -253,9 +253,12 @@ def _ext_transport(embassy_ok=True):
         if "nominatim" in host:
             return httpx.Response(200, json={"address": {
                 "suburb": "望京", "district": "朝阳区"}})
-        # 预报端点(逐小时天气)
-        times = [f"2026-07-09T{h:02d}:00" for h in range(24)] + \
-                [f"2026-07-10T{h:02d}:00" for h in range(24)]
+        # 预报端点(逐小时天气)。日期须相对今天:写死日期会在真实时钟越过
+        # 序列尾部时让"未来8小时"不足8条(2026-07-10 傍晚实爆的时间炸弹)
+        from datetime import date, timedelta
+        d0, d1 = date.today(), date.today() + timedelta(days=1)
+        times = [f"{d0}T{h:02d}:00" for h in range(24)] + \
+                [f"{d1}T{h:02d}:00" for h in range(24)]
         n = len(times)
         return httpx.Response(200, json={"hourly": {
             "time": times, "temperature_2m": [30.4] * n,
