@@ -218,10 +218,13 @@ def predict_pct(payload: dict, similar: list[dict], frame_paths: list[Path],
         messages = [{"role": "user", "content": content}]
         system = _predict_system()
         for attempt in range(2):
+            # 8000:adaptive thinking 与七因子 JSON 共享此额度——规则表注入后
+            # 思考变长,4000 曾被 thinking 吃光导致文本块为空(2026-07-10 c1)
             resp = client.messages.create(
-                model=model, max_tokens=2000, system=system,
+                model=model, max_tokens=8000, system=system,
                 messages=messages, **kwargs)
             text = next((b.text for b in resp.content if b.type == "text"), "")
+            text = re.sub(r"```(?:json)?|```", "", text)   # 剥 markdown 围栏
             m = re.search(r"\{.*\}", text, re.DOTALL)
             if m:
                 try:
@@ -231,6 +234,8 @@ def predict_pct(payload: dict, similar: list[dict], frame_paths: list[Path],
                 result, defect = _validate_predict(d)
                 if result is not None:
                     return result
+            elif resp.stop_reason == "max_tokens":
+                defect = "输出被截断(max_tokens),压缩篇幅重来"
             else:
                 defect = "没有输出 JSON"
             if attempt == 0:
