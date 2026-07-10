@@ -47,8 +47,8 @@ def score_grids(cloud: dict, confidence: str) -> dict[str, list[list[int]]]:
             score = fire_cloud_score(FireCloudInputs(
                 cloud_high=h, cloud_mid=m or 0, cloud_low=low or 0,
                 precipitation=p, aod=None, channel=[])).score
-            total = min(100.0, (h or 0) + (m or 0) + (low or 0))
-            pr, qu = baseline_percent(score, confidence, None, total)
+            canvas_cloud = min(100.0, (h or 0) + 0.5 * (m or 0))
+            pr, qu = baseline_percent(score, confidence, None, canvas_cloud)
             prob[r][c], quality[r][c] = pr, qu
     return {"prob": prob, "quality": quality}
 
@@ -64,12 +64,13 @@ def _sample_grid(grid, bbox, lon, lat):
     return grid[r][c]
 
 
-def _corridor_points(low, mid, bbox, lon, lat, azimuth_deg: float):
-    """从网格自身低/中云场,沿真实太阳方位角采样透光通道点。
+def _corridor_points(low, mid, precip, bbox, lon, lat, azimuth_deg: float):
+    """从网格自身低/中云/降水场,沿真实太阳方位角采样透光通道点。
 
     2026-07-10 修正(与判读图 270° 硬编码同族的病):七月北京日落方位
     ≈300°(西北),正西采样把每格通道都查偏 30°;中云墙同步纳入
-    (7/9:只采低云时中云墙隐形,规则 channel-judge-low-plus-thick-mid)。
+    (7/9:只采低云时中云墙隐形);光路降雨带同步纳入(用户实锤:
+    呼市-吕梁-西安雨带横在济青一线光路上,该线应为 0)。
     """
     rad = math.radians(azimuth_deg)
     pts = []
@@ -78,9 +79,11 @@ def _corridor_points(low, mid, bbox, lon, lat, azimuth_deg: float):
         slon = lon + dkm * math.sin(rad) / (111.0 * max(0.2, math.cos(math.radians(lat))))
         cl = _sample_grid(low, bbox, slon, slat)
         cm = _sample_grid(mid, bbox, slon, slat) if mid else None
+        pr = _sample_grid(precip, bbox, slon, slat) if precip else None
         if cl is not None:
             pts.append(ChannelPoint(dist_km=dkm, cloud_low=cl,
-                                    cloud_total=None, cloud_mid=cm))
+                                    cloud_total=None, cloud_mid=cm,
+                                    precip=pr))
     return pts
 
 
@@ -134,14 +137,18 @@ def score_grids_physics(cloud: dict, aod_grid, event: str, bbox,
             score = fire_cloud_score(FireCloudInputs(
                 cloud_high=h, cloud_mid=mid[r][c] or 0, cloud_low=low[r][c] or 0,
                 precipitation=p, aod=aod,
-                channel=_corridor_points(low, mid, bbox, lon, lat, az))).score
+                channel=_corridor_points(low, mid, precip, bbox,
+                                         lon, lat, az))).score
             # 受光带:本格处于≥85%连续云盖之下时,画布必须在日照方向
             # 300-800km 内有边缘才被点亮(2026-07-10 上海100%高云幕质量64的
             # 反面教材——满盖是画布,但只有靠近西缘的画布会亮)
             if (h or 0) >= 85 or ((h or 0) + (mid[r][c] or 0)) >= 95:
                 score *= lit_factor(high, mid, bbox, lon, lat, az)
-            total = min(100.0, (h or 0) + (mid[r][c] or 0) + (low[r][c] or 0))
-            prob[r][c], quality[r][c] = baseline_percent(score, confidence, None, total)
+            # 甜区耦合只认画布云(高+半中):低云不是画布是遮挡——
+            # 2026-07-10 青岛实锤:高10中0低22 被凑成"总云32"拿甜区+15
+            canvas_cloud = min(100.0, (h or 0) + 0.5 * (mid[r][c] or 0))
+            prob[r][c], quality[r][c] = baseline_percent(score, confidence,
+                                                         None, canvas_cloud)
     return {"prob": prob, "quality": quality}
 
 

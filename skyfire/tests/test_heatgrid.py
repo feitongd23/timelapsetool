@@ -68,3 +68,16 @@ def test_lit_factor_uniform_deck_interior_dark():
     c_deep = 33   # 幕深处
     assert grids["quality"][r_mid][c_edge] > grids["quality"][r_mid][c_deep] * 2
     assert grids["quality"][r_mid][c_deep] <= 25
+
+
+def test_sweet_zone_counts_canvas_not_low_cloud():
+    """甜区耦合只认画布云(2026-07-10 青岛实锤:高10中0低22 被凑成
+    总云32拿甜区+15,得出34%概率——低云不是画布)。"""
+    from skyfire.heatgrid import score_grids_physics
+    bbox = (100.0, 17.0, 135.0, 45.0)
+    rows, cols = 5, 5
+    g = lambda v: [[float(v)] * cols for _ in range(rows)]
+    cloud = {"high": g(10), "mid": g(0), "low": g(22), "precip": g(0)}
+    grids = score_grids_physics(cloud, None, "sunset_glow", bbox, "medium")
+    # 画布云=10 → <15 无甜区奖励,概率必须压在 20 以内
+    assert grids["prob"][2][2] <= 20

@@ -87,8 +87,11 @@ def _fill_bands(values, kind, mw, mh):
 
     先对分数场做高斯平滑,去掉逐格噪声,得到连续的区域favorability(见 _SMOOTH_SIGMA)。
     """
-    arr = np.clip(np.asarray(values, dtype=np.float32), 0, 100)
-    arr = gaussian_filter(arr, sigma=_SMOOTH_SIGMA, mode="nearest")
+    raw = np.clip(np.asarray(values, dtype=np.float32), 0, 100)
+    arr = gaussian_filter(raw, sigma=_SMOOTH_SIGMA, mode="nearest")
+    # 平滑禁止无中生有:真零/近零格保持零,不让邻区颜色晕染出假概率
+    # (2026-07-10 青岛实锤:无云区被邻近色带晕出浅色档)
+    arr = np.where(raw < 8, np.minimum(raw, arr), arr)
     small = Image.fromarray(arr.astype(np.uint8), mode="L")
     v = np.asarray(small.resize((mw, mh), Image.BICUBIC), dtype=np.float32)
     rgb = np.full((mh, mw, 3), 255, dtype=np.uint8)

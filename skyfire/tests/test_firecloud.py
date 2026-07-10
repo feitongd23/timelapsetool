@@ -99,3 +99,14 @@ def test_aerosol_missing_is_not_neutral():
     from skyfire.scoring.firecloud import aerosol_factor
     assert aerosol_factor(None) == 0.85
     assert aerosol_factor(1.41) == 0.3
+
+
+def test_channel_rain_blocks():
+    """光路降雨=堵(2026-07-10 用户实锤:雨带横在济青一线日落光路上)。"""
+    from skyfire.models import ChannelPoint
+    from skyfire.scoring.firecloud import channel_factor
+    rainy = [ChannelPoint(dist_km=d, cloud_low=10, cloud_total=90,
+                          cloud_mid=40, precip=2.0)
+             for d in (100, 200, 300, 400)]
+    factor, blocked = channel_factor(rainy)
+    assert blocked == 4 and factor == 0.1

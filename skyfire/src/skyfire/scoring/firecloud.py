@@ -60,6 +60,9 @@ def channel_factor(channel: list[ChannelPoint]) -> tuple[float, int]:
     (旧快照)时该点只按低云判,不虚构。
     采样含 50km 近程点(规则 channel-directional-hard-gate 裁决:2026-07-05
     案例 50km 低云满盖堵进光口却不在旧 100-400km 窗内)。
+    采样点正在降雨(≥0.5mm/h)也判堵:雨幕从云底拖到地面,光穿不过
+    (2026-07-10 用户实锤:呼市-吕梁-西安雨带横在济青一线日落光路上,
+    该线可能性应为 0,而旧判据对光路降雨视而不见)。
     """
     scored = [p for p in channel if 50 <= p.dist_km <= 400
               and p.cloud_low is not None]
@@ -67,7 +70,8 @@ def channel_factor(channel: list[ChannelPoint]) -> tuple[float, int]:
         return 1.0, 0
     blocked = sum(1 for p in scored
                   if p.cloud_low > 60
-                  or (p.cloud_mid is not None and p.cloud_mid > 70))
+                  or (p.cloud_mid is not None and p.cloud_mid > 70)
+                  or (p.precip is not None and p.precip >= 0.5))
     frac = blocked / len(scored)
     return max(0.1, round(1 - 1.8 * frac, 2)), blocked
 

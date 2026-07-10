@@ -121,7 +121,7 @@ def fetch_channel_profile(
         "latitude": ",".join(str(round(p.lat, 3)) for p in points),
         "longitude": ",".join(str(round(p.lon, 3)) for p in points),
         "timezone": tz,
-        "hourly": "cloud_cover,cloud_cover_low,cloud_cover_mid",
+        "hourly": "cloud_cover,cloud_cover_low,cloud_cover_mid,precipitation",
         "models": ",".join(models), "forecast_days": 3,
     })
     resp.raise_for_status()
@@ -138,15 +138,17 @@ def fetch_channel_profile(
     profile = []
     for geo, loc in zip(points, locations):
         hourly = loc["hourly"]
-        low = total = mid = None
+        low = total = mid = pr = None
         for i, t in enumerate(hourly["time"]):
             if t == iso_hour:
                 total = _worst(hourly, "cloud_cover", i)
                 low = _worst(hourly, "cloud_cover_low", i)
                 mid = _worst(hourly, "cloud_cover_mid", i)
+                pr = _worst(hourly, "precipitation", i)
                 break
         profile.append(ChannelPoint(dist_km=geo.dist_km, cloud_low=low,
-                                    cloud_total=total, cloud_mid=mid))
+                                    cloud_total=total, cloud_mid=mid,
+                                    precip=pr))
     return profile
 
 
