@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Taro, { usePullDownRefresh } from '@tarojs/taro'
 import { ScrollView, Swiper, SwiperItem, Text, View } from '@tarojs/components'
-import { fetchAqi, fetchHourly, fetchLocal, fetchSummary } from '../../api/client'
-import type { Aqi, EventData, HourItem, LocalResult, Summary } from '../../api/types'
+import { fetchAqi, fetchPhenomena, fetchHourly, fetchLocal, fetchSummary } from '../../api/client'
+import type { Phenomena, Aqi, EventData, HourItem, LocalResult, Summary } from '../../api/types'
 import { themeFor } from '../../theme'
 import Wave from '../../components/Wave'
 import ModelRows from '../../components/ModelRows'
@@ -49,6 +49,7 @@ export default function Index() {
   const [loc, setLoc] = useState<LocalResult | null>(null)
   const [coords, setCoords] = useState(CITY_CENTER)
   const [aqi, setAqi] = useState<Aqi | null>(null)
+  const [phen, setPhen] = useState<Phenomena | null>(null)
   const [hours, setHours] = useState<HourItem[]>([])
 
   const load = useCallback(async (pickDefault = false) => {
@@ -90,6 +91,7 @@ export default function Index() {
   }, [summary, dateIdx, eventKey])  // eslint-disable-line
   useEffect(() => {
     fetchAqi(coords.lat, coords.lon).then(setAqi).catch(() => setAqi(null))
+    fetchPhenomena().then(setPhen).catch(() => setPhen(null))
     fetchHourly(coords.lat, coords.lon).then(r => setHours(r.hours))
       .catch(() => setHours([]))
   }, [coords])
@@ -250,6 +252,40 @@ export default function Index() {
                     </Text>
                   </View>
                 </View>
+
+                {phen && phen.rainbow.level >= 1 && (
+                  <View className='tagblock tb-rainbow'>
+                    <Text className='tag'>彩虹</Text>
+                    <View className='tbd'>
+                      <Text className='tbody'>
+                        {phen.rainbow.label}
+                        {phen.rainbow.level >= 3 && phen.rainbow.antisolar_az !== null
+                          ? ` · 背对夕阳面向 ${Math.round(phen.rainbow.antisolar_az)}° · 虹顶约 ${Math.round(phen.rainbow.bow_top || 0)}°`
+                          : ` · 晚窗 ${phen.rainbow.window}`}
+                        {phen.rainbow.double_potential ? ' · 留意双彩虹' : ''}
+                      </Text>
+                      {phen.rainbow.notes.length > 0 && (
+                        <Text className='tsrc'>{phen.rainbow.notes[0]}</Text>
+                      )}
+                    </View>
+                  </View>
+                )}
+
+                {phen && (
+                  <View className='tagblock tb-sea'>
+                    <Text className='tag'>云海</Text>
+                    <View className='tbd'>
+                      <Text className='tbody'>
+                        {phen.cloudsea.prob >= 30
+                          ? `明晨概率 ${phen.cloudsea.prob}% · ${phen.cloudsea.tier} · 日出 ${phen.cloudsea.sunrise}`
+                          : `明晨概率 ${phen.cloudsea.prob}% · 条件不足`}
+                      </Text>
+                      {phen.cloudsea.notes.length > 0 && (
+                        <Text className='tsrc'>{phen.cloudsea.notes[0]}</Text>
+                      )}
+                    </View>
+                  </View>
+                )}
 
                 <View className='glass-card'>
                   <Text className='card-title'>本报信息</Text>

@@ -333,3 +333,35 @@ def test_satimg_serves_latest_frame(tmp_path):
     assert r.status_code == 200
     assert r.content.endswith(b"NEW")               # 取最新帧
     assert r.headers["x-sat-time"] == "19:00"       # UTC 11:00 → 北京 19:00
+
+
+def test_phenomena_endpoint_shape(tmp_path, monkeypatch):
+    """云海+彩虹端点(2026-07-11):契约与缓存,引擎打桩。"""
+    import skyfire.phenomena as ph
+    calls = {"n": 0}
+
+    def fake_sea(client, lat, lon, tz, day):
+        calls["n"] += 1
+        return {"prob": 62, "tier": "香山档", "gates": {"成雾": 1.0},
+                "notes": ["前日透雨"], "sunrise": "04:55"}
+
+    monkeypatch.setattr(ph, "forecast_cloudsea", fake_sea)
+    monkeypatch.setattr(ph, "forecast_rainbow",
+                        lambda *a, **k: {"level": 1, "label": "潜势日",
+                                         "window": "16:30-19:39",
+                                         "sun_elev": None, "antisolar_az": None,
+                                         "bow_top": None,
+                                         "double_potential": False,
+                                         "notes": []})
+    app, _ = _make_app(tmp_path, _wx_transport())
+    client = TestClient(app)
+    token = client.post("/v1/login", json={"code": "abc"}).json()["token"]
+    r = client.get("/v1/phenomena", headers={"X-Session": token})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["cloudsea"]["prob"] == 62 and d["cloudsea"]["tier"] == "香山档"
+    assert "date" in d["cloudsea"]
+    assert d["rainbow"]["label"] == "潜势日"
+    # 二次请求走缓存,引擎不重算
+    client.get("/v1/phenomena", headers={"X-Session": token})
+    assert calls["n"] == 1

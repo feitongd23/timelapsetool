@@ -201,6 +201,39 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path,
             app.state.ext_cache.pop(("hourly", key), None)
         return {"hours": hours}
 
+    @app.get("/v1/phenomena", dependencies=[Depends(require_session)])
+    def phenomena(city: str = "beijing"):
+        """云海+彩虹(2026-07-11 用户拍板加入小程序)。
+
+        云海=下一个日出的三道门预报;彩虹=当日晚窗雷达(L0-L3)。
+        引擎按规则表配方(fog 三门/rainbow 四例实测),15 分钟缓存。
+        """
+        from datetime import date as date_type
+        from datetime import timedelta as _td
+
+        from skyfire.phenomena import forecast_cloudsea, forecast_rainbow
+        if city not in app.state.cities:
+            raise HTTPException(422, f"未知城市 {city!r}")
+        ct = app.state.cities[city]
+        now = datetime.now(ZoneInfo(ct.timezone))
+        today = date_type.today()
+        # 云海看下一个日出:过了今晨日出就看明晨
+        from skyfire.suntimes import sun_window
+        dawn_today = sun_window(ct.lat, ct.lon, ct.timezone, today,
+                                "sunrise_glow").peak
+        sea_day = today if now < dawn_today else today + _td(days=1)
+        try:
+            data = _cached("phenomena", city, 900, lambda: {
+                "cloudsea": {**forecast_cloudsea(
+                    app.state.ext_client, ct.lat, ct.lon, ct.timezone, sea_day),
+                    "date": str(sea_day)},
+                "rainbow": forecast_rainbow(
+                    app.state.ext_client, ct.lat, ct.lon, ct.timezone, today),
+            })
+        except httpx.HTTPError as e:
+            raise HTTPException(503, f"数据拉取失败: {e.__class__.__name__}")
+        return data
+
     @app.get("/v1/aqi", dependencies=[Depends(require_session)])
     def aqi(lat: float, lon: float, city: str = "beijing"):
         """AQI:美使馆优先,Open-Meteo PM2.5 兜底;随定位与时间。"""

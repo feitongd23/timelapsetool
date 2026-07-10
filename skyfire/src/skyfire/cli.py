@@ -551,6 +551,18 @@ def tick(
                                     rec_outlook = None  # 缺一半照推;本晚不补跑,明日11:00晚霞C1自然补上
                             title, body = format_outlook_report(rec,
                                                                 rec_outlook)
+                            # 明晨云海一并展望(三道门引擎,2026-07-11 上线)
+                            try:
+                                from skyfire.phenomena import forecast_cloudsea
+                                sea = forecast_cloudsea(
+                                    client, c.lat, c.lon, c.timezone,
+                                    win.peak.date())
+                                if sea["prob"] >= 30:
+                                    body += (f"\n明晨云海: 概率{sea['prob']}%"
+                                             f" · {sea['tier']}"
+                                             f" · 日出{sea['sunrise']}")
+                            except (httpx.HTTPError, ValueError):
+                                pass
                             ok = push(title, body, ncfg)
                             mark = "✓" if ok else "✗ 推送失败"
                             typer.echo(f"{mark} {city_key} outlook {title}")
@@ -589,10 +601,42 @@ def tick(
                                f"{e.__class__.__name__}: {e}", err=True)
                     continue  # 单城失败不影响其他(spec 8)
                 break  # 该 event 已按其中一天处理,不再看另一天
+        # 彩虹雷达:晚窗内每 tick 评估,L3 触发即推(一天一次;
+        # 事件级时效,错过窗口就没了——2026-07-11 用户拍板上线)
+        _maybe_rainbow_push(conn, c, city_key, now_local, ncfg)
         # 预测/推送优先用配额;地图(重)放最后,配额紧张时先保推送不被挤掉
         nm = _maybe_refresh_maps(c, city_key)
         if nm:
             typer.echo(f"✓ {city_key} 全国地图已刷新 {nm} 张")
+
+
+def _maybe_rainbow_push(conn, c, city_key: str, now_local, ncfg) -> None:
+    """彩虹 L3 触发推送(best-effort,失败静默;每日至多一条)。"""
+    try:
+        from skyfire.phenomena import forecast_rainbow
+        win = sun_window(c.lat, c.lon, c.timezone, now_local.date(),
+                         "sunset_glow")
+        w_start = win.peak - timedelta(hours=3, minutes=15)
+        if not (w_start <= now_local <= win.peak):
+            return
+        if store.was_pushed(conn, str(now_local.date()), city_key, "rainbow"):
+            return
+        r = forecast_rainbow(_make_client(), c.lat, c.lon, c.timezone,
+                             now_local.date(), now=now_local)
+        if r["level"] < 3:
+            return
+        title = (f"彩虹雷达[触发] 背对夕阳面向{r['antisolar_az']:.0f}°"
+                 f" — {c.name}")
+        lines = [f"虹顶仰角约{r['bow_top']:.0f}°",
+                 f"窗口 {r['window']}(越接近日落虹越高越红)"]
+        if r["double_potential"]:
+            lines.append("反日扇区雨强足,留意双彩虹")
+        lines += r["notes"]
+        if push(title, "\n".join(dict.fromkeys(lines)), ncfg):
+            store.mark_pushed(conn, str(now_local.date()), city_key, "rainbow")
+            typer.echo(f"✓ {city_key} rainbow {title}")
+    except Exception as e:
+        typer.echo(f"· rainbow 评估失败 {e.__class__.__name__}", err=True)
 
 
 @app.command()

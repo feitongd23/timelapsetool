@@ -1,5 +1,5 @@
 import Taro from '@tarojs/taro'
-import type { Aqi, HourItem, LocalResult, Report, Summary } from './types'
+import type { Phenomena, Aqi, HourItem, LocalResult, Report, Summary } from './types'
 
 // 真机与开发者工具都走 Mac 局域网 IP(2026-07-07,192.168.50.80);
 // 换了 WiFi 网段要同步改(ipconfig getifaddr en0 查)
@@ -60,6 +60,10 @@ export function fetchHourly(lat: number, lon: number): Promise<{ hours: HourItem
 
 export function fetchAqi(lat: number, lon: number): Promise<Aqi> {
   return authedGet(`/v1/aqi?lat=${lat}&lon=${lon}`)
+}
+
+export function fetchPhenomena(city = 'beijing'): Promise<Phenomena> {
+  return authedGet<Phenomena>(`/v1/phenomena?city=${city}`)
 }
 
 export function fetchReport(id: number): Promise<Report> {

@@ -97,3 +97,12 @@ export interface Report {
   created_at: string
   per_model: Record<string, PerModel>
 }
+
+export interface Phenomena {
+  cloudsea: { prob: number; tier: string; sunrise: string; date: string
+              notes: string[] }
+  rainbow: { level: number; label: string; window: string
+             sun_elev: number | null; antisolar_az: number | null
+             bow_top: number | null; double_potential: boolean
+             notes: string[] }
+}

@@ -119,6 +119,12 @@ page { height: 100%; }
 .tb-air .tag { background: #b3985a; }
 .tb-air .tbody { color: #77653a; }
 .tb-ai .tag { background: #8f84b0; }
+.tb-rainbow { background: rgba(228, 236, 240, .55); border-color: rgba(106, 150, 181, .4); }
+.tb-rainbow .tag { background: #6a96b5; }
+.tb-rainbow .tbody { color: #3f5e75; }
+.tb-sea { background: rgba(226, 236, 233, .55); border-color: rgba(110, 160, 146, .4); }
+.tb-sea .tag { background: #6ea092; }
+.tb-sea .tbody { color: #3f6157; }
 .tb-ai .tbody { color: #413a46; font-size: 25rpx; line-height: 1.6; }
 
 /* 本报信息:标题/项目名加粗,内容常规、更小 */
