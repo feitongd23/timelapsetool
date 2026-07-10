@@ -16,7 +16,8 @@ from skyfire.checkpoints import gate_exceeded
 from skyfire.cloudiness import box_cloudiness, box_stats
 from skyfire.config import City
 from skyfire.consensus import consensus, detect_split
-from skyfire.drift import estimate_shift, projected_box_cloudiness
+from skyfire.drift import (RESPONSE_FLOOR, estimate_shift_quality,
+                           projected_box_cloudiness)
 from skyfire.geo import channel_points
 from skyfire.himawari_hsd import (
     CROP_BBOX,
@@ -208,9 +209,13 @@ def observe_burn_clouds(client, peak_utc, event: str, lat: float, lon: float,
         frames_ahead = max(0.0, (peak_utc - ts1).total_seconds() / 600)
         if dats0:
             f0 = load_b13_region(dats0, CROP_BBOX, lat, lon)
-            shift = estimate_shift(f0.gray, f1.gray)
+            dy, dx, resp = estimate_shift_quality(f0.gray, f1.gray)
+            shift = (dy, dx)
         else:
-            shift = (0, 0)
+            shift, resp = (0.0, 0.0), None
+        # 峰质量门控(规则 nowcast-phasecorr-response-gate):碎峰=多层云
+        # 各向异动/原地生消/纹理弱的指纹,矢量不可信 → 外推降级
+        extrap_ok = resp is None or resp >= RESPONSE_FLOOR
         burn_pct = projected_box_cloudiness(f1.gray, f1.center_px, shift,
                                             round(frames_ahead), half=40)
         az = azimuth_deg if azimuth_deg is not None else (
@@ -253,12 +258,17 @@ def observe_burn_clouds(client, peak_utc, event: str, lat: float, lon: float,
         elif upstream_overcast and burn_pct <= now_pct + 5:
             trend = (f"现在{now_pct:.0f}%,但光路上游100-300km连续云盖压境,"
                      f"届时云量大概率上行,外推值{burn_pct:.0f}%仅供下限参考")
+        elif not extrap_ok:
+            trend = (f"现在{now_pct:.0f}%;位移估计峰质量低(多层云异动或"
+                     f"原地生消),外推不可信,届时云量按现值加大不确定看待")
         else:
             trend = f"现在{now_pct:.0f}% → 届时约{burn_pct:.0f}%"
         meta = {"overcast": overcast, "lid": stats["lid"],
                 "max_bt": stats["max_bt"], "mean_bt": stats["mean_bt"],
                 "raw_pct": stats["pct"], "upstream_overcast": upstream_overcast,
                 "visible_attached": vis_attached,
+                "shift_response": None if resp is None else round(resp, 4),
+                "extrap_trusted": extrap_ok,
                 "frame_time": ts1.isoformat(timespec="minutes")}
         return round(now_pct, 1), round(burn_pct, 1), trend, frames, meta
     except (httpx.HTTPError, OSError):
@@ -467,7 +477,10 @@ def _factor_sheet(r: PredictionResult, checkpoint: str,
         f.append({"name": "外推纪律", "status": "远期",
                   "note": "距峰值数小时,实况外推不入基线,以预报为底"})
     elif trend:
-        f.append({"name": "外推纪律", "status": "临近", "note": trend})
+        status = "临近"
+        if sat_meta and not sat_meta.get("extrap_trusted", True):
+            status = "外推不可信"
+        f.append({"name": "外推纪律", "status": status, "note": trend})
     return f
 
 

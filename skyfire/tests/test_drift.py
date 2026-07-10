@@ -52,3 +52,25 @@ def test_projected_box_cloudiness_samples_upstream():
     assert val > 80
     # 不外推(0 帧)→ center 现在没云
     assert projected_box_cloudiness(gray, center, (0, 10), 0, half=8) < 10
+
+
+def test_estimate_shift_quality_subpixel_and_response():
+    """正规化位移估计(2026-07-10 文献扩展):亚像素+峰质量。
+
+    整像素 argmax 对 <1px/帧位移必返回 0(7/9 压境云系被量化成零位移的根因);
+    亚像素质心至少要能在 1-2px 真位移下给出接近真值、单峰 response 显著。
+    """
+    import numpy as np
+    from skyfire.drift import RESPONSE_FLOOR, estimate_shift_quality
+    rng = np.random.default_rng(7)
+    base = (rng.random((120, 160)) * 255).astype(np.uint8)
+    import scipy.ndimage as ndi
+    curr = np.roll(np.roll(base, 2, axis=0), -3, axis=1)
+    dy, dx, resp = estimate_shift_quality(base, curr)
+    assert abs(dy - 2) < 0.5 and abs(dx + 3) < 0.5
+    assert resp > RESPONSE_FLOOR
+
+    # 纯噪声两帧(无相关结构)→ 峰质量应显著低于强单峰情形
+    other = (rng.random((120, 160)) * 255).astype(np.uint8)
+    _, _, resp_noise = estimate_shift_quality(base, other)
+    assert resp_noise < resp
