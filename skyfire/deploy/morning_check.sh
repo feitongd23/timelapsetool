@@ -13,5 +13,7 @@ DB=/Users/feitong/photo-app/skyfire/data/skyfire.db
   echo "[地图文件] $(ls /Users/feitong/photo-app/skyfire/data/maps/ 2>/dev/null | wc -l | tr -d ' ') 张"
   echo "[今日预测] 最近5条:"
   sqlite3 "$DB" "SELECT datetime(created_at,'+8 hours'), event, checkpoint, probability_pct||'/'||quality_pct FROM predictions WHERE date>=date('now') ORDER BY id DESC LIMIT 5" 2>/dev/null
+  echo "[对表] sunsetbot 当日图存档:"
+  /Users/feitong/photo-app/skyfire/deploy/archive_sunsetbot.sh 2>&1 | tail -2
   echo ""
 } >> "$LOG" 2>&1
