@@ -146,16 +146,39 @@ def rh_to_cloud(rh: np.ndarray, crit: float) -> np.ndarray:
     return np.clip((rh - crit) / (100.0 - crit), 0.0, 1.0) * 100.0
 
 
+def anchor_layers_to_tcc(out: dict, tcc_pct: np.ndarray) -> dict:
+    """官方总云量锚定:RH 反演只管垂直分层,总量必须服从 ECMWF 自家 tcc。
+
+    2026-07-10 用户拿 Windy 实锤:青岛/上海官方总云 1-2%,RH 反演却画出
+    40-60% 假云带(湿层深厚≠成云;北京单点定标撑不住全国)。
+    逐格缩放:ratio = tcc / max(高中低),上限 1.5(轻度低估允许放大),
+    官方≈0 处一律归零。
+    """
+    total = np.maximum.reduce([out["high"], out["mid"], out["low"]])
+    ratio = np.where(total > 1.0,
+                     np.clip(tcc_pct / np.maximum(total, 1e-6), 0.0, 1.5),
+                     1.0)
+    for k in ("high", "mid", "low"):
+        out[k] = np.clip(out[k] * ratio, 0.0, 100.0)
+    return out
+
+
 def fetch_ec_china(run: datetime, step: int) -> dict | None:
-    """EC 开放数据一个步长的中国区云场(分层云由气压层 RH 推算)。"""
+    """EC 开放数据一个步长的中国区云场。
+
+    分层云由气压层 RH 推算,总量用官方 tcc 锚定(见 anchor_layers_to_tcc)。
+    """
     c = _ec_client()
     levels = sorted({lv for lvs in _EC_LEVELS.values() for lv in lvs})
     with tempfile.TemporaryDirectory() as td:
         rh_path = f"{td}/r.grib2"
+        tcc_path = f"{td}/tcc.grib2"
         try:
             c.retrieve(date=run.strftime("%Y-%m-%d"), time=run.hour,
                        type="fc", step=step, param="r",
                        levelist=levels, target=rh_path)
+            c.retrieve(date=run.strftime("%Y-%m-%d"), time=run.hour,
+                       type="fc", step=step, param="tcc", target=tcc_path)
         except Exception:
             return None
         rh_by_level = _rh_fields_by_level(rh_path)
@@ -169,6 +192,11 @@ def fetch_ec_china(run: datetime, step: int) -> dict | None:
                 return None
             out[{"low": "low", "mid": "mid", "high": "high"}[layer]] = \
                 np.maximum.reduce(clouds)
+        tcc = _decode_grib(tcc_path).get("tcc")
+        if tcc is None:
+            return None   # 没有官方总量锚,宁缺毋滥(假云带教训)
+        tcc_pct = tcc * 100.0 if np.nanmax(tcc) <= 1.001 else tcc
+        out = anchor_layers_to_tcc(out, tcc_pct)
         out["precip"] = _ec_precip(c, run, step, td)
     return out
 

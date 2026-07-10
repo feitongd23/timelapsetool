@@ -119,3 +119,16 @@ def test_refresh_probe_failure_reports_absent_model(tmp_path, fake_fields, monke
     monkeypatch.setattr(gribmaps, "latest_ec_run", lambda: None)
     written = gribmaps.refresh_grib_maps(BJ, "beijing", tmp_path)
     assert "ec" not in written and written.get("gfs", 0) > 0
+
+
+def test_anchor_layers_to_tcc():
+    """官方总云量锚定(2026-07-10 用户Windy实锤:青岛官方2%,RH反演画出假云带)。"""
+    out = {"high": np.full((2, 2), 55.0), "mid": np.full((2, 2), 30.0),
+           "low": np.zeros((2, 2))}
+    # 官方 tcc:左上 2%(假云带须塌掉),右下 80%(轻度低估允许放大,上限1.5)
+    tcc = np.array([[2.0, 55.0], [55.0, 80.0]])
+    r = gribmaps.anchor_layers_to_tcc(out, tcc)
+    assert abs(r["high"][0, 0] - 2.0) < 0.1          # 55 → 2:假云带塌回官方值
+    assert abs(r["high"][0, 1] - 55.0) < 0.1         # 官方=反演:不动
+    assert abs(r["high"][1, 1] - 80.0) < 0.1         # 80/55=1.45 倍放大(未触1.5顶)
+    assert abs(r["mid"][0, 0] - 2.0 * 30 / 55) < 0.1  # 分层按同比例缩放

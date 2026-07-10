@@ -58,6 +58,9 @@ sunsetbot/李召麒/北京市气象局官方成因/PlanIt云层距离/US10459119
   来源: 李梦《浅谈卫星云图在气象观测业务中的应用现状》工程技术发展2023, DOI:10.12238/etd.v4i1.6341(文章页已直连验证存在)
 ## 云结构与画布
 
+- sat-ec-rh-needs-tcc-anchor [hard·P0] EC开放数据RH反演分层云必须用官方tcc总量锚定,禁止裸用:湿层深厚≠成云,RH反演在黄海类湿区凭空画出40-60%假云带(2026-07-10用户拿Windy实锤:青岛/上海官方总云1-2%,我们的EC质量图却给出高分红带,险些发布);北京单点定标撑不住全国。已落码 gribmaps.anchor_layers_to_tcc(逐格ratio=tcc/max(层),上限1.5,官方≈0一律归零,tcc缺失宁缺毋滥返None)。锚定后上海反演1%=Windy 1%。
+  来源: 用户2026-07-10 Windy对照实锤; ECMWF开放数据tcc字段; gribmaps.py
+
 - cloud-canvas-gate-min15 [hard·P0] 画布是硬门槛:燃烧时刻云量<15等于没画布,质量与概率都封顶20;中高云覆盖<20%(万里无云/只剩大云洞)直接判不烧。
   来源: 合并: canvas-required-veto / cloud-below-15-cap-20 — src/skyfire/percent.py:24-25,33-35; knowledge §2-B/§3.2 | 阈值: 15封顶20;中高云<20%否
 - cloud-amount-inverted-u [hard·P1] 云量与质量呈倒U:30-70甜区质量+10概率+15;15-30画布偏薄按0.6→1.0线性折减;>90闷盖风险质量×0.75概率封顶20。⚠冲突: percent.py现行>90折减无高云豁免 vs 高云满盖是画布——裁决:>90折减仅对中低云主导(blocker>30)生效,纯高云满盖豁免。
