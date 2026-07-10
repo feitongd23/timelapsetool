@@ -41,12 +41,20 @@ def clear_bt_floor(month: int) -> float | None:
 
 
 def box_stats(gray: np.ndarray, center: tuple[int, int], half: int = 30,
-              month: int | None = None) -> dict | None:
+              month: int | None = None, clear_ref_k: float | None = None,
+              raining: bool = False) -> dict | None:
     """窗内实况统计:线性云量代理 + 满盖判定(红外暖顶陷阱的强制检查)。
 
-    返回 {"pct","max_bt","mean_bt","overcast"};窗越界返回 None。
-    overcast=True 表示窗内无一晴像元——此时 pct 语义已失真,调用方必须
-    按 ≥90 满盖处理,禁止把 pct 当云量喂进打分(2026-06-26 教训的代码化)。
+    返回 {"pct","max_bt","mean_bt","overcast","lid","floor"};窗越界返回 None。
+    overcast=True 表示窗内无一晴像元——此时 pct 语义已失真;lid=True 时调用方
+    必须按 ≥90 满盖处理,禁止把 pct 当云量喂进打分(2026-06-26 教训的代码化)。
+
+    晴空地板优先用动态参照 clear_ref_k(模式 2 米气温 K)−6K:固定季节常数
+    "从不全局成立"(GOES-R/JMA ATBD 口径)——292K 连 7/9(最暖 294.4K)和
+    7/10(293.2K,用户目视全阴)都拦不住;−6K 由两案例标定(需 <6.8K)。
+    动态参照仅在 ≥278K(无雪面风险)时启用,否则退回季节常数。
+    lid 判定:满盖且(暖顶均温>252K 或 正在/刚降水)——冷顶满盖默认是卷云幕
+    画布(护 7/7),但降水中的冷顶雨云盖同样是盖子(7/10 用户目视纠正)。
     """
     cx, cy = center
     x0, x1 = max(cx - half, 0), min(cx + half, gray.shape[1])
@@ -57,16 +65,15 @@ def box_stats(gray: np.ndarray, center: tuple[int, int], half: int = 30,
     pct = float(box.mean() / 255.0 * 100.0)
     max_bt = gray_to_bt(float(box.min()))    # gray 越小越暖
     mean_bt = gray_to_bt(float(box.mean()))
-    overcast = False
-    if month is not None:
-        floor = clear_bt_floor(month)
-        overcast = floor is not None and max_bt < floor
-    # lid=满盖且暖顶(均温>252K=中低云盖子,规则 cloud-midlow-full-cover-is-lid);
-    # 满盖但极冷(卷云幕)是画布不是盖子——冷幕若也强制按 92 闷盖处理,
-    # 就会经卫星路径重演 7/7 的"高云满盖被当阴天"(规则 cloud-high-canvas-never-zero)
-    lid = overcast and mean_bt > 252.0
+    if clear_ref_k is not None and clear_ref_k >= 278.0:
+        floor = clear_ref_k - 6.0
+    else:
+        floor = clear_bt_floor(month) if month is not None else None
+    overcast = floor is not None and max_bt < floor
+    lid = overcast and (mean_bt > 252.0 or raining)
     return {"pct": round(pct, 1), "max_bt": round(max_bt, 1),
-            "mean_bt": round(mean_bt, 1), "overcast": overcast, "lid": lid}
+            "mean_bt": round(mean_bt, 1), "overcast": overcast, "lid": lid,
+            "floor": None if floor is None else round(floor, 1)}
 
 
 def corridor_centers(origin: tuple[int, int], azimuth_deg: float,

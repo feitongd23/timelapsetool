@@ -19,7 +19,7 @@ sunsetbot/李召麒/北京市气象局官方成因/PlanIt云层距离/US10459119
 
 - sat-ir-brightness-not-amount [hard·P0] 云的量/厚/高三维必须分通道读:量=卫星覆盖比例(面积占比)、厚=可见光反射率、高=红外亮温;禁止用B13红外亮度均值推算云量或厚度(红外白只等于冷/高,薄卷云照样白)。
   来源: 合并: ir-brightness-not-cloud-amount / infrared-dimension-discipline / ir-brightness-not-amount — knowledge §3.2要点③/§3.8; 2026-06-26红外陷阱(2分)用户血泪教训; 2026-07-09漏报根因①
-- sat-warm-top-full-cover-detect [hard·P0] 红外判读窗内最暖亮温<292K说明无晴天像元→判满盖(暖顶),box_cloudiness强制按≥90处理;暖顶(约280-290K)中低云在红外近乎隐形,7/9曾把满盖读成34%。
+- sat-warm-top-full-cover-detect [hard·P0] 红外判读窗内最暖亮温低于动态晴空地板(模式2米气温−6K,参照<278K雪面风险时退回季节常数,冬停用)=无晴像元→满盖;盖子判定=满盖且(暖顶均温>252K 或 正在/刚降水的冷顶雨云),盖子按≥92处理;非降水冷卷云幕满盖=画布豁免。固定292K常数已废(7/9最暖294.4K、7/10最暖293.2K两案例都漏,用户两次目视全阴实锤;−6K由两案例标定)。
   来源: 合并: ir-full-cover-warm-top-detection / warm-top-cloud-ir-underestimate / b13-warm-top-underread — 2026-07-09漏报根因①(报52/48实际0分); knowledge §5.6; 用户拍板2026-07-10; 2026-07-05待办d | 阈值: 292K强制≥90;暖顶段280-290K
 - sat-ir-vis-divergence-take-higher [hard·P0] B13红外云量与VIS/云掩膜/预报中低云量背离超30个百分点时以高值为准,标注暖顶中云陷阱,并置位冲突标志触发双情景推送。
   来源: 合并: ir-warm-midcloud-trap / b13-warm-top-underread交叉验证段 — 2026-07-09(34% vs 满盖实况); 2026-06-26红外陷阱; MEMORY skyfire-coldstart-progress.md | 阈值: 30pp

@@ -54,6 +54,9 @@ class PredictionResult:
     llm: LlmResult | None
     # 各模式燃烧时刻原始预报(喂 LLM 看分歧;值可为 None)
     per_model_raw: dict[str, dict] = field(default_factory=dict)
+    # 当前时刻的模式中位数(卫星满盖检测的动态晴空参照 + 雨云盖判定)
+    t2m_now: float | None = None      # 2米气温 °C
+    precip_now: float | None = None   # 当前小时降水 mm
 
 
 def compute_prediction(conn, client: httpx.Client, city: City, city_key: str,
@@ -87,6 +90,23 @@ def compute_prediction(conn, client: httpx.Client, city: City, city_key: str,
         details[fc.model] = r
     if not per_model:
         raise ValueError("所有模式数据缺失")
+
+    # 当前时刻的 2 米气温/降水(模式中位数):卫星满盖检测的动态晴空参照
+    # 与冷顶雨云盖判定用(2026-07-10 用户目视纠正:刚下完大雨全阴,
+    # 固定 292K 地板差 1.2K 漏判 + 冷盖豁免被雨云钻空)
+    iso_now = datetime.now(ZoneInfo(city.timezone)).strftime("%Y-%m-%dT%H:00")
+    t2m_vals, pr_vals = [], []
+    for fc in forecasts:
+        hn = fc.at(iso_now)
+        if hn is None:
+            continue
+        if hn.temperature is not None:
+            t2m_vals.append(hn.temperature)
+        if hn.precipitation is not None:
+            pr_vals.append(hn.precipitation)
+    from statistics import median as _median
+    t2m_now = round(_median(t2m_vals), 1) if t2m_vals else None
+    precip_now = round(_median(pr_vals), 2) if pr_vals else None
 
     # 模式置信账本(skyfire modelskill 维护):样本攒够 → 按历史准确度加权
     skill_rows = store.get_model_skill(conn)
@@ -137,7 +157,8 @@ def compute_prediction(conn, client: httpx.Client, city: City, city_key: str,
         confidence=cons.confidence, spread=cons.spread, per_model=cons.per_model,
         blocked_points=first.blocked_points, channel_factor=first.channel_factor,
         aod=aod, channel_empty=channel_empty, peak=win.peak, azimuth=win.azimuth_deg,
-        llm=llm_result, per_model_raw=per_model_raw)
+        llm=llm_result, per_model_raw=per_model_raw,
+        t2m_now=t2m_now, precip_now=precip_now)
 
 
 def score_location(client: httpx.Client, lat: float, lon: float, tz: str,
@@ -175,6 +196,8 @@ def score_location(client: httpx.Client, lat: float, lon: float, tz: str,
 
 def observe_burn_clouds(client, peak_utc, event: str, lat: float, lon: float,
                         frames_dir: Path, azimuth_deg: float | None = None,
+                        clear_ref_c: float | None = None,
+                        raining_now: bool = False,
                         ) -> tuple[float | None, float | None, str | None,
                                    list[Path], dict | None]:
     """实况层:当前实测云量、外推到燃烧时刻云量、趋势文本、判读图、实况元信息。
@@ -200,7 +223,9 @@ def observe_burn_clouds(client, peak_utc, event: str, lat: float, lon: float,
             return None, None, None, [], None
         f1 = load_b13_region(dats1, CROP_BBOX, lat, lon)
         month = peak_utc.astimezone(timezone.utc).month
-        stats = box_stats(f1.gray, f1.center_px, half=40, month=month)
+        ref_k = None if clear_ref_c is None else clear_ref_c + 273.15
+        stats = box_stats(f1.gray, f1.center_px, half=40, month=month,
+                          clear_ref_k=ref_k, raining=raining_now)
         if stats is None:
             return None, None, None, [], None
         now_pct = stats["pct"]
@@ -221,7 +246,7 @@ def observe_burn_clouds(client, peak_utc, event: str, lat: float, lon: float,
         az = azimuth_deg if azimuth_deg is not None else (
             270.0 if event == "sunset_glow" else 90.0)
         # 光路上游平流检查:100-300km 三点窗满盖 → 云系正压向光路
-        upstream_overcast = _upstream_overcast(f1, az, month)
+        upstream_overcast = _upstream_overcast(f1, az, month, ref_k, raining_now)
         png = Path(frames_dir) / "live" / f"live_{ts1:%Y%m%d_%H%M}.png"
         render_annotated(dats1, "B13", CROP_BBOX, png, lat=lat, lon=lon,
                          azimuth_deg=az)
@@ -245,13 +270,21 @@ def observe_burn_clouds(client, peak_utc, event: str, lat: float, lon: float,
         except Exception:
             pass
         overcast = stats["overcast"]
+        # 物理常识保险:观测点正在降水=头顶必然满盖,当前读数强制≥90
+        # (动态地板 7/10 实测只赢 0.2K,不能只靠亮温一道闸);
+        # 届时值不在此强制——雨可能停,交给 lid/外推/权重梯度处理
+        if raining_now:
+            now_pct = max(now_pct, 90.0)
         if stats["lid"]:
-            # 暖顶盖子才强制 92;冷卷云幕满盖是画布,线性读数(50-70%)本身合理
+            # 盖子(暖顶中低云,或降水中的冷顶雨云)强制 92;
+            # 非降水的冷卷云幕满盖是画布,线性读数(50-70%)本身合理
             now_pct = max(now_pct, 92.0)
             burn_pct = max(burn_pct, 92.0)
-            trend = (f"红外读数{stats['pct']:.0f}%,但窗内无晴像元且为暖顶"
-                     f"(最暖{stats['max_bt']:.0f}K 均温{stats['mean_bt']:.0f}K)"
-                     f"=中低云盖子,按{now_pct:.0f}%满盖处理")
+            kind = "降水冷顶雨云盖" if (raining_now
+                                        and stats["mean_bt"] <= 252) else "暖顶中低云盖"
+            trend = (f"红外读数{stats['pct']:.0f}%,但窗内无晴像元"
+                     f"(最暖{stats['max_bt']:.0f}K<晴空地板{stats['floor']}K,"
+                     f"均温{stats['mean_bt']:.0f}K)={kind},按{now_pct:.0f}%满盖处理")
         elif overcast:
             trend = (f"满盖冷云幕(最暖{stats['max_bt']:.0f}K):高云画布形态,"
                      f"现在{now_pct:.0f}% → 届时约{burn_pct:.0f}%")
@@ -275,8 +308,10 @@ def observe_burn_clouds(client, peak_utc, event: str, lat: float, lon: float,
         return None, None, None, [], None
 
 
-def _upstream_overcast(frame, azimuth_deg: float, month: int) -> bool:
-    """光路上游 100/200/300km 三窗是否全满盖(平流压境预警)。
+def _upstream_overcast(frame, azimuth_deg: float, month: int,
+                       clear_ref_k: float | None = None,
+                       raining_now: bool = False) -> bool:
+    """光路上游 100/200/300km 三窗是否全为盖子(平流压境预警)。
 
     像素尺度按帧几何近似(北京纬度 B13 斜视:东西≈2.4km/px、南北≈3.2km/px,
     2026-07-09 复盘实测;旧名义值 2.0 低估 20-60%)。
@@ -290,8 +325,9 @@ def _upstream_overcast(frame, azimuth_deg: float, month: int) -> bool:
     for dist in (100, 200, 300):
         px = round(cx + math.sin(rad) * dist / km_x)
         py = round(cy - math.cos(rad) * dist / km_y)
-        s = _bs(frame.gray, (px, py), half=20, month=month)
-        if s is not None and s["lid"]:   # 暖顶云墙压境才算;冷卷云幕是画布不预警
+        s = _bs(frame.gray, (px, py), half=20, month=month,
+                clear_ref_k=clear_ref_k, raining=raining_now)
+        if s is not None and s["lid"]:   # 云墙压境才算;冷卷云幕是画布不预警
             hits += 1
     return hits == 3
 
@@ -310,7 +346,8 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
     peak_utc = r.peak.astimezone(timezone.utc)
     sat_now, burn_pct, trend, live_frames, sat_meta = observe_burn_clouds(
         client, peak_utc, event, city.lat, city.lon, frames_dir,
-        azimuth_deg=r.azimuth)
+        azimuth_deg=r.azimuth, clear_ref_c=r.t2m_now,
+        raining_now=(r.precip_now or 0) > 0.2)
     # 实况权重梯度(用户 2026-07-10 拍板):远期>3h 实况外推可参考但主认定
     # =四模式预测云图(权重0.3);T-2/T-1 必须强制结合实时云图+预测云图
     # (0.5/0.6,谁都不许单干);峰质量低时外推降权不禁用。
