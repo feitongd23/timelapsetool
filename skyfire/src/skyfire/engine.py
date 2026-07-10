@@ -496,7 +496,8 @@ def _factor_sheet(r: PredictionResult, w_sat: float, hours_pre: float,
         f.append({"name": "透光通道", "status": "缺失",
                   "note": "通道剖面无数据,置信度打折"})
     else:
-        f.append({"name": "透光通道", "status": "正常",
+        ch_status = "受阻" if r.channel_factor <= 0.5 else "正常"
+        f.append({"name": "透光通道", "status": ch_status,
                   "note": f"{r.blocked_points}点受阻(低云>60或中云>70),"
                           f"系数{r.channel_factor}"})
     # 模式分歧
