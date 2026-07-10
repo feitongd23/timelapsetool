@@ -24,6 +24,39 @@ def cjk_font(size: int):
     return ImageFont.load_default()
 
 
+BRAND = "afterglow · 霞客"   # 产品正式命名(用户 2026-07-10 拍板)
+
+
+def draw_watermark(img, text: str = BRAND, *, alpha: int = 84,
+                   angle: float = 30.0, step_x: int = 158, step_y: int = 82):
+    """密集斜排半透明品牌水印(用户 2026-07-10:渲染图必须带)。
+
+    独立 RGBA 层平铺→整层旋转→合成:密度靠 step 网格(隔行错位半格)。
+    双色描边(浅衬+深字)保证在莫兰迪中间调色块上也可辨,又不遮数据。
+    返回 RGB 图。
+    """
+    from PIL import Image
+
+    base = img.convert("RGBA")
+    w, h = base.size
+    # 旋转后仍要盖满:先铺一个对角线尺寸的大层
+    diag = int((w * w + h * h) ** 0.5) + step_x
+    layer = Image.new("RGBA", (diag, diag), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    f = cjk_font(18)
+    row = 0
+    for y in range(0, diag, step_y):
+        x0 = -(step_x // 2) if row % 2 else 0
+        for x in range(x0, diag, step_x):
+            d.text((x + 1, y + 1), text, fill=(255, 255, 255, alpha - 30), font=f)
+            d.text((x, y), text, fill=(110, 58, 63, alpha), font=f)   # 品牌深酒红
+        row += 1
+    layer = layer.rotate(angle, expand=False)
+    ox, oy = (diag - w) // 2, (diag - h) // 2
+    layer = layer.crop((ox, oy, ox + w, oy + h))
+    return Image.alpha_composite(base, layer).convert("RGB")
+
+
 def marker_xy(area, lat: float, lon: float) -> tuple[int, int]:
     """经纬度 → 裁剪图内 (col, row) 像素索引。"""
     col, row = area.get_array_indices_from_lonlat(lon, lat)

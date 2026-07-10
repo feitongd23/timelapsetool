@@ -15,11 +15,12 @@ from skyfire.scoring.firecloud import FireCloudInputs, fire_cloud_score
 _CORRIDOR_KM = (50, 100, 200, 300, 400)   # 通道采样距离(含近程点,与点预测一致)
 
 _SCALE = 48                       # 13x9 格 → 624x432 px
+# 莫兰迪色系(与 heatmap_map._BANDS 同族;用户 2026-07-10)
 _STOPS = {
-    "prob": [(0xFA, 0xEE, 0xDA), (0xFA, 0xC7, 0x75), (0xEF, 0x9F, 0x27),
-             (0xBA, 0x75, 0x17), (0xE2, 0x4B, 0x4A)],
-    "quality": [(0xEE, 0xED, 0xFE), (0xCE, 0xCB, 0xF6), (0xAF, 0xA9, 0xEC),
-                (0x7F, 0x77, 0xDD), (0x53, 0x4A, 0xB7)],
+    "prob": [(243, 240, 234), (226, 213, 192), (203, 169, 135),
+             (178, 124, 101), (143, 74, 68)],
+    "quality": [(240, 238, 242), (214, 205, 220), (180, 155, 178),
+                (141, 96, 111), (110, 58, 63)],
 }
 
 
@@ -137,6 +138,8 @@ def render_heatmap_png(values: list[list[int]], kind: str,
         y, x = (marker_rc[0] + 0.5) * _SCALE, (marker_rc[1] + 0.5) * _SCALE
         d.ellipse([x - 7, y - 7, x + 7, y + 7], outline=(28, 39, 51), width=3)
         d.ellipse([x - 2, y - 2, x + 2, y + 2], fill=(28, 39, 51))
+    from skyfire.overlay import draw_watermark
+    img = draw_watermark(img)   # afterglow·霞客 品牌水印
     buf = BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
