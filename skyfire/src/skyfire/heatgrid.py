@@ -13,6 +13,11 @@ from skyfire.percent import baseline_percent
 from skyfire.scoring.firecloud import FireCloudInputs, fire_cloud_score
 
 _CORRIDOR_KM = (50, 100, 200, 300, 400)   # 通道采样距离(含近程点,与点预测一致)
+# 受光带扫描距离:高云画布必须在此范围内有西(日照方向)缘才被点亮
+# (2026-07-10 用户实锤:整片铺到天边的100%高云幕内部无光,烧不了;
+# 文献 channel-length-by-canvas-height:高云画布须查到500-829km)
+_LIT_KM = (300, 450, 600, 800)
+_LIT_FACTOR = {300: 1.0, 450: 1.0, 600: 0.6, 800: 0.35, None: 0.2}
 
 _SCALE = 48                       # 13x9 格 → 624x432 px
 # 莫兰迪色系(与 heatmap_map._BANDS 同族;用户 2026-07-10)
@@ -79,6 +84,25 @@ def _corridor_points(low, mid, bbox, lon, lat, azimuth_deg: float):
     return pts
 
 
+def lit_factor(high, mid, bbox, lon, lat, azimuth_deg: float) -> float:
+    """高云画布受光系数:沿太阳方位扫 300-800km,找云盖(高或中≥85%)的边缘。
+
+    画布被点燃的光来自其日照侧边缘底下——边缘越近越亮,800km 内无边=内部
+    无光(×0.2)。越界(扫出网格)按有边处理,不惩罚地图西边界。
+    """
+    rad = math.radians(azimuth_deg)
+    for dkm in _LIT_KM:
+        slat = lat + dkm * math.cos(rad) / 111.0
+        slon = lon + dkm * math.sin(rad) / (111.0 * max(0.2, math.cos(math.radians(lat))))
+        h = _sample_grid(high, bbox, slon, slat)
+        if h is None:
+            return _LIT_FACTOR[dkm]          # 扫出网格:按此处即有边处理
+        m = _sample_grid(mid, bbox, slon, slat) if mid else 0
+        if max(h or 0, m or 0) < 85:
+            return _LIT_FACTOR[dkm]          # 找到边缘:据边距定亮度
+    return _LIT_FACTOR[None]
+
+
 def score_grids_physics(cloud: dict, aod_grid, event: str, bbox,
                         confidence: str,
                         azimuth_by_row: list[float] | None = None,
@@ -111,6 +135,11 @@ def score_grids_physics(cloud: dict, aod_grid, event: str, bbox,
                 cloud_high=h, cloud_mid=mid[r][c] or 0, cloud_low=low[r][c] or 0,
                 precipitation=p, aod=aod,
                 channel=_corridor_points(low, mid, bbox, lon, lat, az))).score
+            # 受光带:本格处于≥85%连续云盖之下时,画布必须在日照方向
+            # 300-800km 内有边缘才被点亮(2026-07-10 上海100%高云幕质量64的
+            # 反面教材——满盖是画布,但只有靠近西缘的画布会亮)
+            if (h or 0) >= 85 or ((h or 0) + (mid[r][c] or 0)) >= 95:
+                score *= lit_factor(high, mid, bbox, lon, lat, az)
             total = min(100.0, (h or 0) + (mid[r][c] or 0) + (low[r][c] or 0))
             prob[r][c], quality[r][c] = baseline_percent(score, confidence, None, total)
     return {"prob": prob, "quality": quality}
