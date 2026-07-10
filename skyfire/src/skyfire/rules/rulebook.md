@@ -187,9 +187,9 @@ sunsetbot/李召麒/北京市气象局官方成因/PlanIt云层距离/US10459119
 
 ## 时间维与数据新鲜度
 
-- fresh-near-satellite-first [hard·P0] 临近窗口燃烧时刻云况以卫星实测/移速外推为准覆盖预报,预报数字只作结构与趋势参考(EC/GFS曾报100%实测25%错4倍)。⚠时窗冲突: 知识库≤2h vs 实现/用户口径≤3h——裁决:≤3h启用实测覆盖,≤2h为强约束。
+- fresh-near-satellite-first [hard·P0] T-2/T-1 检查点必须强制结合实时云图+四模式预测云图,两者并用谁都不许单干(基线权重:T-2 实况0.5、T-1 实况0.6);实况读数被标满盖修正/外推不可信时按修正后口径用。用户口径2026-07-10改写(原'临近以卫星为准覆盖预报'在7/9被误读卫星反噬)。
   来源: 合并: canvas-satellite-over-forecast / cloud-amount-satellite-first / burn-time-cloud-satellite-when-near — 用户口径2026-06-26血泪教训+2026-07-09"必须卫星实测"; knowledge §3.2要点②; src/skyfire/llm.py:104-105 | 阈值: ≤3h启用(≤2h强约束)
-- fresh-far-forecast-only [hard·P0] 距燃烧>3h(含c1/outlook 20+小时)禁止拿当前卫星实测或短时外推冒充届时云况——雨系未到不等于届时无云;基线只用多模式预报(cloud_args置空),实测/外推仅作趋势参考;同时禁因"预报不可信"弃用预报,预报是未来时刻唯一前瞻工具。
+- fresh-far-forecast-only [hard·P0] 距燃烧>3h:实时云图外推可参考但只作次要修正(基线权重0.3,>6h降至0.15),主要认定标准=四个模式的预测云图;禁止拿实况外推冒充届时云况当主判据。用户口径2026-07-10改写。
   来源: 合并: forecast-for-long-lead / no-current-sat-as-burntime / outlook-c1-no-satellite-baseline / far-time-trust-forecast-trend / forecast-irreplaceable-prior — 2026-07-05午间实战修复(C1曾拿上午实测冒充8小时后)+同日实证(上午14% vs GFS日落100%两者都对); spec 2026-07-06 §2; 用户口径2026-07-05定论 | 阈值: >3h禁实测替代
 - fresh-forecast-prior-nowcast-extrapolate [hard·P0] 时间维方法论固定三段式:预报打前瞻底子→提前几小时盯卫星连帧动向与移速→把云趋势外推到燃烧时刻;C2/C3必须执行外推(estimate_shift/extrapolated_corridor)并把外推后的燃烧时刻云量结构喂给判读,推送注明是否结合实时云图。
   来源: 合并: forecast-prior-nowcast-extrapolate / time-trend-extrapolation — 用户口径2026-07-05读图方法论定论+2026-07-09原话; knowledge §3.2要点②/§5.4
@@ -205,7 +205,7 @@ sunsetbot/李召麒/北京市气象局官方成因/PlanIt云层距离/US10459119
   来源: nearest-hour-rounding — spec 2026-07-06 §1 | 阈值: 30分钟进位
 - fresh-gated-llm-15pp [hard·P1] 检查点之间每30分钟免费层重算,只有概率/质量摆动超过15pp才唤LLM,否则只更新数字沿用上次解读。
   来源: gated-llm-15pp-swing — spec 2026-07-05 §2门控加跑 | 阈值: 15pp
-- fresh-liveweight-curve [soft·P2] 综合判断中实况权重随临近上升:约30%@T-6h、60%@T-2h、T-1h起以实况外推为主导模式只做背景;偏差大时以实况为准并标注"实况推翻预报"。
+- fresh-liveweight-curve [hard·P0] 实况权重梯度已定死并落码(engine._sat_weight):>6h→0.15、3-6h→0.3、1.5-3h→0.5、≤1.5h→0.6;c1/outlook封顶0.3;位移峰质量低减半。用户口径2026-07-10拍板,数值待案例回测微调。
   来源: liveweight-rises-near-window — spec 2026-07-03 §5.4权重曲线 | 阈值: 约30%@T-6h/60%@T-2h/主导@T-1h
 - fresh-extrapolation-self-verify [hard·P1] 每次外推预判连同时间戳落库,窗口过后用实际到达的卫星帧自动评判命中/落空,形成外推命中率统计,外推算法迭代以此为依据。
   来源: extrapolation-self-verification — spec 2026-07-03 §5.4外推准度自验证

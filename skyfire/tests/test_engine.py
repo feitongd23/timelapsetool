@@ -142,19 +142,20 @@ def test_run_checkpoint_no_llm_pending(monkeypatch):
     rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
                          date_type(2026, 7, 6), "c1")
     assert rec["llm_status"] == "pending"
-    # C1 早间展望:短时外推冒充不了届时云况 → 基线只用预报(不加云量修正)
-    # rule 5.0 high → qual 50, prob 50(外推 52 不参与)
-    assert rec["probability_pct"] == 50 and rec["quality_pct"] == 50
-    assert rec["per_model_pct"] == {"gfs_seamless": (50, 50)}
+    # C1 远期首报:实况参考权重封顶 0.3(用户 2026-07-10:远期可参考实况,
+    # 主认定=四模式预测)。纯预报 (50,50) 与实况耦合 (75,60) 按 0.3 混合
+    assert rec["probability_pct"] == 58 and rec["quality_pct"] == 53
+    assert rec["per_model_pct"] == {"gfs_seamless": (58, 53)}
 
 
 def test_run_checkpoint_c3_uses_satellite_extrapolation(monkeypatch):
     conn, city = _setup(monkeypatch, None)
     rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
                          date_type(2026, 7, 6), "c3")
-    # C3 临近:外推 52% 落甜区 → qual 50+10=60,prob 60+15=75
-    assert rec["probability_pct"] == 75 and rec["quality_pct"] == 60
-    assert rec["per_model_pct"] == {"gfs_seamless": (75, 60)}
+    # C3 临近(峰值已过=按≤1.5h档):实况权重 0.6,预测与实况强制并用
+    # (用户 2026-07-10)。(50,50)×0.4 + (75,60)×0.6 = (65,56)
+    assert rec["probability_pct"] == 65 and rec["quality_pct"] == 56
+    assert rec["per_model_pct"] == {"gfs_seamless": (65, 56)}
 
 
 def test_run_checkpoint_gated_skips_small_delta(monkeypatch):
@@ -172,8 +173,8 @@ def test_run_checkpoint_outlook_baseline_ignores_satellite(monkeypatch):
     conn, city = _setup(monkeypatch, None)
     rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
                          date_type(2026, 7, 6), "outlook")
-    # 同 C1:外推 52 不参与 → rule 5.0 high → prob 50
-    assert rec["probability_pct"] == 50 and rec["quality_pct"] == 50
+    # 同 C1:远期参考权重 0.3 → 混合 (58,53)
+    assert rec["probability_pct"] == 58 and rec["quality_pct"] == 53
     assert rec["checkpoint"] == "outlook"
     assert store.has_checkpoint(conn, "2026-07-06", "beijing", "sunset_glow",
                                 "outlook")
@@ -206,7 +207,8 @@ def test_run_checkpoint_payload_rec_and_db_carry_raw(monkeypatch):
     import json
     row = store.latest_prediction(conn, "2026-07-06", "beijing", "sunset_glow")
     pmj = json.loads(row["per_model_json"])
-    assert pmj["gfs_seamless"]["prob"] == 75 and pmj["gfs_seamless"]["cloud_high"] == 80
+    # c2(峰值已过=≤1.5h档)实况权重 0.6 → prob 混合为 65
+    assert pmj["gfs_seamless"]["prob"] == 65 and pmj["gfs_seamless"]["cloud_high"] == 80
 
 
 def test_run_checkpoint_injects_seq_and_prev(monkeypatch):
@@ -235,3 +237,27 @@ def test_run_checkpoint_injects_generated_at_local(monkeypatch):
                          date_type(2026, 7, 6), "c1")
     assert rec["generated_at"].tzinfo is not None
     assert str(rec["generated_at"].tzinfo) == "Asia/Shanghai"
+
+
+def test_run_checkpoint_manual_far_lead_ignores_satellite(monkeypatch):
+    """manual 在远期(3-6h)跑:实况只作 0.3 参考权重,主认定=模式预测
+    (用户 2026-07-10:远期可参考实况外推,主要认定标准为四模式预测云图)。"""
+    from datetime import datetime, timedelta, timezone
+    pr = _fake_pr()
+    pr.peak = datetime.now(timezone.utc) + timedelta(hours=5)
+    monkeypatch.setattr(engine_mod, "compute_prediction", lambda *a, **k: pr)
+    monkeypatch.setattr(engine_mod, "observe_burn_clouds",
+                        lambda *a, **k: (48.0, 52.0, "now=48%→burn=52%", [],
+                                         _fake_meta()))
+    monkeypatch.setattr(engine_mod, "predict_pct", lambda *a, **k: None)
+    conn = store.connect(":memory:")
+    store.init_db(conn)
+    city = City(key="beijing", name="北京", lat=39.9, lon=116.4,
+                timezone="Asia/Shanghai")
+    rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
+                         date_type.today(), "manual")
+    # (50,50)×0.7 + (75,60)×0.3 = (58,53):参考但不主导
+    assert rec["probability_pct"] == 58 and rec["quality_pct"] == 53
+    sheet = {f["name"]: f for f in rec["factor_sheet"]}
+    assert sheet["外推纪律"]["status"] == "远期参考"
+    assert "主认定=四模式预测云图" in sheet["外推纪律"]["note"]

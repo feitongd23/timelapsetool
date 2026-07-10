@@ -311,11 +311,13 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
     sat_now, burn_pct, trend, live_frames, sat_meta = observe_burn_clouds(
         client, peak_utc, event, city.lat, city.lon, frames_dir,
         azimuth_deg=r.azimuth)
-    # C1/outlook 距燃烧数小时以上:短时外推冒充不了届时云况
-    # (knowledge §3.2:远期信预报当底子,临近才信实测外推),
-    # 基线只用预报驱动的规则分;C2/C3/gated 临近才引入卫星外推修正。
-    near = checkpoint not in ("c1", "outlook")
-    cloud_args = (sat_now, burn_pct) if near else (None, None)
+    # 实况权重梯度(用户 2026-07-10 拍板):远期>3h 实况外推可参考但主认定
+    # =四模式预测云图(权重0.3);T-2/T-1 必须强制结合实时云图+预测云图
+    # (0.5/0.6,谁都不许单干);峰质量低时外推降权不禁用。
+    hours_pre = (peak_utc - datetime.now(timezone.utc)).total_seconds() / 3600
+    extrap_ok = sat_meta is None or sat_meta.get("extrap_trusted", True)
+    w_sat = 0.0 if sat_now is None else _sat_weight(checkpoint, hours_pre,
+                                                    extrap_ok)
 
     # 模式硬分歧仲裁(2026-07-09:median(0,0,6,6)=3.0 是幻影场景):
     # 临近且实况可信时由卫星裁——满盖→悲观簇,画布实证→乐观簇;
@@ -338,13 +340,22 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
                               / 2, 1)
             split_note = (f"模式两簇分歧{split['gap']:.0f}且实况未定"
                           f"→保守偏置{eff_index:.1f},双情景待临近确认")
-    prob, qual = baseline_percent(eff_index, eff_conf, *cloud_args)
+
+    def _blend(score: float) -> tuple[int, int]:
+        """预报基线与实况耦合基线按 w_sat 混合(预测云图与实时云图并用)。"""
+        pf, qf = baseline_percent(score, eff_conf, None, None)
+        if w_sat <= 0:
+            return pf, qf
+        ps, qs = baseline_percent(score, eff_conf, sat_now, burn_pct)
+        return (round(pf * (1 - w_sat) + ps * w_sat),
+                round(qf * (1 - w_sat) + qs * w_sat))
+
+    prob, qual = _blend(eff_index)
     # 各模式单独换算(用户要求推送分模型;也喂给 LLM 看模式间分歧)
-    per_model_pct = {m: baseline_percent(s, eff_conf, *cloud_args)
-                     for m, s in r.per_model.items()}
+    per_model_pct = {m: _blend(s) for m, s in r.per_model.items()}
 
     # 因子过堂表:每个已知致错因子必须留痕(缺失≠沉默;2026-07-10 用户拍板)
-    factors = _factor_sheet(r, checkpoint, sat_now, burn_pct, sat_meta,
+    factors = _factor_sheet(r, w_sat, hours_pre, sat_now, burn_pct, sat_meta,
                             split_note, trend)
 
     # 本场(date×city×event)已有预测 = 推送序号与"较上次"对比的依据;
@@ -367,7 +378,7 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
                "per_model_pct": per_model_pct,
                "aod": r.aod,
                "sat_cloud_now": sat_now, "burn_cloud_projected": burn_pct,
-               "sat_meta": sat_meta,
+               "sat_meta": sat_meta, "sat_weight": w_sat,
                "trend": trend, "baseline_prob": prob, "baseline_quality": qual,
                "factor_sheet": factors}
     cases = store.cases_with_snapshot(conn, city_key, event, model="gfs_seamless")
@@ -428,7 +439,29 @@ def run_checkpoint(conn, client, city: City, city_key: str, event: str,
             "prev": prev, "factor_sheet": factors}
 
 
-def _factor_sheet(r: PredictionResult, checkpoint: str,
+def _sat_weight(checkpoint: str, hours_pre: float, extrap_trusted: bool) -> float:
+    """实况外推进基线的权重(用户 2026-07-10 拍板)。
+
+    >6h 轻参考 0.15 / 3-6h 参考 0.3(主认定=四模式预测云图)/
+    T-2 档 0.5、T-1 档 0.6(实况与预测强制并用);c1/outlook 定位即远期
+    首报,封顶 0.3;位移峰质量低(外推不可信)时减半——降权不禁用。
+    """
+    if hours_pre > 6:
+        w = 0.15
+    elif hours_pre > 3:
+        w = 0.3
+    elif hours_pre > 1.5:
+        w = 0.5
+    else:
+        w = 0.6
+    if checkpoint in ("c1", "outlook"):
+        w = min(w, 0.3)
+    if not extrap_trusted:
+        w *= 0.5
+    return w
+
+
+def _factor_sheet(r: PredictionResult, w_sat: float, hours_pre: float,
                   sat_now: float | None, burn_pct: float | None,
                   sat_meta: dict | None, split_note: str | None,
                   trend: str | None) -> list[dict]:
@@ -472,15 +505,26 @@ def _factor_sheet(r: PredictionResult, checkpoint: str,
     else:
         f.append({"name": "模式分歧", "status": "正常",
                   "note": f"极差{r.spread},{r.confidence}"})
-    # 外推纪律
-    if checkpoint in ("c1", "outlook"):
-        f.append({"name": "外推纪律", "status": "远期",
-                  "note": "距峰值数小时,实况外推不入基线,以预报为底"})
-    elif trend:
-        status = "临近"
-        if sat_meta and not sat_meta.get("extrap_trusted", True):
-            status = "外推不可信"
-        f.append({"name": "外推纪律", "status": status, "note": trend})
+    # 外推纪律与实况权重(用户 2026-07-10:远期参考/临近强制并用,权重可审计)
+    untrusted = sat_meta and not sat_meta.get("extrap_trusted", True)
+    if sat_now is None:
+        f.append({"name": "外推纪律", "status": "无实况",
+                  "note": "卫星缺失,纯预报基线"})
+    else:
+        if hours_pre > 3:
+            status = "远期参考"
+            note = (f"距峰值{hours_pre:.1f}小时,实况参考权重{w_sat:.0%},"
+                    f"主认定=四模式预测云图")
+        else:
+            status = "临近并用"
+            note = (f"距峰值{hours_pre:.1f}小时,实况权重{w_sat:.0%},"
+                    f"预测云图与实时云图强制并用")
+        if untrusted:
+            status += "·外推降权"
+            note += ";位移峰质量低,外推权重已减半"
+        if trend:
+            note += f";{trend}"
+        f.append({"name": "外推纪律", "status": status, "note": note})
     return f
 
 
