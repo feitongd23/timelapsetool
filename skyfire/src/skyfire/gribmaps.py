@@ -219,6 +219,43 @@ def _ec_precip(c, run: datetime, step: int, td: str) -> np.ndarray | None:
 
 # ---------- 编排 ----------
 
+def _azimuths_by_row(n_rows: int, bbox, valid_utc: datetime) -> list[float]:
+    """逐纬度行的太阳方位角(2026-07-10:全国图通道曾正西/正东硬编码,
+    与判读图 270° 线同族病;方位角随纬度显著变化,按行取真值)。"""
+    from astral import Observer
+    from astral.sun import azimuth
+
+    lon_mid = (bbox[0] + bbox[2]) / 2
+    lat1, lat0 = bbox[3], bbox[1]
+    out = []
+    for r in range(n_rows):
+        lat = lat1 - (lat1 - lat0) * r / max(1, n_rows - 1)
+        try:
+            out.append(azimuth(Observer(lat, lon_mid), valid_utc))
+        except Exception:
+            out.append(270.0)
+    return out
+
+
+def _aod_grid_safe(client, city, n_rows: int, n_cols: int,
+                   valid_utc: datetime):
+    """AOD 粗网格(CAMS,air-quality 子域独立配额),失败返回 None(0.85 保守)。
+
+    2026-07-10 强制过全:全国图此前 aod=None 整图裸奔,与"你忘记把气溶胶
+    考虑进去了"同病;粗采样 4° 一次请求,双线性放大。
+    """
+    try:
+        from zoneinfo import ZoneInfo
+
+        from skyfire.gridmap import CHINA_BBOX as _BB, fetch_aod_grid
+        iso = valid_utc.astimezone(ZoneInfo(city.timezone)).strftime(
+            "%Y-%m-%dT%H:00")
+        return fetch_aod_grid(client, _BB, n_rows, n_cols, city.timezone,
+                              iso, coarse_step=4.0)
+    except Exception:
+        return None
+
+
 def _refresh_child(q, city_kw: dict, city_key: str, out_dir: str):
     """子进程入口(spawn 可导入):跑真刷新,结果进队列。"""
     from skyfire.config import City
@@ -229,7 +266,7 @@ def _refresh_child(q, city_kw: dict, city_key: str, out_dir: str):
 
 
 def refresh_grib_maps_bounded(city, city_key: str, out_dir,
-                              timeout_s: int = 900) -> dict[str, int]:
+                              timeout_s: int = 1500) -> dict[str, int]:
     """带进程级硬超时的刷新。必须用这个入口对外服务:
 
     下载库 multiurl 默认重试 500 次×120 秒——2026-07-09 夜一次 DNS 抖动把
@@ -296,6 +333,7 @@ def refresh_grib_maps(city, city_key: str, out_dir: Path,
     written: dict[str, int] = {}
     today = date_type.today()
     days = [today, today + timedelta(days=1)]
+    aod_cache: dict = {}   # AOD 网格按时次缓存,两模式共用(时间与配额都省半)
     try:
         runs = {"gfs": latest_gfs_run(client), "ec": latest_ec_run()}
         for model in MODELS:
@@ -320,8 +358,17 @@ def refresh_grib_maps(city, city_key: str, out_dir: Path,
                     like = cloud_np["high"]
                     cloud = {k: _grid_to_lists(cloud_np.get(k), like)
                              for k in ("high", "mid", "low", "precip")}
-                    grids = score_grids_physics(cloud, None, event,
-                                                CHINA_BBOX, "medium")
+                    valid_utc = run + timedelta(hours=step)
+                    az_rows = _azimuths_by_row(len(like), CHINA_BBOX, valid_utc)
+                    # AOD 网格按时次缓存:两模式/同时次共用,别把配额和时间翻倍
+                    aod_key = valid_utc.strftime("%Y%m%d%H")
+                    if aod_key not in aod_cache:
+                        aod_cache[aod_key] = _aod_grid_safe(
+                            client, city, len(like), len(like[0]), valid_utc)
+                    aod_grid = aod_cache[aod_key]
+                    grids = score_grids_physics(cloud, aod_grid, event,
+                                                CHINA_BBOX, "medium",
+                                                azimuth_by_row=az_rows)
                     event_zh = "朝霞" if event == "sunrise_glow" else "晚霞"
                     title = (f"{model.upper()} 轮次 {run:%m-%d %H}z · "
                              f"预测 {day:%m-%d} {event_zh}")

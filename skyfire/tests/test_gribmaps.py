@@ -86,6 +86,7 @@ def fake_fields(monkeypatch):
         return dict(grid)
 
     monkeypatch.setattr(gribmaps, "latest_gfs_run", lambda c, now=None: run)
+    monkeypatch.setattr(gribmaps, "_aod_grid_safe", lambda *a, **k: None)
     monkeypatch.setattr(gribmaps, "latest_ec_run", lambda: run)
     monkeypatch.setattr(gribmaps, "fetch_gfs_china", fake_gfs)
     monkeypatch.setattr(gribmaps, "fetch_ec_china", fake_ec)

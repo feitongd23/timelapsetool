@@ -12,7 +12,7 @@ from skyfire.models import ChannelPoint
 from skyfire.percent import baseline_percent
 from skyfire.scoring.firecloud import FireCloudInputs, fire_cloud_score
 
-_CORRIDOR_KM = (100, 200, 300, 400)   # 通道采样距离(与点预测 channel_points 一致)
+_CORRIDOR_KM = (50, 100, 200, 300, 400)   # 通道采样距离(含近程点,与点预测一致)
 
 _SCALE = 48                       # 13x9 格 → 624x432 px
 _STOPS = {
@@ -47,46 +47,58 @@ def score_grids(cloud: dict, confidence: str) -> dict[str, list[list[int]]]:
     return {"prob": prob, "quality": quality}
 
 
-def _sample_low(low, bbox, lon, lat):
-    """网格最近格的低云%(越界返回 None)。low 为行主序北→南、西→东。"""
+def _sample_grid(grid, bbox, lon, lat):
+    """网格最近格取值(越界返回 None)。grid 为行主序北→南、西→东。"""
     lon0, lat0, lon1, lat1 = bbox
-    rows, cols = len(low), len(low[0])
+    rows, cols = len(grid), len(grid[0])
     if not (lon0 <= lon <= lon1 and lat0 <= lat <= lat1):
         return None
     c = round((lon - lon0) / (lon1 - lon0) * (cols - 1))
     r = round((lat1 - lat) / (lat1 - lat0) * (rows - 1))
-    v = low[r][c]
-    return v if v is not None else None
+    return grid[r][c]
 
 
-def _corridor_points(low, bbox, lon, lat, west: bool):
-    """从网格自身低云场,沿日照方向(晚霞朝西/朝霞朝东)采样透光通道点。"""
+def _corridor_points(low, mid, bbox, lon, lat, azimuth_deg: float):
+    """从网格自身低/中云场,沿真实太阳方位角采样透光通道点。
+
+    2026-07-10 修正(与判读图 270° 硬编码同族的病):七月北京日落方位
+    ≈300°(西北),正西采样把每格通道都查偏 30°;中云墙同步纳入
+    (7/9:只采低云时中云墙隐形,规则 channel-judge-low-plus-thick-mid)。
+    """
+    rad = math.radians(azimuth_deg)
     pts = []
     for dkm in _CORRIDOR_KM:
-        dlon = dkm / (111.0 * max(0.2, math.cos(math.radians(lat))))
-        slon = lon - dlon if west else lon + dlon
-        cl = _sample_low(low, bbox, slon, lat)
+        slat = lat + dkm * math.cos(rad) / 111.0
+        slon = lon + dkm * math.sin(rad) / (111.0 * max(0.2, math.cos(math.radians(lat))))
+        cl = _sample_grid(low, bbox, slon, slat)
+        cm = _sample_grid(mid, bbox, slon, slat) if mid else None
         if cl is not None:
-            pts.append(ChannelPoint(dist_km=dkm, cloud_low=cl, cloud_total=None))
+            pts.append(ChannelPoint(dist_km=dkm, cloud_low=cl,
+                                    cloud_total=None, cloud_mid=cm))
     return pts
 
 
 def score_grids_physics(cloud: dict, aod_grid, event: str, bbox,
-                        confidence: str) -> dict[str, list[list[int]]]:
+                        confidence: str,
+                        azimuth_by_row: list[float] | None = None,
+                        ) -> dict[str, list[list[int]]]:
     """全物理逐格打分:画布(云高分层)× 透光通道 × 本地低云 × 气溶胶 × 降水。
 
-    比 score_grids 多算:①每格按日照方向从网格采样西/东侧低云→通道系数;
-    ②每格 AOD→气溶胶系数(aod_grid 缺则中性)。用户 2026-07-08 要求综合考量。
+    比 score_grids 多算:①每格沿真实太阳方位角(azimuth_by_row 逐行,缺则
+    退化为正西/正东旧口径)从网格采样低/中云→通道系数(含中云墙);
+    ②每格 AOD→气溶胶系数(aod_grid 缺则 0.85 保守)。用户 2026-07-08 综合考量
+    + 2026-07-10 强制过全口径。
     """
     high, mid, low = cloud["high"], cloud["mid"], cloud["low"]
     precip = cloud.get("precip")
     lon0, lat0, lon1, lat1 = bbox
     rows, cols = len(high), len(high[0])
-    west = event == "sunset_glow"
+    default_az = 270.0 if event == "sunset_glow" else 90.0
     prob = [[0] * cols for _ in range(rows)]
     quality = [[0] * cols for _ in range(rows)]
     for r in range(rows):
         lat = lat1 - (lat1 - lat0) * r / (rows - 1)
+        az = azimuth_by_row[r] if azimuth_by_row else default_az
         for c in range(cols):
             h = high[r][c]
             if h is None:
@@ -97,7 +109,7 @@ def score_grids_physics(cloud: dict, aod_grid, event: str, bbox,
             score = fire_cloud_score(FireCloudInputs(
                 cloud_high=h, cloud_mid=mid[r][c] or 0, cloud_low=low[r][c] or 0,
                 precipitation=p, aod=aod,
-                channel=_corridor_points(low, bbox, lon, lat, west))).score
+                channel=_corridor_points(low, mid, bbox, lon, lat, az))).score
             total = min(100.0, (h or 0) + (mid[r][c] or 0) + (low[r][c] or 0))
             prob[r][c], quality[r][c] = baseline_percent(score, confidence, None, total)
     return {"prob": prob, "quality": quality}
