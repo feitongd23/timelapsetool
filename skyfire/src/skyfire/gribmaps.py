@@ -394,14 +394,20 @@ def refresh_grib_maps(city, city_key: str, out_dir: Path,
                         aod_cache[aod_key] = _aod_grid_safe(
                             client, city, len(like), len(like[0]), valid_utc)
                     aod_grid = aod_cache[aod_key]
+                    # 分源降水判堵阈值(F5):EC降水=tp三小时差分平均,
+                    # 对流边缘被稀释~2-3倍 → 阈值按源收紧;GFS=PRATE瞬时
+                    rain_soft = 0.15 if model == "ec" else 0.3
                     grids = score_grids_physics(cloud, aod_grid, event,
                                                 CHINA_BBOX, "medium",
-                                                azimuth_by_row=az_rows)
+                                                azimuth_by_row=az_rows,
+                                                rain_soft=rain_soft)
                     event_zh = "朝霞" if event == "sunrise_glow" else "晚霞"
                     title = (f"{model.upper()} 轮次 {run:%m-%d %H}z · "
                              f"预测 {day:%m-%d} {event_zh}")
                     if model == "ec":
                         title += " · 云量由湿度场推算"
+                    if aod_grid is None:
+                        title += " · 气溶胶数据缺失"
                     for kind in ("prob", "quality"):
                         png = render_map_png(grids[kind], kind, CHINA_BBOX,
                                              marker=(city.name, city.lat, city.lon),

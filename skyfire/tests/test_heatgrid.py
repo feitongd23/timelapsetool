@@ -1,4 +1,4 @@
-from skyfire.heatgrid import render_heatmap_png, score_grids
+from skyfire.heatgrid import render_heatmap_png, score_grids_physics
 
 
 def _cloud(v_high, v_mid, v_low, precip=0.0, rows=3, cols=3):
@@ -7,9 +7,14 @@ def _cloud(v_high, v_mid, v_low, precip=0.0, rows=3, cols=3):
             "precip": mk(precip)}
 
 
+BBOX = (100.0, 17.0, 135.0, 45.0)
+
+
 def test_score_grids_sweet_spot_beats_overcast():
-    sweet = score_grids(_cloud(50, 10, 5), "high")
-    overcast = score_grids(_cloud(100, 80, 60), "high")
+    sweet = score_grids_physics(_cloud(50, 10, 5), None, "sunset_glow",
+                                BBOX, "high")
+    overcast = score_grids_physics(_cloud(100, 80, 60), None, "sunset_glow",
+                                   BBOX, "high")
     assert sweet["prob"][0][0] > overcast["prob"][0][0]
     assert sweet["quality"][0][0] > overcast["quality"][0][0]
     assert 0 <= sweet["prob"][0][0] <= 100
@@ -18,7 +23,7 @@ def test_score_grids_sweet_spot_beats_overcast():
 def test_score_grids_none_cell_scores_zero():
     cloud = _cloud(50, 10, 5)
     cloud["high"][1][1] = None
-    g = score_grids(cloud, "medium")
+    g = score_grids_physics(cloud, None, "sunset_glow", BBOX, "medium")
     assert g["prob"][1][1] == 0 and g["quality"][1][1] == 0
 
 
@@ -57,9 +62,9 @@ def test_lit_factor_uniform_deck_interior_dark():
     zeros = [[0.0] * cols for _ in range(rows)]
     lat = 31.0
     # 幕内贴近西缘(117.9E,距边≈40km):300km 采样已出幕 → 1.0
-    assert lit_factor(high, zeros, bbox, 117.9, lat, 270.0) == 1.0
+    assert lit_factor(high, zeros, zeros, zeros, bbox, 117.9, lat, 270.0) == 1.0
     # 幕深处(130E,西缘距离≈1150km):800km 内无边 → 0.2
-    assert lit_factor(high, zeros, bbox, 130.0, lat, 270.0) == 0.2
+    assert lit_factor(high, zeros, zeros, zeros, bbox, 130.0, lat, 270.0) == 0.2
     # 全链:同一片幕,西缘格质量应显著高于深处格
     cloud = {"high": high, "mid": zeros, "low": zeros, "precip": zeros}
     grids = score_grids_physics(cloud, None, "sunset_glow", bbox, "medium")

@@ -12,7 +12,9 @@ from skyfire.models import ChannelPoint
 from skyfire.percent import baseline_percent
 from skyfire.scoring.firecloud import FireCloudInputs, fire_cloud_score
 
-_CORRIDOR_KM = (50, 100, 200, 300, 400)   # 通道采样距离(含近程点,与点预测一致)
+# 2026-07-11 F2:25km步长+800km窗(旧5点表有100km缝隙,80km宽雨带整体隐形;
+# 400-800km远段判据在 channel_factor 里分段防过杀)
+_CORRIDOR_KM = tuple(range(25, 801, 25))
 # 受光带扫描距离:高云画布必须在此范围内有西(日照方向)缘才被点亮
 # (2026-07-10 用户实锤:整片铺到天边的100%高云幕内部无光,烧不了;
 # 文献 channel-length-by-canvas-height:高云画布须查到500-829km)
@@ -27,30 +29,6 @@ _STOPS = {
     "quality": [(240, 238, 242), (214, 205, 220), (180, 155, 178),
                 (141, 96, 111), (110, 58, 63)],
 }
-
-
-def score_grids(cloud: dict, confidence: str) -> dict[str, list[list[int]]]:
-    """逐格 firecloud 规则分 → 概率%/质量% 两张数值网格。
-
-    概率端经 baseline_percent(含格点云量甜区修正,cloud=该格总云近似
-    high+mid+low 截断 100);channel/aod 无格点数据,置中性。缺数据格记 0。
-    """
-    rows, cols = len(cloud["high"]), len(cloud["high"][0])
-    prob = [[0] * cols for _ in range(rows)]
-    quality = [[0] * cols for _ in range(rows)]
-    for r in range(rows):
-        for c in range(cols):
-            h, m, low = cloud["high"][r][c], cloud["mid"][r][c], cloud["low"][r][c]
-            if h is None:
-                continue
-            p = (cloud.get("precip") or [[0] * cols] * rows)[r][c] or 0
-            score = fire_cloud_score(FireCloudInputs(
-                cloud_high=h, cloud_mid=m or 0, cloud_low=low or 0,
-                precipitation=p, aod=None, channel=[])).score
-            canvas_cloud = min(100.0, (h or 0) + 0.5 * (m or 0))
-            pr, qu = baseline_percent(score, confidence, None, canvas_cloud)
-            prob[r][c], quality[r][c] = pr, qu
-    return {"prob": prob, "quality": quality}
 
 
 def _sample_grid(grid, bbox, lon, lat):
@@ -80,18 +58,20 @@ def _corridor_points(low, mid, precip, bbox, lon, lat, azimuth_deg: float):
         cl = _sample_grid(low, bbox, slon, slat)
         cm = _sample_grid(mid, bbox, slon, slat) if mid else None
         pr = _sample_grid(precip, bbox, slon, slat) if precip else None
-        if cl is not None:
-            pts.append(ChannelPoint(dist_km=dkm, cloud_low=cl,
-                                    cloud_total=None, cloud_mid=cm,
-                                    precip=pr))
+        # 越界/缺值点保留(全 None):缺数据≠畅通,由 channel_factor 打覆盖折扣
+        pts.append(ChannelPoint(dist_km=dkm, cloud_low=cl,
+                                cloud_total=None, cloud_mid=cm, precip=pr))
     return pts
 
 
-def lit_factor(high, mid, bbox, lon, lat, azimuth_deg: float) -> float:
+def lit_factor(high, mid, low, precip, bbox, lon, lat,
+               azimuth_deg: float) -> float:
     """高云画布受光系数:沿太阳方位扫 300-800km,找云盖(高或中≥85%)的边缘。
 
     画布被点燃的光来自其日照侧边缘底下——边缘越近越亮,800km 内无边=内部
     无光(×0.2)。越界(扫出网格)按有边处理,不惩罚地图西边界。
+    边缘验真(2026-07-11 F8):候选边处若低云>60 或正在降雨,不是透光口,
+    继续外扫——"西缘"正下方压着雨带时那不是光的入口。
     """
     rad = math.radians(azimuth_deg)
     for dkm in _LIT_KM:
@@ -102,17 +82,22 @@ def lit_factor(high, mid, bbox, lon, lat, azimuth_deg: float) -> float:
             return _LIT_FACTOR[dkm]          # 扫出网格:按此处即有边处理
         m = _sample_grid(mid, bbox, slon, slat) if mid else 0
         if max(h or 0, m or 0) < 85:
-            return _LIT_FACTOR[dkm]          # 找到边缘:据边距定亮度
+            lo = _sample_grid(low, bbox, slon, slat) if low else 0
+            pr = _sample_grid(precip, bbox, slon, slat) if precip else 0
+            if (lo or 0) > 60 or (pr or 0) >= 0.3:
+                continue                     # 假边:低云墙/雨区不是透光口
+            return _LIT_FACTOR[dkm]          # 真边:据边距定亮度
     return _LIT_FACTOR[None]
 
 
 def score_grids_physics(cloud: dict, aod_grid, event: str, bbox,
                         confidence: str,
                         azimuth_by_row: list[float] | None = None,
+                        rain_veto: float = 1.0, rain_soft: float = 0.5,
                         ) -> dict[str, list[list[int]]]:
     """全物理逐格打分:画布(云高分层)× 透光通道 × 本地低云 × 气溶胶 × 降水。
 
-    比 score_grids 多算:①每格沿真实太阳方位角(azimuth_by_row 逐行,缺则
+    ①每格沿真实太阳方位角(azimuth_by_row 逐行,缺则
     退化为正西/正东旧口径)从网格采样低/中云→通道系数(含中云墙);
     ②每格 AOD→气溶胶系数(aod_grid 缺则 0.85 保守)。用户 2026-07-08 综合考量
     + 2026-07-10 强制过全口径。
@@ -138,17 +123,22 @@ def score_grids_physics(cloud: dict, aod_grid, event: str, bbox,
                 cloud_high=h, cloud_mid=mid[r][c] or 0, cloud_low=low[r][c] or 0,
                 precipitation=p, aod=aod,
                 channel=_corridor_points(low, mid, precip, bbox,
-                                         lon, lat, az))).score
+                                         lon, lat, az)),
+                rain_veto=rain_veto, rain_soft=rain_soft).score
             # 受光带:本格处于≥85%连续云盖之下时,画布必须在日照方向
             # 300-800km 内有边缘才被点亮(2026-07-10 上海100%高云幕质量64的
             # 反面教材——满盖是画布,但只有靠近西缘的画布会亮)
             if (h or 0) >= 85 or ((h or 0) + (mid[r][c] or 0)) >= 95:
-                score *= lit_factor(high, mid, bbox, lon, lat, az)
+                score *= lit_factor(high, mid, low, precip, bbox, lon, lat, az)
             # 甜区耦合只认画布云(高+半中):低云不是画布是遮挡——
             # 2026-07-10 青岛实锤:高10中0低22 被凑成"总云32"拿甜区+15
             canvas_cloud = min(100.0, (h or 0) + 0.5 * (mid[r][c] or 0))
-            prob[r][c], quality[r][c] = baseline_percent(score, confidence,
-                                                         None, canvas_cloud)
+            # 闷盖判定看遮光云(中+低),画布满盖不再触发>90封顶(F6:
+            # 受光带已区分幕的内部与西缘,近西缘满盖卷云幕是经典大烧配置)
+            blocker_cloud = min(100.0, (mid[r][c] or 0) + (low[r][c] or 0))
+            prob[r][c], quality[r][c] = baseline_percent(
+                score, confidence, None, canvas_cloud,
+                blocker_cloud_pct=blocker_cloud)
     return {"prob": prob, "quality": quality}
 
 

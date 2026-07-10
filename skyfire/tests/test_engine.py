@@ -142,20 +142,20 @@ def test_run_checkpoint_no_llm_pending(monkeypatch):
     rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
                          date_type(2026, 7, 6), "c1")
     assert rec["llm_status"] == "pending"
-    # C1 远期首报:实况参考权重封顶 0.3(用户 2026-07-10:远期可参考实况,
-    # 主认定=四模式预测)。纯预报 (50,50) 与实况耦合 (75,60) 按 0.3 混合
-    assert rec["probability_pct"] == 58 and rec["quality_pct"] == 53
-    assert rec["per_model_pct"] == {"gfs_seamless": (58, 53)}
+    # C1 远期首报:实况参考权重封顶 0.3。纯预报 (50,50) 与实况耦合
+    # (63,55)(甜区门控乘法后)按 0.3 混合
+    assert rec["probability_pct"] == 54 and rec["quality_pct"] == 52
+    assert rec["per_model_pct"] == {"gfs_seamless": (54, 52)}
 
 
 def test_run_checkpoint_c3_uses_satellite_extrapolation(monkeypatch):
     conn, city = _setup(monkeypatch, None)
     rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
                          date_type(2026, 7, 6), "c3")
-    # C3 临近(峰值已过=按≤1.5h档):实况权重 0.6,预测与实况强制并用
-    # (用户 2026-07-10)。(50,50)×0.4 + (75,60)×0.6 = (65,56)
-    assert rec["probability_pct"] == 65 and rec["quality_pct"] == 56
-    assert rec["per_model_pct"] == {"gfs_seamless": (65, 56)}
+    # C3 临近(峰值已过=按≤1.5h档):实况权重 0.6,预测与实况强制并用。
+    # (50,50)×0.4 + (63,55)×0.6 = (58,53)
+    assert rec["probability_pct"] == 58 and rec["quality_pct"] == 53
+    assert rec["per_model_pct"] == {"gfs_seamless": (58, 53)}
 
 
 def test_run_checkpoint_gated_skips_small_delta(monkeypatch):
@@ -173,8 +173,8 @@ def test_run_checkpoint_outlook_baseline_ignores_satellite(monkeypatch):
     conn, city = _setup(monkeypatch, None)
     rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
                          date_type(2026, 7, 6), "outlook")
-    # 同 C1:远期参考权重 0.3 → 混合 (58,53)
-    assert rec["probability_pct"] == 58 and rec["quality_pct"] == 53
+    # 同 C1:远期参考权重 0.3 → 混合 (54,52)
+    assert rec["probability_pct"] == 54 and rec["quality_pct"] == 52
     assert rec["checkpoint"] == "outlook"
     assert store.has_checkpoint(conn, "2026-07-06", "beijing", "sunset_glow",
                                 "outlook")
@@ -207,8 +207,8 @@ def test_run_checkpoint_payload_rec_and_db_carry_raw(monkeypatch):
     import json
     row = store.latest_prediction(conn, "2026-07-06", "beijing", "sunset_glow")
     pmj = json.loads(row["per_model_json"])
-    # c2(峰值已过=≤1.5h档)实况权重 0.6 → prob 混合为 65
-    assert pmj["gfs_seamless"]["prob"] == 65 and pmj["gfs_seamless"]["cloud_high"] == 80
+    # c2(峰值已过=≤1.5h档)实况权重 0.6 → prob 混合为 58
+    assert pmj["gfs_seamless"]["prob"] == 58 and pmj["gfs_seamless"]["cloud_high"] == 80
 
 
 def test_run_checkpoint_injects_seq_and_prev(monkeypatch):
@@ -256,8 +256,8 @@ def test_run_checkpoint_manual_far_lead_ignores_satellite(monkeypatch):
                 timezone="Asia/Shanghai")
     rec = run_checkpoint(conn, object(), city, "beijing", "sunset_glow",
                          date_type.today(), "manual")
-    # (50,50)×0.7 + (75,60)×0.3 = (58,53):参考但不主导
-    assert rec["probability_pct"] == 58 and rec["quality_pct"] == 53
+    # (50,50)×0.7 + (63,55)×0.3 = (54,52):参考但不主导
+    assert rec["probability_pct"] == 54 and rec["quality_pct"] == 52
     sheet = {f["name"]: f for f in rec["factor_sheet"]}
     assert sheet["外推纪律"]["status"] == "远期参考"
     assert "主认定=四模式预测云图" in sheet["外推纪律"]["note"]

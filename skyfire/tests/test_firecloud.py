@@ -46,9 +46,10 @@ def test_rain_in_window_penalized():
     assert r.score <= 2.5
 
 
-def test_missing_aod_is_neutral():
+def test_missing_aod_conservative():
+    # 缺失≠中性:0.7(规则 aod-missing-not-neutral 用户拍板值)
     r = fire_cloud_score(_inputs(aod=None))
-    assert r.score >= 8.5
+    assert 6.0 <= r.score <= 7.5
 
 
 HIGH_CANVAS_CHANNEL = [ChannelPoint(dist_km=d, cloud_low=8, cloud_total=100)
@@ -97,7 +98,7 @@ def test_channel_factor_mid_wall_blocks():
 def test_aerosol_missing_is_not_neutral():
     """缺失≠中性(2026-07-09:aod=None 一路畅通拿 1.0)。"""
     from skyfire.scoring.firecloud import aerosol_factor
-    assert aerosol_factor(None) == 0.85
+    assert aerosol_factor(None) == 0.7
     assert aerosol_factor(1.41) == 0.3
 
 
@@ -109,4 +110,4 @@ def test_channel_rain_blocks():
                           cloud_mid=40, precip=2.0)
              for d in (100, 200, 300, 400)]
     factor, blocked = channel_factor(rainy)
-    assert blocked == 4 and factor == 0.1
+    assert blocked == 4 and factor == 0.0      # F3:雨墙一票否决归零

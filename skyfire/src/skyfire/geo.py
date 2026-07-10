@@ -29,9 +29,13 @@ def destination(lat: float, lon: float, bearing_deg: float, distance_km: float) 
 
 def channel_points(
     lat: float, lon: float, azimuth_deg: float,
-    start_km: float = 50, end_km: float = 400, step_km: float = 50,
+    start_km: float = 25, end_km: float = 400, step_km: float = 25,
 ) -> list[GeoPoint]:
-    """沿日落/日出方位角方向的光通道采样点。"""
+    """沿日落/日出方位角方向的光通道采样点。
+
+    2026-07-11 F2:步长 50→25km(规则表口径),100km 缝隙曾让 80km 宽
+    雨带整体隐形;16 点仍是一次逗号分隔请求,配额当量不变量级。
+    """
     pts = []
     d = start_km
     while d <= end_km:
