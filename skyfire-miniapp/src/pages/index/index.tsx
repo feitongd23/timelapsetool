@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Taro, { usePullDownRefresh } from '@tarojs/taro'
-import { ScrollView, Swiper, SwiperItem, Text, View } from '@tarojs/components'
-import { fetchAqi, fetchPhenomena, fetchHourly, fetchLocal, fetchSummary } from '../../api/client'
+import { Image, ScrollView, Swiper, SwiperItem, Text, View } from '@tarojs/components'
+import { API_BASE, fetchAqi, fetchPhenomena, fetchHourly, fetchLocal, fetchSummary, getToken, phenomapPath } from '../../api/client'
 import type { Phenomena, Aqi, EventData, HourItem, LocalResult, Summary } from '../../api/types'
 import { themeFor } from '../../theme'
 import Wave from '../../components/Wave'
@@ -56,6 +56,7 @@ export default function Index() {
   const [coords, setCoords] = useState(CITY_CENTER)
   const [aqi, setAqi] = useState<Aqi | null>(null)
   const [phen, setPhen] = useState<Phenomena | null>(null)
+  const [phenMaps, setPhenMaps] = useState<Record<string, string>>({})
   const [hours, setHours] = useState<HourItem[]>([])
 
   const load = useCallback(async (pickDefault = false) => {
@@ -98,6 +99,17 @@ export default function Index() {
   useEffect(() => {
     fetchAqi(coords.lat, coords.lon).then(setAqi).catch(() => setAqi(null))
     fetchPhenomena().then(setPhen).catch(() => setPhen(null))
+    for (const t of ['sea', 'rainbow'] as const) {
+      Taro.request({
+        url: `${API_BASE}${phenomapPath(t)}`, method: 'GET',
+        responseType: 'arraybuffer', header: { 'X-Session': getToken() }
+      }).then(res => {
+        if (res.statusCode === 200) {
+          const src = 'data:image/png;base64,' + Taro.arrayBufferToBase64(res.data as ArrayBuffer)
+          setPhenMaps(prev => ({ ...prev, [t]: src }))
+        }
+      }).catch(() => {})
+    }
     fetchHourly(coords.lat, coords.lon).then(r => setHours(r.hours))
       .catch(() => setHours([]))
   }, [coords])
@@ -281,6 +293,10 @@ export default function Index() {
                       {phen.rainbow.notes.length > 0 && (
                         <Text className='tsrc'>{phen.rainbow.notes[0]}</Text>
                       )}
+                      {phenMaps.rainbow && (
+                        <Image src={phenMaps.rainbow} mode='widthFix' className='phen-map'
+                               onClick={() => Taro.previewImage({ urls: [phenMaps.rainbow] })} />
+                      )}
                     </View>
                     {phen.rainbow.level >= 2 && phen.rainbow.antisolar_az !== null && (
                       <View className='compass'>
@@ -311,6 +327,10 @@ export default function Index() {
                       )}
                       {phen.cloudsea.notes.length > 0 && (
                         <Text className='tsrc'>{phen.cloudsea.notes[0]}</Text>
+                      )}
+                      {phenMaps.sea && (
+                        <Image src={phenMaps.sea} mode='widthFix' className='phen-map'
+                               onClick={() => Taro.previewImage({ urls: [phenMaps.sea] })} />
                       )}
                     </View>
                   </View>

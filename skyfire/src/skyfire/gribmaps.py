@@ -106,9 +106,10 @@ def fetch_gfs_china(client: httpx.Client, run: datetime, fh: int) -> dict | None
     return out
 
 
-def _decode_grib(path: str) -> dict:
-    """GRIB → {shortName: 中国区 ndarray(lat 北→南, lon 西→东)}。"""
+def _decode_grib(path: str, bbox=None) -> dict:
+    """GRIB → {shortName: ndarray(lat 北→南, lon 西→东)},默认中国区裁剪。"""
     import cfgrib   # 重依赖,按需导入
+    lon0, lat0, lon1, lat1 = bbox or (_LON0, _LAT0, _LON1, _LAT1)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         dss = cfgrib.open_datasets(path, indexpath="")
@@ -118,10 +119,61 @@ def _decode_grib(path: str) -> dict:
             da = ds[v]
             if float(da.latitude[0]) < float(da.latitude[-1]):
                 da = da.isel(latitude=slice(None, None, -1))
-            sub = da.sel(latitude=slice(_LAT1, _LAT0),
-                         longitude=slice(_LON0, _LON1))
+            sub = da.sel(latitude=slice(lat1, lat0),
+                         longitude=slice(lon0, lon1))
             fields[v] = np.asarray(sub.values, dtype=float)
     return fields
+
+
+# 京津区域框(云海/彩虹区域图;用户 2026-07-11:只服务北京,放得下就带天津)
+JINGJIN_BBOX = (114.8, 38.4, 118.6, 41.6)
+
+_JJ_KEYS = ("LCDC:low cloud layer", "MCDC:middle cloud layer",
+            "HCDC:high cloud layer", "PRATE:surface", "HPBL:surface",
+            "TMP:2 m above ground", "DPT:2 m above ground",
+            "RH:2 m above ground", "UGRD:10 m above ground",
+            "VGRD:10 m above ground")
+# HPBL 在 cfgrib 里无 shortName 映射,解码为 "unknown"——本抓取集内唯一
+# unknown 即边界层高度(hpbl 别名一并保留,防未来版本补映射)
+_JJ_RENAME = {"lcc": "low", "mcc": "mid", "hcc": "high", "prate": "precip",
+              "hpbl": "blh", "unknown": "blh", "t2m": "t2", "d2m": "d2",
+              "r2": "rh2", "u10": "u10", "v10": "v10"}
+
+
+def fetch_gfs_jingjin(client: httpx.Client, run: datetime, fh: int) -> dict | None:
+    """京津区域场:云三层+降水+边界层高度+2米温湿+10米风(一次字节段抓齐)。"""
+    base, idx_url = _gfs_urls(run, fh)
+    wanted = {f"{k}:{fh} hour fcst" for k in _JJ_KEYS}
+    r = client.get(idx_url)
+    if r.status_code != 200:
+        return None
+    segs = parse_idx(r.text, wanted)
+    if len(segs) < len(_JJ_KEYS):
+        return None
+    buf = b""
+    for _, st, e in segs:
+        rng = f"bytes={st}-{e}" if e is not None else f"bytes={st}-"
+        buf += client.get(base, headers={"Range": rng}).content
+    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as f:
+        f.write(buf)
+        tmp = f.name
+    try:
+        raw = _decode_grib(tmp, bbox=JINGJIN_BBOX)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    out = {}
+    for src, dst in _JJ_RENAME.items():
+        if src in raw:
+            out[dst] = raw[src]
+    if not {"low", "mid", "high", "blh", "t2", "d2", "rh2"} <= set(out):
+        return None
+    if out.get("precip") is not None:
+        out["precip"] = out["precip"] * 3600.0     # kg/m²/s → mm/h
+    out["t2"] = out["t2"] - 273.15                 # K → °C
+    out["d2"] = out["d2"] - 273.15
+    if "u10" in out and "v10" in out:
+        out["wind"] = np.hypot(out["u10"], out["v10"])
+    return out
 
 
 # ---------- ECMWF 开放数据 ----------

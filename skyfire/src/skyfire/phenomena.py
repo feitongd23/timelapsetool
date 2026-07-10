@@ -218,3 +218,134 @@ def forecast_rainbow(client: httpx.Client, lat: float, lon: float, tz: str,
 
     return RainbowStatus(level, label, window_s, sun_elev, antisolar, bow,
                          double, notes).__dict__
+
+
+# ---------- 京津区域图(用户 2026-07-11:云海彩虹只服务北京,带上天津) ----------
+
+def cloudsea_grid(f: dict) -> list:
+    """逐格三道门连乘 → 云海概率网格(输入=fetch_gfs_jingjin 黎明时次场)。"""
+    import numpy as np
+    spread = f["t2"] - f["d2"]
+    rh, wind, blh = f["rh2"], f.get("wind"), f["blh"]
+    if wind is None:
+        wind = np.full_like(rh, 2.0)
+    g1 = np.where((spread <= 1.5) & (rh >= 93) & (wind >= 0.5) & (wind <= 4.0), 1.0,
+                  np.where((spread <= 2.5) & (rh >= 88) & (wind <= 5.0), 0.5, 0.0))
+    lcl = 125.0 * np.clip(spread, 0, None)
+    top = np.minimum(blh, lcl + 80)
+    g2 = np.where(top <= 150, 1.0,
+                  np.where(top <= 350, 0.8, np.where(top <= 900, 0.3, 0.0)))
+    shade = np.maximum(f["mid"], f["high"])
+    g3 = np.where(shade <= 30, 1.0, np.where(shade <= 60, 0.5, 0.0))
+    grid = (100.0 * g1 * g2 * g3)
+    return [[float(v) for v in row] for row in grid]
+
+
+def rainbow_grid(f: dict, bbox, antisolar_az: float) -> list:
+    """逐格彩虹条件网格(晚窗时次):本地雨尾/邻近雨幕 × 反日扇区 × 光路开。"""
+    import math
+
+    import numpy as np
+
+    from skyfire.heatgrid import _sample_grid
+
+    precip = f.get("precip")
+    low, mid = f["low"], f["mid"]
+    rows, cols = low.shape
+    lon0, lat0, lon1, lat1 = bbox
+    pr_l = [[float(v) for v in r] for r in precip] if precip is not None else None
+    low_l = [[float(v) for v in r] for r in low]
+    mid_l = [[float(v) for v in r] for r in mid]
+    sun_az = (antisolar_az + 180) % 360
+    rad_a = math.radians(antisolar_az)
+    rad_s = math.radians(sun_az)
+    out = [[0.0] * cols for _ in range(rows)]
+    if pr_l is None:
+        return out
+    for r in range(rows):
+        lat = lat1 - (lat1 - lat0) * r / max(1, rows - 1)
+        coslat = max(0.2, math.cos(math.radians(lat)))
+        for c in range(cols):
+            lon = lon0 + (lon1 - lon0) * c / max(1, cols - 1)
+            # 反日扇区 25km 雨幕(含本格雨尾)
+            alat = lat + 25 * math.cos(rad_a) / 111.0
+            alon = lon + 25 * math.sin(rad_a) / (111.0 * coslat)
+            curtain = max(pr_l[r][c],
+                          _sample_grid(pr_l, bbox, alon, alat) or 0.0)
+            # 光路 80km(太阳方向)开:中低云≤40 且基本无雨
+            slat = lat + 80 * math.cos(rad_s) / 111.0
+            slon = lon + 80 * math.sin(rad_s) / (111.0 * coslat)
+            p_low = _sample_grid(low_l, bbox, slon, slat)
+            p_mid = _sample_grid(mid_l, bbox, slon, slat)
+            p_pr = _sample_grid(pr_l, bbox, slon, slat)
+            blocked = (max(p_low or 0, p_mid or 0) > 40
+                       or (p_pr or 0) >= 0.2)
+            if curtain >= 0.1 and not blocked and pr_l[r][c] <= 1.5:
+                score = 70.0 + (15.0 if curtain >= 0.5 else 0.0) \
+                    + (10.0 if 0.02 < pr_l[r][c] <= 1.0 else 0.0)
+                out[r][c] = min(95.0, score)
+    return out
+
+
+def refresh_phenomena_maps(client: httpx.Client, city, out_dir,
+                           kinds: tuple = ("sea", "rainbow")) -> dict:
+    """京津云海/彩虹区域图落盘。云海=明晨;彩虹=当前晚窗时次(窗外跳过)。"""
+    from datetime import date as date_type
+    from pathlib import Path
+
+    from astral import Observer
+    from astral.sun import azimuth, elevation
+
+    from skyfire.gribmaps import (JINGJIN_BBOX, fetch_gfs_jingjin,
+                                  latest_gfs_run)
+    from skyfire.heatmap_map import render_map_png
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written = {}
+    run = latest_gfs_run(client)
+    if run is None:
+        return written
+    tzinfo = ZoneInfo(city.timezone)
+    now = datetime.now(tzinfo)
+
+    if "sea" in kinds:
+        sea_day = now.date() + timedelta(days=1)
+        dawn = sun_window(city.lat, city.lon, city.timezone, sea_day,
+                          "sunrise_glow").peak
+        fh = round((dawn.astimezone(ZoneInfo("UTC")) - run).total_seconds() / 3600)
+        if 0 < fh <= 120:
+            f = fetch_gfs_jingjin(client, run, fh)
+            if f is not None:
+                grid = cloudsea_grid(f)
+                png = render_map_png(grid, "sea", JINGJIN_BBOX,
+                                     marker=(city.name, city.lat, city.lon),
+                                     title=f"明晨云海 · 京津 · GFS {run:%d日%H}z"
+                                           f" · {sea_day:%m-%d} 日出")
+                p = out_dir / f"beijing_{sea_day}_cloudsea.png"
+                p.write_bytes(png)
+                written["sea"] = str(p)
+
+    if "rainbow" in kinds:
+        win = sun_window(city.lat, city.lon, city.timezone, now.date(),
+                         "sunset_glow")
+        w_start = win.peak - timedelta(hours=3, minutes=15)
+        if w_start <= now <= win.peak:
+            obs = Observer(city.lat, city.lon)
+            if 0 < elevation(obs, now) < 42:
+                anti = (azimuth(obs, now) + 180) % 360
+                fh = round((now.astimezone(ZoneInfo("UTC")) - run
+                            ).total_seconds() / 3600)
+                if 0 < fh <= 120:
+                    f = fetch_gfs_jingjin(client, run, fh)
+                    if f is not None:
+                        grid = rainbow_grid(f, JINGJIN_BBOX, anti)
+                        png = render_map_png(
+                            grid, "rainbow", JINGJIN_BBOX,
+                            marker=(city.name, city.lat, city.lon),
+                            title=f"彩虹条件 · 京津 · {now:%H:%M}"
+                                  f" · 背对夕阳约{anti:.0f}°")
+                        p = out_dir / f"beijing_{now.date()}_rainbow.png"
+                        p.write_bytes(png)
+                        written["rainbow"] = str(p)
+    return written

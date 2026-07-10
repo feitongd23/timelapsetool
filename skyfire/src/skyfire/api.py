@@ -234,6 +234,19 @@ def create_app(db_path: Path, config_path: Path, wechat_path: Path,
             raise HTTPException(503, f"数据拉取失败: {e.__class__.__name__}")
         return data
 
+    @app.get("/v1/phenomap", dependencies=[Depends(require_session)])
+    def phenomap(type: str = "sea", city: str = "beijing"):
+        """京津云海/彩虹区域图(GRIB 直采预生成,404=未生成/窗外)。"""
+        if type not in ("sea", "rainbow"):
+            raise HTTPException(422, f"type 需为 sea|rainbow,收到 {type!r}")
+        if city not in app.state.cities:
+            raise HTTPException(422, f"未知城市 {city!r}")
+        stem = "cloudsea" if type == "sea" else "rainbow"
+        cands = sorted(Path(app.state.maps_dir).glob(f"{city}_*_{stem}.png"))
+        if not cands:
+            raise HTTPException(404, "区域图未生成")
+        return Response(cands[-1].read_bytes(), media_type="image/png")
+
     @app.get("/v1/aqi", dependencies=[Depends(require_session)])
     def aqi(lat: float, lon: float, city: str = "beijing"):
         """AQI:美使馆优先,Open-Meteo PM2.5 兜底;随定位与时间。"""

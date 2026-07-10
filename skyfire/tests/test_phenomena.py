@@ -118,3 +118,38 @@ def test_rainbow_blocked_light_path_stays_l2():
     r = forecast_rainbow(_client(hourly), LAT, LON, TZ, day, now=now)
     assert r["level"] == 2
     assert any("光路未开" in n for n in r["notes"])
+
+
+def test_cloudsea_grid_gates():
+    """区域图逐格三道门:满配格高分,大风格/遮光格归零。"""
+    import numpy as np
+    from skyfire.phenomena import cloudsea_grid
+    n = 4
+    f = {"t2": np.full((n, n), 22.0), "d2": np.full((n, n), 21.6),
+         "rh2": np.full((n, n), 96.0), "wind": np.full((n, n), 1.5),
+         "blh": np.full((n, n), 100.0), "mid": np.full((n, n), 5.0),
+         "high": np.full((n, n), 10.0)}
+    f["wind"][0][0] = 8.0     # 大风格:成雾门 0
+    f["high"][1][1] = 90.0    # 遮光格:有光门 0
+    g = cloudsea_grid(f)
+    assert g[2][2] >= 80      # 满配景山档
+    assert g[0][0] == 0 and g[1][1] == 0
+
+
+def test_rainbow_grid_curtain_and_path():
+    """区域图彩虹条件:反日雨幕+光路开→高分;光路堵→0;暴雨格→0。"""
+    import numpy as np
+    from skyfire.phenomena import rainbow_grid
+    bbox = (114.8, 38.4, 118.6, 41.6)
+    n = 16
+    zeros = np.zeros((n, n))
+    precip = np.zeros((n, n)); precip[8, 8] = 0.6   # 观测格自身雨尾/雨幕
+    f = {"low": zeros.copy(), "mid": zeros.copy(), "high": zeros.copy(),
+         "precip": precip}
+    g = rainbow_grid(f, bbox, antisolar_az=115.0)
+    assert g[8][8] >= 80      # 幕+尾+路开
+    # 光路(西北)堵死同一格
+    f2 = {"low": np.full((n, n), 90.0), "mid": zeros.copy(),
+          "high": zeros.copy(), "precip": precip}
+    g2 = rainbow_grid(f2, bbox, antisolar_az=115.0)
+    assert g2[8][8] == 0

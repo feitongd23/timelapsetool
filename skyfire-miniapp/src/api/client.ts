@@ -70,6 +70,10 @@ export function fetchReport(id: number): Promise<Report> {
   return authedGet(`/v1/report?id=${id}`)
 }
 
+export function phenomapPath(type: 'sea' | 'rainbow', city = 'beijing'): string {
+  return `/v1/phenomap?type=${type}&city=${city}`
+}
+
 export function satimgUrl(): string {
   return `${API_BASE}/v1/satimg`
 }

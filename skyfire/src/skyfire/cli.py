@@ -651,6 +651,18 @@ def _maybe_fill_tomorrow(conn, c, city_key: str, now_local) -> None:
             typer.echo(f"· {city_key} 明日{event} outlook 已补全(未推送)")
         except (httpx.HTTPError, ValueError):
             return   # 配额/数据不济,别连环烧,下个 tick 再来
+    # 明晨云海京津区域图(GRIB 零配额;每天一张,存在即跳过)
+    from skyfire.maps import DEFAULT_MAPS_DIR
+    sea_png = Path(DEFAULT_MAPS_DIR) / f"{city_key}_{tomorrow}_cloudsea.png"
+    if not sea_png.exists():
+        try:
+            from skyfire.phenomena import refresh_phenomena_maps
+            w = refresh_phenomena_maps(_make_client(), c, DEFAULT_MAPS_DIR,
+                                       kinds=("sea",))
+            if w.get("sea"):
+                typer.echo(f"✓ {city_key} 云海区域图已生成")
+        except Exception:
+            pass
 
 
 def _maybe_rainbow_push(conn, c, city_key: str, now_local, ncfg) -> None:
@@ -666,6 +678,15 @@ def _maybe_rainbow_push(conn, c, city_key: str, now_local, ncfg) -> None:
             return
         r = forecast_rainbow(_make_client(), c.lat, c.lon, c.timezone,
                              now_local.date(), now=now_local)
+        if r["level"] >= 1:
+            # 潜势日晚窗内顺手刷彩虹区域图(GRIB 零配额,一tick一张)
+            try:
+                from skyfire.maps import DEFAULT_MAPS_DIR
+                from skyfire.phenomena import refresh_phenomena_maps
+                refresh_phenomena_maps(_make_client(), c, DEFAULT_MAPS_DIR,
+                                       kinds=("rainbow",))
+            except Exception:
+                pass
         if r["level"] < 3:
             return
         title = (f"彩虹雷达[触发] 背对夕阳面向{r['antisolar_az']:.0f}°"
