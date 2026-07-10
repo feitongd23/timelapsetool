@@ -153,3 +153,11 @@ def test_rainbow_grid_curtain_and_path():
           "high": zeros.copy(), "precip": precip}
     g2 = rainbow_grid(f2, bbox, antisolar_az=115.0)
     assert g2[8][8] == 0
+
+
+def test_bt_to_rain_equiv_tiers():
+    """卫星冷顶→雨核当量:深对流核0.8/成片冷顶0.3/暖顶0(2km补25km盲区)。"""
+    from skyfire.phenomena import bt_to_rain_equiv
+    assert bt_to_rain_equiv(238.0, 250.0) == 0.8   # 深对流核
+    assert bt_to_rain_equiv(248.0, 252.0) == 0.3   # 成片冷顶
+    assert bt_to_rain_equiv(270.0, 275.0) == 0.0   # 暖顶不算雨核

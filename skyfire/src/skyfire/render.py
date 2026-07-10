@@ -111,7 +111,8 @@ def render_annotated(dat_paths: list[Path], band: str, bbox: tuple,
 class HsdFrame:
     gray: "object"               # np.ndarray uint8,云顶越冷越亮
     center_px: tuple[int, int]   # 目标点 (x, y) 像素坐标
-    km_px: float                 # 名义分辨率 km/px(B13=2.0)
+    km_px: float                 # 名义分辨率 km/px(B13≈2.4)
+    area: "object" = None        # pyresample area(经纬↔像素精确换算)
 
 
 def load_b13_region(dat_paths: list[Path], bbox: tuple,
@@ -123,4 +124,4 @@ def load_b13_region(dat_paths: list[Path], bbox: tuple,
     # 旧名义值 2.0 低估 20-60%,走廊步长因此每步多迈)。此处取东西向近似,
     # 精确几何(距离环/通道点)一律走 overlay.corridor_marks 的测地线计算。
     return HsdFrame(gray=bt_to_gray(data.values), center_px=(int(x), int(y)),
-                     km_px=2.4)
+                     km_px=2.4, area=data.attrs["area"])

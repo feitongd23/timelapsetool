@@ -339,13 +339,96 @@ def refresh_phenomena_maps(client: httpx.Client, city, out_dir,
                 if 0 < fh <= 120:
                     f = fetch_gfs_jingjin(client, run, fh)
                     if f is not None:
+                        # 实时卫星雨核(2km)补模式(25km)的对流盲区:
+                        # 莉景"卫星云图+光路"思路,窗口期实况优先
+                        import numpy as _np
+                        sat = satellite_rain_grid(client, JINGJIN_BBOX,
+                                                  *f["low"].shape)
+                        sat_tag = ""
+                        if sat is not None:
+                            base_pr = f.get("precip")
+                            f["precip"] = (_np.maximum(base_pr, sat)
+                                           if base_pr is not None else sat)
+                            sat_tag = " · 结合实时卫星"
                         grid = rainbow_grid(f, JINGJIN_BBOX, anti)
                         png = render_map_png(
                             grid, "rainbow", JINGJIN_BBOX,
                             marker=(city.name, city.lat, city.lon),
                             title=f"彩虹条件 · 京津 · {now:%H:%M}"
-                                  f" · 背对夕阳约{anti:.0f}°")
+                                  f" · 背对夕阳约{anti:.0f}°{sat_tag}")
                         p = out_dir / f"beijing_{now.date()}_rainbow.png"
                         p.write_bytes(png)
                         written["rainbow"] = str(p)
     return written
+
+
+def bt_to_rain_equiv(min_bt: float, mean_bt: float) -> float:
+    """B13 冷顶 → 雨核当量(mm/h 量级,喂给 rainbow_grid 的雨幕判据)。
+
+    对流单体活在雷达/卫星尺度(2km),GFS 0.25° 会把它平均掉——
+    莉景"卫星云图预测+光路"的思路(用户 2026-07-11 认可地图表达)。
+    阈值:min_bt<242K=深对流核(强雨幕,给0.8);mean_bt<255K=成片冷顶
+    (中等,给0.3);否则 0。粗代理,n 小待回测。
+    """
+    if min_bt < 242.0:
+        return 0.8
+    if mean_bt < 255.0:
+        return 0.3
+    return 0.0
+
+
+def satellite_rain_grid(client: httpx.Client, bbox, rows: int, cols: int,
+                        frames_dir="data/frames"):
+    """最新 B13 帧 → 京津逐格雨核当量网格(2km 卫星补 25km 模式的对流盲区)。
+
+    尽力语义:卫星缺 → None(调用方退回纯模式场)。
+    """
+    import numpy as np
+
+    from skyfire.cloudiness import box_stats
+    from skyfire.himawari_hsd import (CROP_BBOX, download_segments,
+                                      latest_slot, segments_for)
+    from skyfire.render import load_b13_region
+    try:
+        from pathlib import Path
+        now = datetime.now(ZoneInfo("UTC"))
+        ts = latest_slot(client, now)
+        if ts is None:
+            return None
+        segs = segments_for(CROP_BBOX[1], CROP_BBOX[3],
+                            (CROP_BBOX[0] + CROP_BBOX[2]) / 2)
+        dats = download_segments(client, ts, "B13", segs,
+                                 Path(frames_dir) / "hsd_cache")
+        if not dats:
+            return None
+        f = load_b13_region(dats, CROP_BBOX, 39.9042, 116.4074)
+        if f.area is None:
+            return None
+        lon0, lat0, lon1, lat1 = bbox
+        out = np.zeros((rows, cols))
+        for r in range(rows):
+            lat = lat1 - (lat1 - lat0) * r / max(1, rows - 1)
+            for c in range(cols):
+                lon = lon0 + (lon1 - lon0) * c / max(1, cols - 1)
+                try:
+                    px, py = f.area.get_xy_from_lonlat(lon, lat)
+                except Exception:
+                    continue
+                s = box_stats(f.gray, (int(px), int(py)), half=7)
+                if s is not None:
+                    out[r, c] = bt_to_rain_equiv(
+                        _min_bt_of(f.gray, int(px), int(py)), s["mean_bt"])
+        return out
+    except Exception:
+        return None
+
+
+def _min_bt_of(gray, px: int, py: int, half: int = 7) -> float:
+    """窗内最冷亮温(gray 最大值=最冷)。"""
+    from skyfire.cloudiness import gray_to_bt
+    x0, x1 = max(px - half, 0), px + half
+    y0, y1 = max(py - half, 0), py + half
+    box = gray[y0:y1, x0:x1]
+    if box.size == 0:
+        return 300.0
+    return gray_to_bt(float(box.max()))
